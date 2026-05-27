@@ -6,8 +6,7 @@ KALSHI_KEY_ID          = os.environ["KALSHI_KEY_ID"]
 KALSHI_PRIVATE_KEY_PATH = os.environ.get("KALSHI_PRIVATE_KEY_PATH", "/data/kalshi_private_key.pem")
 
 # ── Storage ───────────────────────────────────────────────────────────────────
-DB_PATH = os.environ.get("DB_PATH", "/data/kalshi_trades.db")
-DB_TYPE = os.environ.get("DB_TYPE", "sqlite")
+DB_TYPE = os.environ.get("DB_TYPE", "postgres")
 DB_URL  = os.environ.get("DB_URL", "")
 
 # ── Strategy ──────────────────────────────────────────────────────────────────
