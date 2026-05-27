@@ -152,7 +152,7 @@ function StatusBadge({ status, outcome }: { status: string; outcome: string | nu
 export default function App() {
   const [orders,    setOrders]    = useState<Order[]>([])
   const [positions, setPositions] = useState<Position[] | { error: string }>([])
-  const [quotes,    setQuotes]    = useState<Record<string, { yes_ask: number|null, no_ask: number|null, yes_bid: number|null, no_bid: number|null }>>({})
+  const [quotes,    setQuotes]    = useState<Record<string, { yes_ask: number|null, no_ask: number|null, yes_bid: number|null, no_bid: number|null, open_interest: number|null }>>({})
   const [settings,  setSettings]  = useState<Settings | null>(null)
   const [profiles,  setProfiles]  = useState<Profile[]>([])
   const [autoRefresh, setAutoRefresh] = useState(true)
@@ -476,6 +476,7 @@ export default function App() {
                 <th>Contracts</th>
                 <th>Cost</th>
                 <th>Ask</th>
+                <th>OI</th>
                 <th>Realized P&L</th>
               </tr>
             </thead>
@@ -483,7 +484,7 @@ export default function App() {
               {!Array.isArray(positions) ? (
                 <tr><td colSpan={6} className="cell-empty" style={{ color: '#ff4444' }}>Error: {(positions as any).error}</td></tr>
               ) : positions.length === 0 ? (
-                <tr><td colSpan={6} className="cell-empty">No active positions</td></tr>
+                <tr><td colSpan={7} className="cell-empty">No active positions</td></tr>
               ) : (positions as Position[]).map(p => {
                 const contracts = parseFloat(p.position_fp)
                 const side = contracts >= 0 ? 'yes' : 'no'
@@ -505,6 +506,7 @@ export default function App() {
                     <td>{Math.abs(contracts)}</td>
                     <td className="cell-dim">${p.total_traded_dollars}</td>
                     <td className="cell-dim">{ask != null ? `${ask}¢` : '—'}</td>
+                    <td className="cell-dim">{q?.open_interest != null ? q.open_interest.toLocaleString() : '—'}</td>
                     <td className={pnl > 0 ? 'cell-profit' : pnl < 0 ? 'cell-loss' : 'cell-dim'}>
                       {pnl > 0 ? '+' : ''}${p.realized_pnl_dollars}
                     </td>
@@ -530,6 +532,7 @@ export default function App() {
                 <th>Side</th>
                 <th>Entry</th>
                 <th>Ask</th>
+                <th>OI</th>
                 <th>Status</th>
                 <th>Placed</th>
                 <th>TTC</th>
@@ -537,7 +540,7 @@ export default function App() {
             </thead>
             <tbody>
               {openOrders.length === 0 ? (
-                <tr><td colSpan={7} className="cell-empty">No open orders</td></tr>
+                <tr><td colSpan={8} className="cell-empty">No open orders</td></tr>
               ) : openOrders.map(o => {
                 const q = quotes[o.market_ticker]
                 const ask = q ? (o.side === 'yes' ? q.yes_ask : q.no_ask) : null
@@ -555,6 +558,7 @@ export default function App() {
                   </td>
                   <td>{o.entry_price_cents}¢</td>
                   <td className="cell-dim">{ask != null ? `${ask}¢` : '—'}</td>
+                  <td className="cell-dim">{q?.open_interest != null ? q.open_interest.toLocaleString() : '—'}</td>
                   <td><StatusBadge status={o.status} outcome={o.outcome} /></td>
                   <td className="cell-dim">{fmtTime(o.placed_at)}</td>
                   <td className="cell-dim">{fmtDur(o.time_to_close_at_placement)}</td>

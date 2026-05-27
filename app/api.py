@@ -49,11 +49,14 @@ def quotes():
             try:
                 data = client.get_market(ticker)
                 m = data.get("market", {})
+                oi_raw = m.get("open_interest_fp")
+                oi = int(float(oi_raw)) if oi_raw else None
                 return ticker, {
-                    "yes_ask": _dollars_to_cents(m.get("yes_ask_dollars")),
-                    "no_ask":  _dollars_to_cents(m.get("no_ask_dollars")),
-                    "yes_bid": _dollars_to_cents(m.get("yes_bid_dollars")),
-                    "no_bid":  _dollars_to_cents(m.get("no_bid_dollars")),
+                    "yes_ask":      _dollars_to_cents(m.get("yes_ask_dollars")),
+                    "no_ask":       _dollars_to_cents(m.get("no_ask_dollars")),
+                    "yes_bid":      _dollars_to_cents(m.get("yes_bid_dollars")),
+                    "no_bid":       _dollars_to_cents(m.get("no_bid_dollars")),
+                    "open_interest": oi,
                 }
             except Exception:
                 return ticker, None
