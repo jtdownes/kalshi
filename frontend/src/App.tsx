@@ -28,6 +28,22 @@ interface Order {
   net_profit_cents: number | null
 }
 
+interface Snapshot {
+  id: number
+  ticker: string
+  title: string
+  scanned_at: string
+  close_time: string | null
+  yes_ask: number | null
+  yes_bid: number | null
+  no_ask: number | null
+  no_bid: number | null
+  time_to_close_secs: number | null
+  strike_str: string | null
+  volume: number | null
+  open_interest: number | null
+}
+
 interface Settings {
   min_entry_cents: number
   max_entry_cents: number
@@ -152,6 +168,7 @@ function StatusBadge({ status, outcome }: { status: string; outcome: string | nu
 export default function App() {
   const [orders,    setOrders]    = useState<Order[]>([])
   const [positions, setPositions] = useState<Position[] | { error: string }>([])
+  const [snapshots, setSnapshots] = useState<Snapshot[]>([])
   const [quotes,    setQuotes]    = useState<Record<string, { yes_ask: number|null, no_ask: number|null, yes_bid: number|null, no_bid: number|null, open_interest: number|null }>>({})
   const [settings,  setSettings]  = useState<Settings | null>(null)
   const [profiles,  setProfiles]  = useState<Profile[]>([])
@@ -167,14 +184,16 @@ export default function App() {
     setLoading(true)
     setError(null)
     try {
-      const [o, pos, st, pr] = await Promise.all([
+      const [o, pos, snap, st, pr] = await Promise.all([
         fetch('/api/orders?limit=200').then(r => { if (!r.ok) throw new Error('orders'); return r.json() }),
         fetch('/api/positions').then(r => r.json()).catch(() => []),
+        fetch('/api/snapshots?limit=200').then(r => r.json()).catch(() => []),
         fetch('/api/settings').then(r => { if (!r.ok) throw new Error('settings'); return r.json() }),
         fetch('/api/profiles').then(r => { if (!r.ok) throw new Error('profiles'); return r.json() }),
       ])
       setOrders(o)
       setPositions(pos)
+      setSnapshots(snap)
       setSettings(st)
       setProfiles(pr)
       setLastRefresh(new Date())
@@ -624,6 +643,52 @@ export default function App() {
           </div>
         )
       })()}
+
+      {/* Market Snapshots */}
+      <div className="table-panel" style={{ marginTop: 16, marginLeft: 18, marginRight: 18, marginBottom: 32 }}>
+        <div style={{ padding: '10px', display: 'flex', alignItems: 'center', gap: 8 }}>
+          <span style={{ fontWeight: 600, fontSize: 13 }}>Market Snapshots</span>
+          <span className="tab-count">{snapshots.length}</span>
+        </div>
+        <div className="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>Market</th>
+                <th>Strike</th>
+                <th>Yes Ask</th>
+                <th>Yes Bid</th>
+                <th>No Ask</th>
+                <th>Volume</th>
+                <th>OI</th>
+                <th>TTC</th>
+                <th>Scanned</th>
+              </tr>
+            </thead>
+            <tbody>
+              {snapshots.length === 0 ? (
+                <tr><td colSpan={9} className="cell-empty">No snapshots</td></tr>
+              ) : snapshots.map(s => (
+                <tr key={s.id}>
+                  <td className="cell-ticker">
+                    <a href={kalshiMarketUrl(s.ticker)} target="_blank" rel="noreferrer" style={{ color: 'inherit', textDecoration: 'none' }}>
+                      {s.ticker}
+                    </a>
+                  </td>
+                  <td className="cell-dim">{s.strike_str ?? '—'}</td>
+                  <td>{s.yes_ask != null ? `${s.yes_ask}¢` : '—'}</td>
+                  <td className="cell-dim">{s.yes_bid != null ? `${s.yes_bid}¢` : '—'}</td>
+                  <td className="cell-dim">{s.no_ask != null ? `${s.no_ask}¢` : '—'}</td>
+                  <td className="cell-dim">{s.volume != null ? s.volume.toLocaleString() : '—'}</td>
+                  <td className="cell-dim">{s.open_interest != null ? s.open_interest.toLocaleString() : '—'}</td>
+                  <td className="cell-dim">{fmtDur(s.time_to_close_secs)}</td>
+                  <td className="cell-dim">{fmtTime(s.scanned_at)}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </div>
     </div>
   )
 }
