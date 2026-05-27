@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from 'react'
 
-// ── Types ──────────────────────────────────────────────────────────────────
+// ── Types ────────────────────────────────────────────────────────────────────────────────
 interface Stats {
   today_spend_cents: number
   resting: number
@@ -47,7 +47,32 @@ interface Snapshot {
   open_interest: number | null
 }
 
-// ── Helpers ────────────────────────────────────────────────────────────────
+interface Settings {
+  min_entry_cents: number
+  max_entry_cents: number
+  proactive_mode: boolean
+  max_open_orders: number
+  max_daily_spend_cents: number
+  scan_interval_seconds: number
+  btc_series_tickers: string[]
+  active_profile_id: number | null
+  name?: string
+}
+
+interface Profile {
+  id: number
+  name: string
+  created_at: string
+  min_entry_cents: number
+  max_entry_cents: number
+  proactive_mode: boolean
+  max_open_orders: number
+  max_daily_spend_cents: number
+  scan_interval_seconds: number
+  btc_series_tickers: string
+}
+
+// ── Helpers ──────────────────────────────────────────────────────────────────────────────
 function centsToUSD(c: number | null | undefined): string {
   if (c == null) return '—'
   return `$${(c / 100).toFixed(2)}`
@@ -79,7 +104,7 @@ function fmtStrike(raw: string | null | undefined): string {
   return isNaN(n) ? raw : `$${n.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}`
 }
 
-// ── Sub-components ───────────────────────────────────────────────────────────────
+// ── Sub-components ───────────────────────────────────────────────────────────────────────
 function StatCard({
   label, value, sub, color,
 }: {
@@ -111,44 +136,74 @@ function StatusBadge({ status, outcome }: { status: string; outcome: string | nu
   return <span className="badge" style={{ color, background: bg }}>{label}</span>
 }
 
-// ── Main ─────────────────────────────────────────────────────────────────────────
+// ── Main ─────────────────────────────────────────────────────────────────────────────────
 export default function App() {
   const [stats,     setStats]     = useState<Stats | null>(null)
   const [orders,    setOrders]    = useState<Order[]>([])
   const [snapshots, setSnapshots] = useState<Snapshot[]>([])
-  const [tab,       setTab]       = useState<'orders' | 'snapshots'>('orders')
+  const [settings,  setSettings]  = useState<Settings | null>(null)
+  const [profiles,  setProfiles]  = useState<Profile[]>([])
+  const [tab,       setTab]       = useState<'orders' | 'snapshots' | 'settings' | 'profiles'>('orders')
+  const [selectedProfile, setSelectedProfile] = useState<number | 'all'>('all')
   const [autoRefresh, setAutoRefresh] = useState(true)
   const [lastRefresh, setLastRefresh] = useState<Date | null>(null)
   const [loading,   setLoading]   = useState(false)
   const [error,     setError]     = useState<string | null>(null)
+  const [saving,    setSaving]    = useState(false)
 
   const refresh = useCallback(async () => {
     setLoading(true)
     setError(null)
+    const profileQuery = selectedProfile !== 'all' ? `?profile_id=${selectedProfile}` : ''
+    const profileParam = selectedProfile !== 'all' ? `&profile_id=${selectedProfile}` : ''
     try {
-      const [s, o, sn] = await Promise.all([
-        fetch('/api/stats').then(r => { if (!r.ok) throw new Error('stats'); return r.json() }),
-        fetch('/api/orders?limit=200').then(r => { if (!r.ok) throw new Error('orders'); return r.json() }),
+      const [s, o, sn, st, pr] = await Promise.all([
+        fetch(`/api/stats${profileQuery}`).then(r => { if (!r.ok) throw new Error('stats'); return r.json() }),
+        fetch(`/api/orders?limit=200${profileParam}`).then(r => { if (!r.ok) throw new Error('orders'); return r.json() }),
         fetch('/api/snapshots?limit=100').then(r => { if (!r.ok) throw new Error('snapshots'); return r.json() }),
+        fetch('/api/settings').then(r => { if (!r.ok) throw new Error('settings'); return r.json() }),
+        fetch('/api/profiles').then(r => { if (!r.ok) throw new Error('profiles'); return r.json() }),
       ])
       setStats(s)
       setOrders(o)
       setSnapshots(sn)
+      setSettings(st)
+      setProfiles(pr)
       setLastRefresh(new Date())
     } catch (e: any) {
       setError('API unavailable — bot may be starting up')
     } finally {
       setLoading(false)
     }
-  }, [])
+  }, [selectedProfile])
 
   useEffect(() => { refresh() }, [refresh])
 
   useEffect(() => {
-    if (!autoRefresh) return
+    if (!autoRefresh || tab === 'settings') return
     const id = setInterval(refresh, 5_000)
     return () => clearInterval(id)
-  }, [autoRefresh, refresh])
+  }, [autoRefresh, refresh, tab])
+
+  const saveSettings = async (e: React.FormEvent) => {
+    e.preventDefault()
+    if (!settings) return
+    setSaving(true)
+    try {
+      const resp = await fetch('/api/settings', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(settings)
+      })
+      if (!resp.ok) throw new Error('Failed to save settings')
+      alert('Settings saved successfully. A new strategy profile may have been created.')
+      refresh()
+    } catch (err: any) {
+      alert(err.message)
+    } finally {
+      setSaving(false)
+    }
+  }
 
   const pnl = stats?.total_pnl_cents
   const pnlColor = pnl == null ? undefined : pnl > 0 ? '#00d4a0' : pnl < 0 ? '#ff4444' : undefined
@@ -210,6 +265,27 @@ export default function App() {
         <button className={`tab${tab === 'snapshots' ? ' active' : ''}`} onClick={() => setTab('snapshots')}>
           Snapshots <span className="tab-count">{snapshots.length}</span>
         </button>
+        <button className={`tab${tab === 'settings' ? ' active' : ''}`} onClick={() => setTab('settings')}>
+          Settings
+        </button>
+        <button className={`tab${tab === 'profiles' ? ' active' : ''}`} onClick={() => setTab('profiles')}>
+          Profiles <span className="tab-count">{profiles.length}</span>
+        </button>
+      </div>
+
+      <div style={{ padding: '0 16px 12px', display: 'flex', alignItems: 'center', gap: '8px' }}>
+        <span className="stat-label">Filter Stats by Profile:</span>
+        <select 
+          className="btn" 
+          style={{ background: 'rgba(255,255,255,0.05)', padding: '4px 12px' }}
+          value={selectedProfile}
+          onChange={(e) => setSelectedProfile(e.target.value === 'all' ? 'all' : parseInt(e.target.value))}
+        >
+          <option value="all">All Strategies</option>
+          {profiles.map(p => (
+            <option key={p.id} value={p.id}>{p.name} {settings?.active_profile_id === p.id ? '(Active)' : ''}</option>
+          ))}
+        </select>
       </div>
 
       {/* Panel */}
@@ -281,6 +357,146 @@ export default function App() {
                     <td className="cell-dim">{s.open_interest?.toLocaleString() ?? '—'}</td>
                     <td className="cell-dim">{fmtDur(s.time_to_close_secs)}</td>
                     <td className="cell-dim">{fmtTime(s.scanned_at)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          )}
+
+          {tab === 'settings' && settings && (
+            <div style={{ padding: '24px', maxWidth: '600px' }}>
+              <form onSubmit={saveSettings} style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
+                <div>
+                  <label className="stat-label" style={{ marginBottom: '8px', display: 'block' }}>Strategy Name (will create new profile if settings change)</label>
+                  <input
+                    type="text"
+                    className="btn"
+                    style={{ width: '100%', textAlign: 'left', background: 'rgba(255,255,255,0.05)' }}
+                    value={settings.name || ''}
+                    placeholder="Strategy snapshot name..."
+                    onChange={e => setSettings({ ...settings, name: e.target.value })}
+                  />
+                </div>
+
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '20px' }}>
+                  <div>
+                    <label className="stat-label" style={{ marginBottom: '8px', display: 'block' }}>Min Entry (¢)</label>
+                    <input
+                      type="number"
+                      className="btn"
+                      style={{ width: '100%', textAlign: 'left', background: 'rgba(255,255,255,0.05)' }}
+                      value={settings.min_entry_cents}
+                      onChange={e => setSettings({ ...settings, min_entry_cents: parseInt(e.target.value) || 0 })}
+                    />
+                  </div>
+                  <div>
+                    <label className="stat-label" style={{ marginBottom: '8px', display: 'block' }}>Max Entry (¢)</label>
+                    <input
+                      type="number"
+                      className="btn"
+                      style={{ width: '100%', textAlign: 'left', background: 'rgba(255,255,255,0.05)' }}
+                      value={settings.max_entry_cents}
+                      onChange={e => setSettings({ ...settings, max_entry_cents: parseInt(e.target.value) || 0 })}
+                    />
+                  </div>
+                </div>
+
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '20px' }}>
+                  <div>
+                    <label className="stat-label" style={{ marginBottom: '8px', display: 'block' }}>Max Open Orders</label>
+                    <input
+                      type="number"
+                      className="btn"
+                      style={{ width: '100%', textAlign: 'left', background: 'rgba(255,255,255,0.05)' }}
+                      value={settings.max_open_orders}
+                      onChange={e => setSettings({ ...settings, max_open_orders: parseInt(e.target.value) || 0 })}
+                    />
+                  </div>
+                  <div>
+                    <label className="stat-label" style={{ marginBottom: '8px', display: 'block' }}>Daily Limit (¢)</label>
+                    <input
+                      type="number"
+                      className="btn"
+                      style={{ width: '100%', textAlign: 'left', background: 'rgba(255,255,255,0.05)' }}
+                      value={settings.max_daily_spend_cents}
+                      onChange={e => setSettings({ ...settings, max_daily_spend_cents: parseInt(e.target.value) || 0 })}
+                    />
+                  </div>
+                </div>
+
+                <div>
+                  <label className="stat-label" style={{ marginBottom: '8px', display: 'block' }}>Scan Interval (seconds)</label>
+                  <input
+                    type="number"
+                    className="btn"
+                    style={{ width: '100%', textAlign: 'left', background: 'rgba(255,255,255,0.05)' }}
+                    value={settings.scan_interval_seconds}
+                    onChange={e => setSettings({ ...settings, scan_interval_seconds: parseInt(e.target.value) || 0 })}
+                  />
+                </div>
+
+                <div>
+                  <label className="stat-label" style={{ marginBottom: '8px', display: 'block' }}>BTC Series Tickers (comma separated)</label>
+                  <input
+                    type="text"
+                    className="btn"
+                    style={{ width: '100%', textAlign: 'left', background: 'rgba(255,255,255,0.05)' }}
+                    value={settings.btc_series_tickers.join(', ')}
+                    onChange={e => setSettings({ ...settings, btc_series_tickers: e.target.value.split(',').map(s => s.trim()).filter(Boolean) })}
+                  />
+                </div>
+
+                <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                  <input
+                    type="checkbox"
+                    id="proactive"
+                    checked={settings.proactive_mode}
+                    onChange={e => setSettings({ ...settings, proactive_mode: e.target.checked })}
+                    style={{ width: '20px', height: '20px', cursor: 'pointer' }}
+                  />
+                  <label htmlFor="proactive" className="stat-label" style={{ cursor: 'pointer' }}>Proactive Mode (Place orders before price hits target)</label>
+                </div>
+
+                <div style={{ borderTop: '1px solid rgba(255,255,255,0.1)', paddingTop: '10px' }}>
+                  <p style={{ fontSize: '12px', color: '#9ca3af', marginBottom: '10px' }}>
+                    Note: Changing entry range, mode, tickers, or limits will automatically archive the current strategy as a "Profile" and start a new one.
+                  </p>
+                  <button type="submit" className="btn btn-active" disabled={saving} style={{ padding: '10px 24px' }}>
+                    {saving ? 'Saving...' : 'Save Settings'}
+                  </button>
+                </div>
+              </form>
+            </div>
+          )}
+
+          {tab === 'profiles' && (
+            <table>
+              <thead>
+                <tr>
+                  <th>Name</th>
+                  <th>Created</th>
+                  <th>Entry Range</th>
+                  <th>Daily Limit</th>
+                  <th>Max Orders</th>
+                  <th>Mode</th>
+                  <th>Tickers</th>
+                </tr>
+              </thead>
+              <tbody>
+                {profiles.map(p => (
+                  <tr key={p.id} style={settings?.active_profile_id === p.id ? { background: 'rgba(0,212,160,0.05)' } : {}}>
+                    <td className="cell-ticker">
+                      {p.name}
+                      {settings?.active_profile_id === p.id && (
+                        <span className="badge" style={{ marginLeft: '8px', color: '#00d4a0', background: 'rgba(0,212,160,0.14)' }}>ACTIVE</span>
+                      )}
+                    </td>
+                    <td className="cell-dim">{fmtTime(p.created_at)}</td>
+                    <td>{p.min_entry_cents}-{p.max_entry_cents}¢</td>
+                    <td>{centsToUSD(p.max_daily_spend_cents)}</td>
+                    <td>{p.max_open_orders}</td>
+                    <td>{p.proactive_mode ? 'Proactive' : 'Reactive'}</td>
+                    <td className="cell-dim" style={{ fontSize: '11px' }}>{p.btc_series_tickers}</td>
                   </tr>
                 ))}
               </tbody>

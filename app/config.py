@@ -27,3 +27,24 @@ MIN_SECONDS_TO_CLOSE = int(os.environ.get("MIN_SECONDS_TO_CLOSE", "60"))
 
 SCAN_INTERVAL_SECONDS        = int(os.environ.get("SCAN_INTERVAL_SECONDS", "30"))
 ORDER_CHECK_INTERVAL_SECONDS = int(os.environ.get("ORDER_CHECK_INTERVAL_SECONDS", "15"))
+
+def get_all_settings():
+    """
+    Returns a merged dictionary of environment defaults and database settings.
+    """
+    import database
+    db_settings = database.get_settings()
+    
+    return {
+        "min_entry_cents":        db_settings.get("min_entry_cents", MIN_ENTRY_CENTS),
+        "max_entry_cents":        db_settings.get("max_entry_cents", MAX_ENTRY_CENTS),
+        "proactive_mode":         db_settings.get("proactive_mode", PROACTIVE_MODE),
+        "max_open_orders":        db_settings.get("max_open_orders", MAX_OPEN_ORDERS),
+        "max_daily_spend_cents":  db_settings.get("max_daily_spend_cents", MAX_DAILY_SPEND_CENTS),
+        "scan_interval_seconds":  db_settings.get("scan_interval_seconds", SCAN_INTERVAL_SECONDS),
+        "btc_series_tickers":     db_settings.get("btc_series_tickers", BTC_SERIES_TICKERS),
+        "active_profile_id":      db_settings.get("active_profile_id"),
+        "look_ahead_seconds":     LOOK_AHEAD_SECONDS,
+        "min_seconds_to_close":   MIN_SECONDS_TO_CLOSE,
+        "order_check_interval":   ORDER_CHECK_INTERVAL_SECONDS
+    }

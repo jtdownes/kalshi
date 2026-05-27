@@ -65,22 +65,26 @@ def seconds_until(ts: int) -> int:
 
 
 def scan_loop(client: KalshiClient):
-    log.info("Scanner started  (interval=%ds, proactive=%s)",
-             config.SCAN_INTERVAL_SECONDS, config.PROACTIVE_MODE)
+    log.info("Scanner started")
     while True:
+        settings = config.get_all_settings()
+        interval = settings.get("scan_interval_seconds", config.SCAN_INTERVAL_SECONDS)
         try:
-            _scan(client)
+            _scan(client, settings)
         except Exception:
             log.exception("Unhandled error in scanner")
-        time.sleep(config.SCAN_INTERVAL_SECONDS)
+        time.sleep(interval)
 
 
-def _scan(client: KalshiClient):
+def _scan(client: KalshiClient, settings: dict):
     now_ts    = int(time.time())
-    max_close = now_ts + config.LOOK_AHEAD_SECONDS
-    series_list = config.BTC_SERIES_TICKERS if config.BTC_SERIES_TICKERS else [None]
+    max_close = now_ts + settings.get("look_ahead_seconds", config.LOOK_AHEAD_SECONDS)
+    series_list = settings.get("btc_series_tickers", config.BTC_SERIES_TICKERS)
+    if not series_list:
+        series_list = [None]
 
     for series in series_list:
+        active_profile_id = settings.get("active_profile_id")
         params = {"status": "open", "max_close_ts": max_close, "limit": 200}
         if series:
             params["series_ticker"] = series
@@ -102,7 +106,8 @@ def _scan(client: KalshiClient):
             if not close_ts:
                 continue
             time_to_close = seconds_until(close_ts)
-            if time_to_close < config.MIN_SECONDS_TO_CLOSE:
+            min_secs = settings.get("min_seconds_to_close", config.MIN_SECONDS_TO_CLOSE)
+            if time_to_close < min_secs:
                 continue
 
             yes_ask = dollars_to_cents(market.get("yes_ask_dollars"))
@@ -138,8 +143,8 @@ def _scan(client: KalshiClient):
             market["no_ask"]  = no_ask
             market["no_bid"]  = no_bid
 
-            for side, price_cents in evaluate_market(market, None):
-                ok, reason = can_place_order(price_cents)
+            for side, price_cents in evaluate_market(market, None, settings):
+                ok, reason = can_place_order(price_cents, settings)
                 if not ok:
                     log.warning("Order skipped (%s): %s %s", reason, side, ticker)
                     continue
@@ -156,6 +161,7 @@ def _scan(client: KalshiClient):
                         kalshi_order_id=kalshi_oid, btc_price=None,
                         distance_to_strike=None, market_close_time=str(close_ts),
                         time_to_close_seconds=time_to_close,
+                        profile_id=active_profile_id,
                     )
                 except KalshiError as e:
                     log.error("place_order failed on %s %s: %s", side, ticker, e)
