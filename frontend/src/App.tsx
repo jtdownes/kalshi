@@ -218,7 +218,6 @@ export default function App() {
         <div className="header-left">
           <span className="header-logo">⧟</span>
           <span className="header-title">Kalshi Bot</span>
-          <span className="header-sub">BTC 15-Min Longshot</span>
         </div>
         <div className="header-right">
           {error && <span style={{ color: '#ff4444', fontSize: 12 }}>{error}</span>}
