@@ -147,7 +147,7 @@ export default function Strategies({ settings, profiles, refresh }: Props) {
                 <div><span>Max Bid</span><strong>{p.max_entry_cents}¢</strong></div>
                 <div><span>Limit</span><strong>{centsToUSD(p.max_daily_spend_cents)}</strong></div>
                 <div><span>Orders</span><strong>{p.max_open_orders}</strong></div>
-                <div><span>Mode</span><strong>{p.proactive_mode ? 'Proactive' : 'Reactive'}</strong></div>
+                <div><span>Runs</span><strong>{p.order_count.toLocaleString()}</strong></div>
               </div>
               <div className="strategy-tickers">{fmtTickers(p.btc_series_tickers)}</div>
               <div className="strategy-card-actions">

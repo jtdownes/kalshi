@@ -70,6 +70,7 @@ export interface Profile {
   max_daily_spend_cents: number
   scan_interval_seconds: number
   btc_series_tickers: string
+  order_count: number
 }
 
 export type Quotes = Record<string, {

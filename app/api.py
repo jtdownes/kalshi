@@ -202,7 +202,14 @@ def snapshots():
 @app.get("/api/profiles")
 def get_profiles():
     with _conn() as c:
-        c.execute("SELECT * FROM profiles ORDER BY created_at DESC")
+        c.execute("""
+            SELECT p.*,
+                   COUNT(o.id) AS order_count
+            FROM profiles p
+            LEFT JOIN orders o ON o.profile_id = p.id
+            GROUP BY p.id
+            ORDER BY p.created_at DESC
+        """)
         rows = c.fetchall()
     return jsonify([dict(r) for r in rows])
 
