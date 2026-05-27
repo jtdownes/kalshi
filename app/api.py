@@ -4,16 +4,19 @@ Kalshi Dashboard API — reads from Postgres, serves JSON for the React frontend
 
 from contextlib import contextmanager
 from concurrent.futures import ThreadPoolExecutor
-from flask import Flask, jsonify, request
+from flask import Flask, Response, jsonify, request, stream_with_context
 import psycopg2
 import psycopg2.extras
 from datetime import date
+import json
 
 import config
 import database
+import ws_worker
 from kalshi_client import KalshiClient
 
 database.init_db()
+ws_worker.start()
 
 app = Flask(__name__)
 
@@ -43,38 +46,79 @@ def quotes():
     if not tickers_param:
         return jsonify({})
     ticker_list = [t.strip() for t in tickers_param.split(",") if t.strip()][:20]
-    try:
-        client = KalshiClient()
-        def fetch_one(ticker):
-            try:
-                data = client.get_market(ticker)
-                m = data.get("market", {})
-                oi_raw = m.get("open_interest_fp")
-                oi = int(float(oi_raw)) if oi_raw else None
-                return ticker, {
-                    "yes_ask":      _dollars_to_cents(m.get("yes_ask_dollars")),
-                    "no_ask":       _dollars_to_cents(m.get("no_ask_dollars")),
-                    "yes_bid":      _dollars_to_cents(m.get("yes_bid_dollars")),
-                    "no_bid":       _dollars_to_cents(m.get("no_bid_dollars")),
-                    "open_interest": oi,
-                }
-            except Exception:
-                return ticker, None
-        with ThreadPoolExecutor(max_workers=10) as pool:
-            results = dict(pool.map(lambda t: fetch_one(t), ticker_list))
-        return jsonify({k: v for k, v in results.items() if v is not None})
-    except Exception as e:
-        return jsonify({"error": str(e)}), 500
+
+    cached = ws_worker.get_quotes()
+    result = {t: cached[t] for t in ticker_list if t in cached}
+    missing = [t for t in ticker_list if t not in cached]
+
+    if missing:
+        try:
+            client = KalshiClient()
+            def fetch_one(ticker):
+                try:
+                    data = client.get_market(ticker)
+                    m = data.get("market", {})
+                    oi_raw = m.get("open_interest_fp")
+                    oi = int(float(oi_raw)) if oi_raw else None
+                    return ticker, {
+                        "yes_ask":      _dollars_to_cents(m.get("yes_ask_dollars")),
+                        "no_ask":       _dollars_to_cents(m.get("no_ask_dollars")),
+                        "yes_bid":      _dollars_to_cents(m.get("yes_bid_dollars")),
+                        "no_bid":       _dollars_to_cents(m.get("no_bid_dollars")),
+                        "open_interest": oi,
+                    }
+                except Exception:
+                    return ticker, None
+            with ThreadPoolExecutor(max_workers=10) as pool:
+                rest = dict(pool.map(lambda t: fetch_one(t), missing))
+            result.update({k: v for k, v in rest.items() if v is not None})
+        except Exception as e:
+            return jsonify({"error": str(e)}), 500
+
+    return jsonify(result)
 
 
 @app.get("/api/positions")
 def positions():
+    if ws_worker.is_bootstrapped():
+        return jsonify(ws_worker.get_positions())
     try:
         client = KalshiClient()
         data = client.get_positions()
         return jsonify(data.get("market_positions", []))
     except Exception as e:
         return jsonify({"error": str(e)}), 200
+
+
+@app.get("/api/events")
+def events():
+    def generate():
+        q = ws_worker.subscribe_events()
+        try:
+            # Send current state immediately so the client is never blank
+            init = {
+                "type": "init",
+                "data": {
+                    "positions":  ws_worker.get_positions(),
+                    "quotes":     ws_worker.get_quotes(),
+                    "connected":  ws_worker.is_connected(),
+                },
+            }
+            yield f"data: {json.dumps(init)}\n\n"
+            while True:
+                try:
+                    event = q.get(timeout=25)
+                    yield f"data: {json.dumps(event)}\n\n"
+                except Exception:
+                    yield ": heartbeat\n\n"
+        finally:
+            ws_worker.unsubscribe_events(q)
+
+    return Response(
+        stream_with_context(generate()),
+        mimetype="text/event-stream",
+        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+    )
 
 
 @app.get("/api/health")
