@@ -168,25 +168,28 @@ def _sync_order_statuses(client: KalshiClient):
     resting = db.get_resting_orders()
     if not resting:
         return
-    try:
-        filled_ids   = {o["order_id"] for o in client.get_orders(status="filled").get("orders", [])}
-        canceled_ids = {o["order_id"] for o in client.get_orders(status="canceled").get("orders", [])}
-    except KalshiError as e:
-        log.error("get_orders failed: %s", e)
-        return
 
+    # Look up each resting order individually — bulk-fetching all filled/canceled
+    # orders is unreliable due to pagination and sort order.
     for order in resting:
         oid = order.get("kalshi_order_id")
         if not oid:
             continue
-        if oid in filled_ids:
-            db.update_order(oid, status="filled",
-                            filled_at=datetime.utcnow().isoformat())
-            log.info("FILLED  %-6s %-50s  %d\u00a2",
-                     order["side"], order["market_ticker"],
-                     order["entry_price_cents"])
-        elif oid in canceled_ids:
-            db.update_order(oid, status="canceled")
+        try:
+            remote = client.get_order(oid).get("order", {})
+            remote_status = remote.get("status", "").lower()
+            if remote_status == "filled":
+                db.update_order(oid, status="filled",
+                                filled_at=datetime.utcnow().isoformat())
+                log.info("FILLED   %-6s %-50s  %d\u00a2",
+                         order["side"], order["market_ticker"],
+                         order["entry_price_cents"])
+            elif remote_status in ("canceled", "cancelled", "expired"):
+                db.update_order(oid, status="canceled")
+                log.info("CANCELED %-6s %-50s",
+                         order["side"], order["market_ticker"])
+        except KalshiError as e:
+            log.debug("sync check failed for %s: %s", oid, e)
 
 
 def _resolve_outcomes(client: KalshiClient):
