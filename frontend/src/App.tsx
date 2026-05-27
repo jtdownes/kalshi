@@ -31,6 +31,19 @@ export interface Order {
   net_profit_cents: number | null
 }
 
+export interface Trade {
+  market_ticker: string
+  order_count: number
+  placed_at: string
+  filled_at: string | null
+  entry_price_cents: number | null
+  net_profit_cents: number | null
+  status: string
+  outcome: string | null
+  peak_price_cents: number | null
+  peak_time: string | null
+}
+
 export interface Snapshot {
   id: number
   ticker: string
@@ -124,6 +137,7 @@ export function kalshiMarketUrl(ticker: string): string {
 // ── Main ─────────────────────────────────────────────────────────────────────────────────
 export default function App() {
   const [orders,      setOrders]      = useState<Order[]>([])
+  const [trades,      setTrades]      = useState<Trade[]>([])
   const [positions,   setPositions]   = useState<Position[] | { error: string }>([])
   const [snapshots,   setSnapshots]   = useState<Snapshot[]>([])
   const [quotes,      setQuotes]      = useState<Quotes>({})
@@ -139,14 +153,16 @@ export default function App() {
     setLoading(true)
     setError(null)
     try {
-      const [o, pos, snap, st, pr] = await Promise.all([
+      const [o, tr, pos, snap, st, pr] = await Promise.all([
         fetch('/api/orders?limit=200').then(r => { if (!r.ok) throw new Error('orders'); return r.json() }),
+        fetch('/api/trades?limit=200').then(r => r.json()).catch(() => []),
         fetch('/api/positions').then(r => r.json()).catch(() => []),
         fetch('/api/snapshots?limit=200').then(r => r.json()).catch(() => []),
         fetch('/api/settings').then(r => { if (!r.ok) throw new Error('settings'); return r.json() }),
         fetch('/api/profiles').then(r => { if (!r.ok) throw new Error('profiles'); return r.json() }),
       ])
       setOrders(o)
+      setTrades(tr)
       setPositions(pos)
       setSnapshots(snap)
       setSettings(st)
@@ -168,13 +184,15 @@ export default function App() {
     if (!autoRefresh) return
     const id = setInterval(async () => {
       try {
-        const [o, snap, st, pr] = await Promise.all([
+        const [o, tr, snap, st, pr] = await Promise.all([
           fetch('/api/orders?limit=200').then(r => r.json()),
+          fetch('/api/trades?limit=200').then(r => r.json()).catch(() => []),
           fetch('/api/snapshots?limit=200').then(r => r.json()),
           fetch('/api/settings').then(r => r.json()),
           fetch('/api/profiles').then(r => r.json()),
         ])
         setOrders(o)
+        setTrades(tr)
         setSnapshots(snap)
         setSettings(st)
         setProfiles(pr)
@@ -264,6 +282,7 @@ export default function App() {
           element={
             <Dashboard
               orders={orders}
+              trades={trades}
               openOrders={openOrders}
               positions={positions}
               snapshots={snapshots}

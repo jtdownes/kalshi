@@ -1,5 +1,5 @@
 import { useNavigate } from 'react-router-dom'
-import type { Order, Position, Snapshot, Settings, Profile, Quotes } from '../App'
+import type { Order, Trade, Position, Snapshot, Settings, Profile, Quotes } from '../App'
 import { centsToUSD, fmtPnL, fmtTime, fmtDur, kalshiMarketUrl } from '../App'
 
 function StatusBadge({ status, outcome }: { status: string; outcome: string | null }) {
@@ -21,6 +21,7 @@ function StatusBadge({ status, outcome }: { status: string; outcome: string | nu
 
 interface Props {
   orders: Order[]
+  trades: Trade[]
   openOrders: Order[]
   positions: Position[] | { error: string }
   snapshots: Snapshot[]
@@ -29,7 +30,7 @@ interface Props {
   profiles: Profile[]
 }
 
-export default function Dashboard({ orders, openOrders, positions, snapshots, quotes, settings, profiles }: Props) {
+export default function Dashboard({ orders, trades, openOrders, positions, snapshots, quotes, settings, profiles }: Props) {
   const navigate = useNavigate()
   const activeProfile = profiles.find(p => p.id === settings?.active_profile_id)
   const history = orders.filter(o => o.status !== 'resting')
@@ -215,6 +216,56 @@ export default function Dashboard({ orders, openOrders, positions, snapshots, qu
                   </td>
                   <td className="cell-dim">{fmtTime(o.placed_at)}</td>
                   <td className="cell-dim">{fmtTime(o.filled_at)}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      {/* Trades */}
+      <div className="table-panel" style={{ marginTop: 16, marginLeft: 18, marginRight: 18 }}>
+        <div style={{ padding: '10px', display: 'flex', alignItems: 'center', gap: 8 }}>
+          <span style={{ fontWeight: 600, fontSize: 13 }}>Trades</span>
+          <span className="tab-count">{trades.length}</span>
+        </div>
+        <div className="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>Market</th>
+                <th>Orders</th>
+                <th>Entry</th>
+                <th>Peak</th>
+                <th>Peak Time</th>
+                <th>Status</th>
+                <th>P&amp;L</th>
+                <th>Placed</th>
+                <th>Filled</th>
+              </tr>
+            </thead>
+            <tbody>
+              {trades.length === 0 ? (
+                <tr><td colSpan={9} className="cell-empty">No trades yet</td></tr>
+              ) : trades.map(t => (
+                <tr key={t.market_ticker}>
+                  <td className="cell-ticker">
+                    <a href={kalshiMarketUrl(t.market_ticker)} target="_blank" rel="noreferrer" style={{ color: 'inherit', textDecoration: 'none' }}>
+                      {t.market_ticker}
+                    </a>
+                  </td>
+                  <td className="cell-dim">{t.order_count}</td>
+                  <td className="cell-dim">{t.entry_price_cents != null ? `${t.entry_price_cents}¢` : '—'}</td>
+                  <td className={t.peak_price_cents != null && t.entry_price_cents != null && t.peak_price_cents > t.entry_price_cents ? 'cell-profit' : 'cell-dim'}>
+                    {t.peak_price_cents != null ? `${t.peak_price_cents}¢` : '—'}
+                  </td>
+                  <td className="cell-dim">{fmtTime(t.peak_time)}</td>
+                  <td><StatusBadge status={t.status} outcome={t.outcome} /></td>
+                  <td className={t.net_profit_cents != null && t.net_profit_cents > 0 ? 'cell-profit' : t.net_profit_cents != null && t.net_profit_cents < 0 ? 'cell-loss' : 'cell-dim'}>
+                    {t.net_profit_cents != null ? fmtPnL(t.net_profit_cents) : '—'}
+                  </td>
+                  <td className="cell-dim">{fmtTime(t.placed_at)}</td>
+                  <td className="cell-dim">{fmtTime(t.filled_at)}</td>
                 </tr>
               ))}
             </tbody>

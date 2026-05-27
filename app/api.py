@@ -229,6 +229,86 @@ def orders():
     return jsonify([dict(r) for r in rows])
 
 
+@app.get("/api/trades")
+def trades():
+    """
+    Orders grouped by market ticker — one row per market showing aggregate
+    lifecycle: order count, fill status, peak yes_bid after first fill, P&L.
+    """
+    limit = min(int(request.args.get("limit", 200)), 500)
+    profile_id = request.args.get("profile_id")
+
+    where_clauses = []
+    params = []
+    if profile_id:
+        where_clauses.append("o.profile_id = %s")
+        params.append(profile_id)
+
+    where_sql = ("WHERE " + " AND ".join(where_clauses)) if where_clauses else ""
+
+    # Params list is used twice: once for the inner grouped query, once for LIMIT
+    query = f"""
+        SELECT
+            g.*,
+            (
+                SELECT MAX(s.yes_bid)
+                FROM market_snapshots s
+                WHERE s.ticker = g.market_ticker
+                  AND g.filled_at IS NOT NULL
+                  AND s.scanned_at >= g.filled_at
+            ) AS peak_price_cents,
+            (
+                SELECT s.scanned_at
+                FROM market_snapshots s
+                WHERE s.ticker = g.market_ticker
+                  AND g.filled_at IS NOT NULL
+                  AND s.scanned_at >= g.filled_at
+                ORDER BY s.yes_bid DESC
+                LIMIT 1
+            ) AS peak_time
+        FROM (
+            SELECT
+                o.market_ticker,
+                COUNT(*)                                                             AS order_count,
+                MIN(o.placed_at)                                                     AS placed_at,
+                MIN(CASE WHEN o.status = 'filled' THEN o.filled_at END)              AS filled_at,
+                ROUND(AVG(CASE WHEN o.status = 'filled' THEN o.entry_price_cents END))::int
+                                                                                     AS entry_price_cents,
+                SUM(o.net_profit_cents)                                              AS net_profit_cents,
+                CASE MAX(
+                    CASE o.status
+                        WHEN 'filled'   THEN 3
+                        WHEN 'resting'  THEN 2
+                        WHEN 'pending'  THEN 2
+                        WHEN 'canceled' THEN 1
+                        ELSE 0
+                    END
+                )
+                    WHEN 3 THEN 'filled'
+                    WHEN 2 THEN 'resting'
+                    WHEN 1 THEN 'canceled'
+                    ELSE 'unknown'
+                END AS status,
+                CASE
+                    WHEN COUNT(CASE WHEN o.outcome = 'win'  THEN 1 END) > 0 THEN 'win'
+                    WHEN COUNT(CASE WHEN o.outcome = 'loss' THEN 1 END) > 0 THEN 'loss'
+                    ELSE NULL
+                END AS outcome
+            FROM orders o
+            {where_sql}
+            GROUP BY o.market_ticker
+            ORDER BY MAX(o.placed_at) DESC
+            LIMIT %s
+        ) g
+    """
+    params.append(limit)
+
+    with _conn() as c:
+        c.execute(query, params)
+        rows = c.fetchall()
+    return jsonify([dict(r) for r in rows])
+
+
 @app.get("/api/snapshots")
 def snapshots():
     limit = min(int(request.args.get("limit", 100)), 500)
