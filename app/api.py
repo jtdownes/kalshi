@@ -28,6 +28,15 @@ def _conn():
         conn.close()
 
 
+def _dollars_to_cents(v) -> int | None:
+    if v is None or v == "":
+        return None
+    try:
+        return round(float(v) * 100)
+    except (ValueError, TypeError):
+        return None
+
+
 @app.get("/api/quotes")
 def quotes():
     tickers_param = request.args.get("tickers", "")
@@ -41,10 +50,10 @@ def quotes():
                 data = client.get_market(ticker)
                 m = data.get("market", {})
                 return ticker, {
-                    "yes_ask": m.get("yes_ask"),
-                    "no_ask":  m.get("no_ask"),
-                    "yes_bid": m.get("yes_bid"),
-                    "no_bid":  m.get("no_bid"),
+                    "yes_ask": _dollars_to_cents(m.get("yes_ask_dollars")),
+                    "no_ask":  _dollars_to_cents(m.get("no_ask_dollars")),
+                    "yes_bid": _dollars_to_cents(m.get("yes_bid_dollars")),
+                    "no_bid":  _dollars_to_cents(m.get("no_bid_dollars")),
                 }
             except Exception:
                 return ticker, None
