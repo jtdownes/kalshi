@@ -134,6 +134,7 @@ tbody tr:hover { background: rgba(255,255,255,0.025); }
   overflow: hidden;
   text-overflow: ellipsis;
 }
+.cell-ticker a:hover { text-decoration: underline; }
 .cell-dim    { color: #64748b; white-space: nowrap; }
 .cell-profit { color: #00d4a0; font-weight: 600; }
 .cell-loss   { color: #ff4444; font-weight: 600; }

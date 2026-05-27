@@ -86,6 +86,14 @@ function fmtTickers(raw: string | string[] | null | undefined): string {
   return tickers.map(t => t.trim()).filter(Boolean).join(', ') || '—'
 }
 
+function kalshiMarketUrl(ticker: string): string {
+  const lower = ticker.toLowerCase()
+  const parts = lower.split('-')
+  const marketSlug = parts.slice(0, -1).join('-')
+  const series = parts[0]
+  return `https://kalshi.com/markets/${series}/${marketSlug}`
+}
+
 function profileToDraft(profile: Profile): StrategyDraft {
   return {
     name: profile.name,
@@ -445,7 +453,11 @@ export default function App() {
                 <tr><td colSpan={6} className="cell-empty">No open orders</td></tr>
               ) : openOrders.map(o => (
                 <tr key={o.id}>
-                  <td className="cell-ticker">{o.market_ticker}</td>
+                  <td className="cell-ticker">
+                    <a href={kalshiMarketUrl(o.market_ticker)} target="_blank" rel="noreferrer" style={{ color: 'inherit', textDecoration: 'none' }}>
+                      {o.market_ticker}
+                    </a>
+                  </td>
                   <td>
                     <span className={`badge ${o.side === 'yes' ? 'side-yes' : 'side-no'}`}>
                       {o.side.toUpperCase()}
