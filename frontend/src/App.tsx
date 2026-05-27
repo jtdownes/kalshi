@@ -215,6 +215,7 @@ export default function App() {
 
   const activeProfile = profiles.find(p => p.id === settings?.active_profile_id)
   const openOrders = orders.filter(o => o.status === 'resting')
+  const activePositions = orders.filter(o => o.status === 'filled' && o.outcome === null)
   const updateStrategyDraft = (patch: Partial<StrategyDraft>) => {
     setStrategyEditor(editor => editor ? { ...editor, draft: { ...editor.draft, ...patch } } : editor)
   }
@@ -428,6 +429,50 @@ export default function App() {
             </form>
           </section>
         )}
+      </div>
+
+      {/* Active Positions */}
+      <div className="table-panel" style={{ marginTop: 16, marginLeft: 18, marginRight: 18 }}>
+        <div style={{ padding: '10px', display: 'flex', alignItems: 'center', gap: 8 }}>
+          <span style={{ fontWeight: 600, fontSize: 13 }}>Active Positions</span>
+          <span className="tab-count">{activePositions.length}</span>
+        </div>
+        <div className="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>Market</th>
+                <th>Side</th>
+                <th>Entry</th>
+                <th>Filled</th>
+                <th>TTC</th>
+                <th>Payout</th>
+              </tr>
+            </thead>
+            <tbody>
+              {activePositions.length === 0 ? (
+                <tr><td colSpan={6} className="cell-empty">No active positions</td></tr>
+              ) : activePositions.map(o => (
+                <tr key={o.id}>
+                  <td className="cell-ticker">
+                    <a href={kalshiMarketUrl(o.market_ticker)} target="_blank" rel="noreferrer" style={{ color: 'inherit', textDecoration: 'none' }}>
+                      {o.market_ticker}
+                    </a>
+                  </td>
+                  <td>
+                    <span className={`badge ${o.side === 'yes' ? 'side-yes' : 'side-no'}`}>
+                      {o.side.toUpperCase()}
+                    </span>
+                  </td>
+                  <td>{o.entry_price_cents}¢</td>
+                  <td className="cell-dim">{fmtTime(o.filled_at)}</td>
+                  <td className="cell-dim">{fmtDur(o.time_to_close_at_placement)}</td>
+                  <td className="cell-dim">{o.payout_cents != null ? `${o.payout_cents}¢` : '—'}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
       </div>
 
       {/* Open Orders */}
