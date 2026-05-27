@@ -151,7 +151,7 @@ function StatusBadge({ status, outcome }: { status: string; outcome: string | nu
 // ── Main ─────────────────────────────────────────────────────────────────────────────────
 export default function App() {
   const [orders,    setOrders]    = useState<Order[]>([])
-  const [positions, setPositions] = useState<Position[]>([])
+  const [positions, setPositions] = useState<Position[] | { error: string }>([])
   const [settings,  setSettings]  = useState<Settings | null>(null)
   const [profiles,  setProfiles]  = useState<Profile[]>([])
   const [autoRefresh, setAutoRefresh] = useState(true)
@@ -168,12 +168,12 @@ export default function App() {
     try {
       const [o, pos, st, pr] = await Promise.all([
         fetch('/api/orders?limit=200').then(r => { if (!r.ok) throw new Error('orders'); return r.json() }),
-        fetch('/api/positions').then(r => r.ok ? r.json() : []).catch(() => []),
+        fetch('/api/positions').then(r => r.json()).catch(() => []),
         fetch('/api/settings').then(r => { if (!r.ok) throw new Error('settings'); return r.json() }),
         fetch('/api/profiles').then(r => { if (!r.ok) throw new Error('profiles'); return r.json() }),
       ])
       setOrders(o)
-      setPositions(Array.isArray(pos) ? pos : [])
+      setPositions(pos)
       setSettings(st)
       setProfiles(pr)
       setLastRefresh(new Date())
@@ -447,7 +447,7 @@ export default function App() {
       <div className="table-panel" style={{ marginTop: 16, marginLeft: 18, marginRight: 18 }}>
         <div style={{ padding: '10px', display: 'flex', alignItems: 'center', gap: 8 }}>
           <span style={{ fontWeight: 600, fontSize: 13 }}>Active Positions</span>
-          <span className="tab-count">{positions.length}</span>
+          <span className="tab-count">{Array.isArray(positions) ? positions.length : 0}</span>
         </div>
         <div className="table-wrap">
           <table>
@@ -461,9 +461,11 @@ export default function App() {
               </tr>
             </thead>
             <tbody>
-              {positions.length === 0 ? (
+              {!Array.isArray(positions) ? (
+                <tr><td colSpan={5} className="cell-empty" style={{ color: '#ff4444' }}>Error: {(positions as any).error}</td></tr>
+              ) : positions.length === 0 ? (
                 <tr><td colSpan={5} className="cell-empty">No active positions</td></tr>
-              ) : positions.map(p => {
+              ) : (positions as Position[]).map(p => {
                 const contracts = parseFloat(p.position_fp)
                 const side = contracts >= 0 ? 'yes' : 'no'
                 const pnl = parseFloat(p.realized_pnl_dollars)

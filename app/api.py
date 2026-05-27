@@ -34,7 +34,7 @@ def positions():
         data = client.get_positions()
         return jsonify(data.get("market_positions", []))
     except Exception as e:
-        return jsonify({"error": str(e)}), 500
+        return jsonify({"error": str(e)}), 200
 
 
 @app.get("/api/health")
