@@ -121,7 +121,10 @@ class KalshiClient:
         return self._get("/portfolio/fills", params=params)
 
     def get_positions(self, limit: int = 100) -> dict:
-        return self._get("/portfolio/positions", params={"limit": limit})
+        return self._get("/portfolio/positions", params={
+            "limit": limit,
+            "count_filter": "position,total_traded",
+        })
 
     def ws_auth_headers(self) -> dict:
         """Generate authentication headers for the WebSocket handshake.

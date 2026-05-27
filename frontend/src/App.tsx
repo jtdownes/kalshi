@@ -3,11 +3,12 @@ import { useState, useEffect, useCallback } from 'react'
 // ── Types ────────────────────────────────────────────────────────────────────────────────
 interface Position {
   ticker: string
-  position: number
-  total_traded: number
-  resting_orders_cost: number
-  realized_pnl: number
-  fees_paid: number
+  position_fp: string
+  total_traded_dollars: string
+  market_exposure_dollars: string
+  realized_pnl_dollars: string
+  fees_paid_dollars: string
+  last_updated_ts: string
 }
 
 interface Order {
@@ -463,8 +464,9 @@ export default function App() {
               {positions.length === 0 ? (
                 <tr><td colSpan={5} className="cell-empty">No active positions</td></tr>
               ) : positions.map(p => {
-                const side = p.position >= 0 ? 'yes' : 'no'
-                const contracts = Math.abs(p.position)
+                const contracts = parseFloat(p.position_fp)
+                const side = contracts >= 0 ? 'yes' : 'no'
+                const pnl = parseFloat(p.realized_pnl_dollars)
                 return (
                   <tr key={p.ticker}>
                     <td className="cell-ticker">
@@ -477,10 +479,10 @@ export default function App() {
                         {side.toUpperCase()}
                       </span>
                     </td>
-                    <td>{contracts}</td>
-                    <td className="cell-dim">{p.total_traded != null ? `${p.total_traded}¢` : '—'}</td>
-                    <td className={p.realized_pnl > 0 ? 'cell-profit' : p.realized_pnl < 0 ? 'cell-loss' : 'cell-dim'}>
-                      {fmtPnL(p.realized_pnl)}
+                    <td>{Math.abs(contracts)}</td>
+                    <td className="cell-dim">${p.total_traded_dollars}</td>
+                    <td className={pnl > 0 ? 'cell-profit' : pnl < 0 ? 'cell-loss' : 'cell-dim'}>
+                      {pnl > 0 ? '+' : ''}${p.realized_pnl_dollars}
                     </td>
                   </tr>
                 )
