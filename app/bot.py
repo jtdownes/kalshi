@@ -14,8 +14,6 @@ import threading
 import uuid
 from datetime import datetime, timezone
 
-import requests
-
 import config
 import database as db
 from kalshi_client import KalshiClient, KalshiError
@@ -29,26 +27,14 @@ logging.basicConfig(
 log = logging.getLogger("bot")
 
 
-def get_btc_price() -> float | None:
-    """Fetch BTC/USDT spot from Binance public API (no auth required)."""
-    try:
-        r = requests.get(
-            "https://api.binance.com/api/v3/ticker/price",
-            params={"symbol": "BTCUSDT"},
-            timeout=5,
-        )
-        r.raise_for_status()
-        return float(r.json()["price"])
-    except Exception as e:
-        log.warning("BTC price fetch failed: %s", e)
+def dollars_to_cents(v) -> int | None:
+    """Kalshi returns prices as strings like '0.3000' (USD). Convert to int cents."""
+    if v is None or v == "":
         return None
-
-
-def parse_strike(ticker: str) -> float | None:
-    for part in ticker.split("-"):
-        if part.startswith("T") and part[1:].isdigit():
-            return float(part[1:])
-    return None
+    try:
+        return round(float(v) * 100)
+    except (TypeError, ValueError):
+        return None
 
 
 def close_ts_to_int(raw) -> int | None:
@@ -81,10 +67,6 @@ def scan_loop(client: KalshiClient):
 
 
 def _scan(client: KalshiClient):
-    btc_price = get_btc_price()
-    if btc_price:
-        db.log_btc_price(btc_price)
-
     now_ts    = int(time.time())
     max_close = now_ts + config.LOOK_AHEAD_SECONDS
     series_list = config.BTC_SERIES_TICKERS if config.BTC_SERIES_TICKERS else [None]
@@ -114,20 +96,40 @@ def _scan(client: KalshiClient):
             if time_to_close < config.MIN_SECONDS_TO_CLOSE:
                 continue
 
-            strike   = parse_strike(ticker)
-            distance = abs(btc_price - strike) if btc_price and strike else None
+            yes_ask = dollars_to_cents(market.get("yes_ask_dollars"))
+            yes_bid = dollars_to_cents(market.get("yes_bid_dollars"))
+            no_ask  = dollars_to_cents(market.get("no_ask_dollars"))
+            no_bid  = dollars_to_cents(market.get("no_bid_dollars"))
+
+            try:
+                volume = int(float(market.get("volume_fp") or 0))
+            except (TypeError, ValueError):
+                volume = None
+            try:
+                oi = int(float(market.get("open_interest_fp") or 0))
+            except (TypeError, ValueError):
+                oi = None
+
+            # Floor strike = the BTC price the up/down market opened against
+            strike = market.get("floor_strike")
 
             db.save_market_snapshot(
                 ticker=ticker, title=market.get("title", ""),
                 close_time=str(close_ts),
-                yes_ask=market.get("yes_ask"), yes_bid=market.get("yes_bid"),
-                no_ask=market.get("no_ask"),   no_bid=market.get("no_bid"),
-                btc_price=btc_price, time_to_close_secs=time_to_close,
-                strike_str=str(strike) if strike else None,
-                volume=market.get("volume"), open_interest=market.get("open_interest"),
+                yes_ask=yes_ask, yes_bid=yes_bid,
+                no_ask=no_ask,   no_bid=no_bid,
+                btc_price=None, time_to_close_secs=time_to_close,
+                strike_str=str(strike) if strike is not None else None,
+                volume=volume, open_interest=oi,
             )
 
-            for side, price_cents in evaluate_market(market, btc_price):
+            # Inject normalised prices for strategy logic
+            market["yes_ask"] = yes_ask
+            market["yes_bid"] = yes_bid
+            market["no_ask"]  = no_ask
+            market["no_bid"]  = no_bid
+
+            for side, price_cents in evaluate_market(market, None):
                 ok, reason = can_place_order(price_cents)
                 if not ok:
                     log.warning("Order skipped (%s): %s %s", reason, side, ticker)
@@ -136,14 +138,14 @@ def _scan(client: KalshiClient):
                 try:
                     resp = client.place_order(ticker, side, price_cents, client_oid)
                     kalshi_oid = resp.get("order", {}).get("order_id")
-                    log.info("ORDER PLACED  %-6s %-50s  %d\u00a2  ttc=%ds  dist=$%.0f  id=%s",
+                    log.info("ORDER PLACED  %-6s %-50s  %d\u00a2  ttc=%ds  yes_ask=%s\u00a2  no_ask=%s\u00a2  id=%s",
                              side, ticker, price_cents, time_to_close,
-                             distance or 0, kalshi_oid)
+                             yes_ask, no_ask, kalshi_oid)
                     db.save_order(
                         client_order_id=client_oid, market_ticker=ticker,
                         side=side, entry_price_cents=price_cents,
-                        kalshi_order_id=kalshi_oid, btc_price=btc_price,
-                        distance_to_strike=distance, market_close_time=str(close_ts),
+                        kalshi_order_id=kalshi_oid, btc_price=None,
+                        distance_to_strike=None, market_close_time=str(close_ts),
                         time_to_close_seconds=time_to_close,
                     )
                 except KalshiError as e:
@@ -172,20 +174,17 @@ def _sync_order_statuses(client: KalshiClient):
     except KalshiError as e:
         log.error("get_orders failed: %s", e)
         return
-    btc_now = None
+
     for order in resting:
         oid = order.get("kalshi_order_id")
         if not oid:
             continue
         if oid in filled_ids:
-            if btc_now is None:
-                btc_now = get_btc_price()
             db.update_order(oid, status="filled",
-                            filled_at=datetime.utcnow().isoformat(),
-                            btc_price_at_fill=btc_now)
-            log.info("FILLED  %-6s %-50s  %d\u00a2  btc=$%.2f",
+                            filled_at=datetime.utcnow().isoformat())
+            log.info("FILLED  %-6s %-50s  %d\u00a2",
                      order["side"], order["market_ticker"],
-                     order["entry_price_cents"], btc_now or 0)
+                     order["entry_price_cents"])
         elif oid in canceled_ids:
             db.update_order(oid, status="canceled")
 
