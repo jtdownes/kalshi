@@ -3,6 +3,7 @@ Kalshi Dashboard API — reads SQLite, serves JSON for the React frontend.
 Runs as a separate service sharing the same /data volume as the bot.
 """
 
+from contextlib import closing
 from flask import Flask, jsonify, request
 import sqlite3
 from datetime import date
@@ -12,11 +13,10 @@ import config
 app = Flask(__name__)
 
 
-def _conn() -> sqlite3.Connection:
+def _conn():
     conn = sqlite3.connect(config.DB_PATH, check_same_thread=False)
     conn.row_factory = sqlite3.Row
-    conn.execute("PRAGMA journal_mode=WAL")
-    return conn
+    return closing(conn)
 
 
 @app.get("/api/health")

@@ -37,6 +37,15 @@ def dollars_to_cents(v) -> int | None:
         return None
 
 
+def fp_to_float(v) -> float:
+    if v is None or v == "":
+        return 0.0
+    try:
+        return float(v)
+    except (TypeError, ValueError):
+        return 0.0
+
+
 def close_ts_to_int(raw) -> int | None:
     if raw is None:
         return None
@@ -169,6 +178,15 @@ def _sync_order_statuses(client: KalshiClient):
     if not resting:
         return
 
+    try:
+        filled_ids = {
+            f.get("order_id") for f in client.get_fills(limit=200).get("fills", [])
+            if f.get("order_id")
+        }
+    except KalshiError as e:
+        log.warning("get_fills failed; falling back to order status only: %s", e)
+        filled_ids = set()
+
     # Look up each resting order individually — bulk-fetching all filled/canceled
     # orders is unreliable due to pagination and sort order.
     # Kalshi uses status="executed" for filled orders (not "filled").
@@ -179,7 +197,8 @@ def _sync_order_statuses(client: KalshiClient):
         try:
             remote = client.get_order(oid).get("order", {})
             remote_status = remote.get("status", "").lower()
-            if remote_status == "executed":
+            fill_count = fp_to_float(remote.get("fill_count_fp"))
+            if oid in filled_ids or fill_count > 0 or remote_status in ("executed", "filled"):
                 db.update_order(oid, status="filled",
                                 filled_at=datetime.utcnow().isoformat())
                 log.info("FILLED   %-6s %-50s  %d\u00a2",
