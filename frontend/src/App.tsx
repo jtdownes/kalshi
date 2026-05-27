@@ -569,6 +569,61 @@ export default function App() {
           </table>
         </div>
       </div>
+
+      {/* Order History */}
+      {(() => {
+        const history = orders.filter(o => o.status !== 'resting')
+        return (
+          <div className="table-panel" style={{ marginTop: 16, marginLeft: 18, marginRight: 18, marginBottom: 32 }}>
+            <div style={{ padding: '10px', display: 'flex', alignItems: 'center', gap: 8 }}>
+              <span style={{ fontWeight: 600, fontSize: 13 }}>Order History</span>
+              <span className="tab-count">{history.length}</span>
+            </div>
+            <div className="table-wrap">
+              <table>
+                <thead>
+                  <tr>
+                    <th>Market</th>
+                    <th>Side</th>
+                    <th>Entry</th>
+                    <th>Qty</th>
+                    <th>Result</th>
+                    <th>P&L</th>
+                    <th>Placed</th>
+                    <th>Filled</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {history.length === 0 ? (
+                    <tr><td colSpan={8} className="cell-empty">No order history</td></tr>
+                  ) : history.map(o => (
+                    <tr key={o.id}>
+                      <td className="cell-ticker">
+                        <a href={kalshiMarketUrl(o.market_ticker)} target="_blank" rel="noreferrer" style={{ color: 'inherit', textDecoration: 'none' }}>
+                          {o.market_ticker}
+                        </a>
+                      </td>
+                      <td>
+                        <span className={`badge ${o.side === 'yes' ? 'side-yes' : 'side-no'}`}>
+                          {o.side.toUpperCase()}
+                        </span>
+                      </td>
+                      <td>{o.entry_price_cents}¢</td>
+                      <td>{o.count}</td>
+                      <td><StatusBadge status={o.status} outcome={o.outcome} /></td>
+                      <td className={o.net_profit_cents != null && o.net_profit_cents > 0 ? 'cell-profit' : o.net_profit_cents != null && o.net_profit_cents < 0 ? 'cell-loss' : 'cell-dim'}>
+                        {o.net_profit_cents != null ? fmtPnL(o.net_profit_cents) : '—'}
+                      </td>
+                      <td className="cell-dim">{fmtTime(o.placed_at)}</td>
+                      <td className="cell-dim">{fmtTime(o.filled_at)}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        )
+      })()}
     </div>
   )
 }
