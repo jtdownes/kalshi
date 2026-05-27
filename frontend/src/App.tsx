@@ -167,7 +167,7 @@ export default function App() {
     try {
       const [o, pos, st, pr] = await Promise.all([
         fetch('/api/orders?limit=200').then(r => { if (!r.ok) throw new Error('orders'); return r.json() }),
-        fetch('/api/positions').then(r => { if (!r.ok) throw new Error('positions'); return r.json() }),
+        fetch('/api/positions').then(r => r.ok ? r.json() : []).catch(() => []),
         fetch('/api/settings').then(r => { if (!r.ok) throw new Error('settings'); return r.json() }),
         fetch('/api/profiles').then(r => { if (!r.ok) throw new Error('profiles'); return r.json() }),
       ])
