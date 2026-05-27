@@ -3,6 +3,7 @@ Kalshi Dashboard API — reads from Postgres, serves JSON for the React frontend
 """
 
 from contextlib import contextmanager
+from concurrent.futures import ThreadPoolExecutor
 from flask import Flask, jsonify, request
 import psycopg2
 import psycopg2.extras
@@ -25,6 +26,33 @@ def _conn():
             yield cur
     finally:
         conn.close()
+
+
+@app.get("/api/quotes")
+def quotes():
+    tickers_param = request.args.get("tickers", "")
+    if not tickers_param:
+        return jsonify({})
+    ticker_list = [t.strip() for t in tickers_param.split(",") if t.strip()][:20]
+    try:
+        client = KalshiClient()
+        def fetch_one(ticker):
+            try:
+                data = client.get_market(ticker)
+                m = data.get("market", {})
+                return ticker, {
+                    "yes_ask": m.get("yes_ask"),
+                    "no_ask":  m.get("no_ask"),
+                    "yes_bid": m.get("yes_bid"),
+                    "no_bid":  m.get("no_bid"),
+                }
+            except Exception:
+                return ticker, None
+        with ThreadPoolExecutor(max_workers=10) as pool:
+            results = dict(pool.map(lambda t: fetch_one(t), ticker_list))
+        return jsonify({k: v for k, v in results.items() if v is not None})
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
 
 
 @app.get("/api/positions")

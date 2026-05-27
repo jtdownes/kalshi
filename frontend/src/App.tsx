@@ -152,6 +152,7 @@ function StatusBadge({ status, outcome }: { status: string; outcome: string | nu
 export default function App() {
   const [orders,    setOrders]    = useState<Order[]>([])
   const [positions, setPositions] = useState<Position[] | { error: string }>([])
+  const [quotes,    setQuotes]    = useState<Record<string, { yes_ask: number|null, no_ask: number|null, yes_bid: number|null, no_bid: number|null }>>({})
   const [settings,  setSettings]  = useState<Settings | null>(null)
   const [profiles,  setProfiles]  = useState<Profile[]>([])
   const [autoRefresh, setAutoRefresh] = useState(true)
@@ -186,11 +187,29 @@ export default function App() {
 
   useEffect(() => { refresh() }, [refresh])
 
+  const openOrders = orders.filter(o => o.status === 'resting')
+
   useEffect(() => {
     if (!autoRefresh) return
     const id = setInterval(refresh, 5_000)
     return () => clearInterval(id)
   }, [autoRefresh, refresh])
+
+  useEffect(() => {
+    const fetchQuotes = async () => {
+      const posTickers = Array.isArray(positions) ? positions.map(p => p.ticker) : []
+      const orderTickers = openOrders.map(o => o.market_ticker)
+      const tickers = [...new Set([...posTickers, ...orderTickers])]
+      if (tickers.length === 0) return
+      try {
+        const data = await fetch(`/api/quotes?tickers=${tickers.join(',')}`).then(r => r.json())
+        if (!data.error) setQuotes(data)
+      } catch { /* silent */ }
+    }
+    fetchQuotes()
+    const id = setInterval(fetchQuotes, 2_000)
+    return () => clearInterval(id)
+  }, [positions, openOrders])
 
   const saveStrategy = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -227,7 +246,6 @@ export default function App() {
   }
 
   const activeProfile = profiles.find(p => p.id === settings?.active_profile_id)
-  const openOrders = orders.filter(o => o.status === 'resting')
   const updateStrategyDraft = (patch: Partial<StrategyDraft>) => {
     setStrategyEditor(editor => editor ? { ...editor, draft: { ...editor.draft, ...patch } } : editor)
   }
@@ -457,18 +475,21 @@ export default function App() {
                 <th>Side</th>
                 <th>Contracts</th>
                 <th>Cost</th>
+                <th>Ask</th>
                 <th>Realized P&L</th>
               </tr>
             </thead>
             <tbody>
               {!Array.isArray(positions) ? (
-                <tr><td colSpan={5} className="cell-empty" style={{ color: '#ff4444' }}>Error: {(positions as any).error}</td></tr>
+                <tr><td colSpan={6} className="cell-empty" style={{ color: '#ff4444' }}>Error: {(positions as any).error}</td></tr>
               ) : positions.length === 0 ? (
-                <tr><td colSpan={5} className="cell-empty">No active positions</td></tr>
+                <tr><td colSpan={6} className="cell-empty">No active positions</td></tr>
               ) : (positions as Position[]).map(p => {
                 const contracts = parseFloat(p.position_fp)
                 const side = contracts >= 0 ? 'yes' : 'no'
                 const pnl = parseFloat(p.realized_pnl_dollars)
+                const q = quotes[p.ticker]
+                const ask = q ? (side === 'yes' ? q.yes_ask : q.no_ask) : null
                 return (
                   <tr key={p.ticker}>
                     <td className="cell-ticker">
@@ -483,6 +504,7 @@ export default function App() {
                     </td>
                     <td>{Math.abs(contracts)}</td>
                     <td className="cell-dim">${p.total_traded_dollars}</td>
+                    <td className="cell-dim">{ask != null ? `${ask}¢` : '—'}</td>
                     <td className={pnl > 0 ? 'cell-profit' : pnl < 0 ? 'cell-loss' : 'cell-dim'}>
                       {pnl > 0 ? '+' : ''}${p.realized_pnl_dollars}
                     </td>
@@ -507,6 +529,7 @@ export default function App() {
                 <th>Market</th>
                 <th>Side</th>
                 <th>Entry</th>
+                <th>Ask</th>
                 <th>Status</th>
                 <th>Placed</th>
                 <th>TTC</th>
@@ -514,8 +537,11 @@ export default function App() {
             </thead>
             <tbody>
               {openOrders.length === 0 ? (
-                <tr><td colSpan={6} className="cell-empty">No open orders</td></tr>
-              ) : openOrders.map(o => (
+                <tr><td colSpan={7} className="cell-empty">No open orders</td></tr>
+              ) : openOrders.map(o => {
+                const q = quotes[o.market_ticker]
+                const ask = q ? (o.side === 'yes' ? q.yes_ask : q.no_ask) : null
+                return (
                 <tr key={o.id}>
                   <td className="cell-ticker">
                     <a href={kalshiMarketUrl(o.market_ticker)} target="_blank" rel="noreferrer" style={{ color: 'inherit', textDecoration: 'none' }}>
@@ -528,11 +554,13 @@ export default function App() {
                     </span>
                   </td>
                   <td>{o.entry_price_cents}¢</td>
+                  <td className="cell-dim">{ask != null ? `${ask}¢` : '—'}</td>
                   <td><StatusBadge status={o.status} outcome={o.outcome} /></td>
                   <td className="cell-dim">{fmtTime(o.placed_at)}</td>
                   <td className="cell-dim">{fmtDur(o.time_to_close_at_placement)}</td>
                 </tr>
-              ))}
+                )
+              })}
             </tbody>
           </table>
         </div>
