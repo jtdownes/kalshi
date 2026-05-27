@@ -8,6 +8,8 @@ Two threads run concurrently:
               resolve outcomes after market settlement.
 """
 
+import asyncio
+import json
 import logging
 import time
 import threading
@@ -245,8 +247,79 @@ def _resolve_outcomes(client: KalshiClient):
             log.debug("outcome check failed for %s: %s", ticker, e)
 
 
+async def _ws_fills_async(client: KalshiClient):
+    """Connect to the Kalshi WebSocket fill channel and update order status in real-time."""
+    import websockets
+
+    RECONNECT_DELAYS = [5, 10, 30, 60, 120]
+    attempt = 0
+
+    while True:
+        delay = RECONNECT_DELAYS[min(attempt, len(RECONNECT_DELAYS) - 1)]
+        try:
+            headers = client.ws_auth_headers()
+            async with websockets.connect(
+                config.KALSHI_WS_URL,
+                additional_headers=headers,
+                ping_interval=20,
+                ping_timeout=30,
+            ) as ws:
+                log.info("WS connected  channel=fill")
+                attempt = 0  # reset on successful connect
+
+                await ws.send(json.dumps({
+                    "id": 1,
+                    "cmd": "subscribe",
+                    "params": {"channels": ["fill", "user_orders"]},
+                }))
+
+                _user_orders_logged = 0  # log first few raw to learn the schema
+
+                async for raw in ws:
+                    try:
+                        msg = json.loads(raw)
+                    except json.JSONDecodeError:
+                        continue
+
+                    msg_type = msg.get("type")
+                    data = msg.get("msg", {})
+
+                    if msg_type == "fill":
+                        order_id = data.get("order_id")
+                        if order_id:
+                            db.update_order(order_id, status="filled",
+                                            filled_at=datetime.utcnow().isoformat())
+                            log.info("WS FILL  order_id=%s  ticker=%s  side=%s",
+                                     order_id,
+                                     data.get("ticker") or data.get("market_ticker", "?"),
+                                     data.get("side", "?"))
+                    elif msg_type == "user_orders":
+                        if _user_orders_logged < 5:
+                            log.info("WS user_orders raw: %s", raw[:500])
+                            _user_orders_logged += 1
+                        order_id = data.get("order_id")
+                        status = (data.get("status") or "").lower()
+                        if order_id and status in ("canceled", "cancelled", "expired"):
+                            db.update_order(order_id, status="canceled")
+                            log.info("WS CANCEL order_id=%s  ticker=%s",
+                                     order_id,
+                                     data.get("ticker") or data.get("market_ticker", "?"))
+                    elif msg_type == "error":
+                        log.warning("WS error from server: %s", msg)
+
+        except Exception as e:
+            attempt += 1
+            log.warning("WS disconnected (%s), reconnecting in %ds (attempt %d)",
+                        e, delay, attempt)
+            await asyncio.sleep(delay)
+
+
+def ws_fills_thread(client: KalshiClient):
+    """Run the async WebSocket fill listener in its own event loop (daemonised thread)."""
+    asyncio.run(_ws_fills_async(client))
+
+
 def main():
-    log.info("=" * 60)
     log.info("Kalshi Longshot Bot")
     log.info("API base       : %s", config.KALSHI_API_BASE)
     log.info("Proactive mode : %s", config.PROACTIVE_MODE)
@@ -270,8 +343,10 @@ def main():
 
     scanner = threading.Thread(target=scan_loop, args=(client,), daemon=True, name="scanner")
     monitor = threading.Thread(target=order_monitor_loop, args=(client,), daemon=True, name="monitor")
+    ws_fills = threading.Thread(target=ws_fills_thread, args=(client,), daemon=True, name="ws-fills")
     scanner.start()
     monitor.start()
+    ws_fills.start()
 
     try:
         while True:

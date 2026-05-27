@@ -119,3 +119,23 @@ class KalshiClient:
         if ticker:
             params["ticker"] = ticker
         return self._get("/portfolio/fills", params=params)
+
+    def ws_auth_headers(self) -> dict:
+        """Generate authentication headers for the WebSocket handshake.
+        Signs: timestamp + 'GET' + '/trade-api/ws/v2'  (no /v2 prefix on path)
+        """
+        ts = str(int(time.time() * 1000))
+        msg = f"{ts}GET/trade-api/ws/v2".encode()
+        sig = self._private_key.sign(
+            msg,
+            padding.PSS(
+                mgf=padding.MGF1(hashes.SHA256()),
+                salt_length=padding.PSS.DIGEST_LENGTH,
+            ),
+            hashes.SHA256(),
+        )
+        return {
+            "KALSHI-ACCESS-KEY":       self._key_id,
+            "KALSHI-ACCESS-TIMESTAMP": ts,
+            "KALSHI-ACCESS-SIGNATURE": base64.b64encode(sig).decode(),
+        }
