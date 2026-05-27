@@ -232,6 +232,46 @@ def create_profile(settings_dict, name=None):
         conn.commit()
     return profile_id
 
+def update_profile(profile_id: int, settings_dict: dict):
+    allowed_keys = [
+        'name', 'min_entry_cents', 'max_entry_cents', 'proactive_mode',
+        'max_open_orders', 'max_daily_spend_cents', 'scan_interval_seconds',
+        'btc_series_tickers'
+    ]
+    to_update = {k: v for k, v in settings_dict.items() if k in allowed_keys}
+    if not to_update:
+        return
+
+    if 'btc_series_tickers' in to_update and isinstance(to_update['btc_series_tickers'], list):
+        to_update['btc_series_tickers'] = ",".join(to_update['btc_series_tickers'])
+
+    with _lock, _conn() as conn:
+        cur = conn.cursor()
+        cur.execute("SELECT id FROM profiles WHERE id = %s", (profile_id,))
+        if not cur.fetchone():
+            raise ValueError(f"Profile {profile_id} not found")
+
+        sets = ", ".join(f"{k} = %s" for k in to_update)
+        vals = list(to_update.values()) + [profile_id]
+        cur.execute(f"UPDATE profiles SET {sets} WHERE id = %s", vals)
+
+        cur.execute("SELECT active_profile_id FROM settings WHERE id = 1")
+        row = cur.fetchone()
+        if row and row[0] == profile_id:
+            cur.execute("""
+                UPDATE settings SET
+                    min_entry_cents       = p.min_entry_cents,
+                    max_entry_cents       = p.max_entry_cents,
+                    proactive_mode        = p.proactive_mode,
+                    max_open_orders       = p.max_open_orders,
+                    max_daily_spend_cents = p.max_daily_spend_cents,
+                    scan_interval_seconds = p.scan_interval_seconds,
+                    btc_series_tickers    = p.btc_series_tickers
+                FROM profiles p
+                WHERE settings.id = 1 AND p.id = %s
+            """, (profile_id,))
+        conn.commit()
+
 def save_order(client_order_id: str, market_ticker: str, side: str,
                entry_price_cents: int, kalshi_order_id: str = None,
                btc_price: float = None, distance_to_strike: float = None,

@@ -156,6 +156,28 @@ def get_profiles():
     return jsonify([dict(r) for r in rows])
 
 
+@app.post("/api/profiles")
+def create_profile():
+    data = request.json
+    if not data:
+        return jsonify({"error": "No data provided"}), 400
+    profile_id = database.create_profile(data, name=data.get("name"))
+    database.activate_profile(profile_id)
+    return jsonify({"status": "success", "profile_id": profile_id, "active_profile_id": profile_id})
+
+
+@app.put("/api/profiles/<int:profile_id>")
+def update_profile(profile_id: int):
+    data = request.json
+    if not data:
+        return jsonify({"error": "No data provided"}), 400
+    try:
+        database.update_profile(profile_id, data)
+    except ValueError as e:
+        return jsonify({"error": str(e)}), 404
+    return jsonify({"status": "success", "profile_id": profile_id})
+
+
 @app.get("/api/settings")
 def get_settings():
     return jsonify(database.get_settings())

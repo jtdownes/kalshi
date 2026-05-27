@@ -144,3 +144,281 @@ tbody tr:hover { background: rgba(255,255,255,0.025); }
 }
 .side-yes { color: #00d4a0; background: rgba(0,212,160,0.12); }
 .side-no  { color: #f87171; background: rgba(248,113,113,0.12); }
+
+/* ── Strategies ──────────────────────────────────────────────────────── */
+.strategies-view {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+  padding: 18px;
+}
+
+.strategy-active-panel {
+  display: grid;
+  grid-template-columns: minmax(260px, 1.2fr) minmax(360px, 1fr);
+  gap: 20px;
+  padding: 22px;
+  border: 1px solid rgba(0,212,160,0.18);
+  border-radius: 10px;
+  background:
+    linear-gradient(135deg, rgba(0,212,160,0.12), transparent 44%),
+    #11111a;
+}
+
+.strategy-active-main h2,
+.strategy-section-head h3 {
+  font-size: 22px;
+  line-height: 1.1;
+  margin-bottom: 8px;
+}
+
+.strategy-active-main p,
+.strategy-section-head p {
+  max-width: 620px;
+  color: #94a3b8;
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.strategy-primary-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-top: 18px;
+}
+
+.strategy-primary-actions .btn {
+  padding: 9px 14px;
+}
+
+.strategy-metrics,
+.strategy-card-stats {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.strategy-metrics div,
+.strategy-card-stats div {
+  min-width: 0;
+  padding: 12px;
+  border: 1px solid #242435;
+  border-radius: 8px;
+  background: rgba(13,13,20,0.62);
+}
+
+.strategy-metrics span,
+.strategy-card-stats span {
+  display: block;
+  margin-bottom: 5px;
+  color: #64748b;
+  font-size: 10px;
+  letter-spacing: 0.55px;
+  text-transform: uppercase;
+}
+
+.strategy-metrics strong,
+.strategy-card-stats strong {
+  font-size: 16px;
+  font-variant-numeric: tabular-nums;
+}
+
+.strategies-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(270px, 1fr));
+  gap: 12px;
+}
+
+.strategy-card,
+.strategy-config-panel {
+  border: 1px solid #242435;
+  border-radius: 10px;
+  background: #11111a;
+}
+
+.strategy-card {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  padding: 16px;
+}
+
+.strategy-card.is-active {
+  border-color: rgba(0,212,160,0.45);
+  box-shadow: inset 0 0 0 1px rgba(0,212,160,0.08);
+}
+
+.strategy-card-head,
+.strategy-section-head,
+.strategy-form-actions {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.strategy-name {
+  color: #e2e8f0;
+  font-size: 15px;
+  font-weight: 700;
+}
+
+.strategy-created,
+.strategy-tickers,
+.strategy-form-actions span {
+  color: #64748b;
+  font-size: 12px;
+}
+
+.strategy-tickers {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.badge-live {
+  color: #00d4a0;
+  background: rgba(0,212,160,0.14);
+}
+
+.strategy-card-actions,
+.strategy-form-buttons {
+  display: flex;
+  gap: 8px;
+}
+
+.strategy-card-actions .btn {
+  flex: 1;
+  justify-content: center;
+  padding: 9px 12px;
+}
+
+.strategy-activate.is-current {
+  cursor: default;
+  color: #94a3b8;
+}
+
+.strategy-empty {
+  padding: 34px;
+  border: 1px dashed #2d2d3e;
+  border-radius: 10px;
+  color: #64748b;
+  text-align: center;
+}
+
+.strategy-config-panel {
+  padding: 22px;
+}
+
+.strategy-section-head {
+  align-items: flex-start;
+  margin-bottom: 18px;
+}
+
+.strategy-form {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 14px;
+}
+
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.field-wide { grid-column: span 2; }
+
+.field span {
+  color: #64748b;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.6px;
+  text-transform: uppercase;
+}
+
+.field input {
+  width: 100%;
+  min-height: 38px;
+  border: 1px solid #2d2d3e;
+  border-radius: 7px;
+  background: rgba(255,255,255,0.04);
+  color: #e2e8f0;
+  padding: 8px 10px;
+  font: inherit;
+}
+
+.field input:focus {
+  border-color: #00d4a0;
+  outline: none;
+}
+
+.strategy-toggle {
+  flex-direction: row;
+  align-items: center;
+  padding: 12px;
+  border: 1px solid #242435;
+  border-radius: 8px;
+  background: rgba(255,255,255,0.025);
+}
+
+.strategy-toggle input {
+  width: 20px;
+  height: 20px;
+  min-height: 20px;
+  cursor: pointer;
+}
+
+.strategy-toggle span {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  text-transform: none;
+  letter-spacing: 0;
+}
+
+.strategy-toggle strong {
+  color: #e2e8f0;
+  font-size: 13px;
+}
+
+.strategy-toggle small {
+  color: #64748b;
+  font-size: 12px;
+}
+
+.strategy-form-actions {
+  align-items: center;
+  padding-top: 14px;
+  border-top: 1px solid #242435;
+}
+
+.strategy-form-actions .btn {
+  padding: 10px 18px;
+}
+
+.strategy-form-buttons {
+  flex-shrink: 0;
+}
+
+@media (max-width: 900px) {
+  .strategy-active-panel,
+  .strategy-form {
+    grid-template-columns: 1fr;
+  }
+
+  .field-wide { grid-column: span 1; }
+
+  .strategy-section-head,
+  .strategy-form-actions {
+    flex-direction: column;
+  }
+
+  .strategy-form-buttons {
+    width: 100%;
+  }
+
+  .strategy-form-buttons .btn {
+    flex: 1;
+  }
+}

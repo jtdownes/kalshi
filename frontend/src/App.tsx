@@ -72,6 +72,17 @@ interface Profile {
   btc_series_tickers: string
 }
 
+interface StrategyDraft {
+  name: string
+  min_entry_cents: number
+  max_entry_cents: number
+  proactive_mode: boolean
+  max_open_orders: number
+  max_daily_spend_cents: number
+  scan_interval_seconds: number
+  btc_series_tickers: string[]
+}
+
 // ── Helpers ──────────────────────────────────────────────────────────────────────────────
 function centsToUSD(c: number | null | undefined): string {
   if (c == null) return '—'
@@ -102,6 +113,38 @@ function fmtStrike(raw: string | null | undefined): string {
   if (!raw) return '—'
   const n = parseFloat(raw)
   return isNaN(n) ? raw : `$${n.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}`
+}
+
+function fmtTickers(raw: string | string[] | null | undefined): string {
+  if (!raw) return '—'
+  const tickers = Array.isArray(raw) ? raw : raw.split(',')
+  return tickers.map(t => t.trim()).filter(Boolean).join(', ') || '—'
+}
+
+function profileToDraft(profile: Profile): StrategyDraft {
+  return {
+    name: profile.name,
+    min_entry_cents: profile.min_entry_cents,
+    max_entry_cents: profile.max_entry_cents,
+    proactive_mode: profile.proactive_mode,
+    max_open_orders: profile.max_open_orders,
+    max_daily_spend_cents: profile.max_daily_spend_cents,
+    scan_interval_seconds: profile.scan_interval_seconds,
+    btc_series_tickers: profile.btc_series_tickers.split(',').map(t => t.trim()).filter(Boolean),
+  }
+}
+
+function settingsToDraft(settings: Settings, name = ''): StrategyDraft {
+  return {
+    name,
+    min_entry_cents: settings.min_entry_cents,
+    max_entry_cents: settings.max_entry_cents,
+    proactive_mode: settings.proactive_mode,
+    max_open_orders: settings.max_open_orders,
+    max_daily_spend_cents: settings.max_daily_spend_cents,
+    scan_interval_seconds: settings.scan_interval_seconds,
+    btc_series_tickers: settings.btc_series_tickers,
+  }
 }
 
 // ── Sub-components ───────────────────────────────────────────────────────────────────────
@@ -151,6 +194,7 @@ export default function App() {
   const [loading,   setLoading]   = useState(false)
   const [error,     setError]     = useState<string | null>(null)
   const [saving,    setSaving]    = useState(false)
+  const [strategyEditor, setStrategyEditor] = useState<{ mode: 'new' | 'edit'; profileId?: number; draft: StrategyDraft } | null>(null)
 
   const refresh = useCallback(async () => {
     setLoading(true)
@@ -186,17 +230,18 @@ export default function App() {
     return () => clearInterval(id)
   }, [autoRefresh, refresh, tab])
 
-  const saveSettings = async (e: React.FormEvent) => {
+  const saveStrategy = async (e: React.FormEvent) => {
     e.preventDefault()
-    if (!settings) return
+    if (!strategyEditor) return
     setSaving(true)
     try {
-      const resp = await fetch('/api/settings', {
-        method: 'POST',
+      const resp = await fetch(strategyEditor.mode === 'edit' ? `/api/profiles/${strategyEditor.profileId}` : '/api/profiles', {
+        method: strategyEditor.mode === 'edit' ? 'PUT' : 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(settings)
+        body: JSON.stringify(strategyEditor.draft)
       })
-      if (!resp.ok) throw new Error('Failed to save settings')
+      if (!resp.ok) throw new Error('Failed to save strategy')
+      setStrategyEditor(null)
       await refresh()
     } catch (err: any) {
       alert(err.message)
@@ -210,6 +255,7 @@ export default function App() {
     try {
       const resp = await fetch(`/api/profiles/${profileId}/activate`, { method: 'POST' })
       if (!resp.ok) throw new Error('Failed to activate strategy')
+      setStrategyEditor(null)
       await refresh()
     } catch (err: any) {
       alert(err.message)
@@ -221,6 +267,10 @@ export default function App() {
   const pnl = stats?.total_pnl_cents
   const pnlColor = pnl == null ? undefined : pnl > 0 ? '#00d4a0' : pnl < 0 ? '#ff4444' : undefined
   const wrColor = stats?.win_rate == null ? undefined : stats.win_rate >= 50 ? '#00d4a0' : '#ff4444'
+  const activeProfile = profiles.find(p => p.id === settings?.active_profile_id)
+  const updateStrategyDraft = (patch: Partial<StrategyDraft>) => {
+    setStrategyEditor(editor => editor ? { ...editor, draft: { ...editor.draft, ...patch } } : editor)
+  }
 
   return (
     <div className="app">
@@ -374,163 +424,190 @@ export default function App() {
           )}
 
           {tab === 'strategies' && (
-            <>
-              <table>
-                <thead>
-                  <tr>
-                    <th>Name</th>
-                    <th>Entry Range</th>
-                    <th>Daily Limit</th>
-                    <th>Max Orders</th>
-                    <th>Mode</th>
-                    <th>Tickers</th>
-                    <th>Created</th>
-                    <th></th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {profiles.length === 0 ? (
-                    <tr><td colSpan={8} className="cell-empty">No strategies yet</td></tr>
-                  ) : profiles.map(p => (
-                    <tr key={p.id} style={settings?.active_profile_id === p.id ? { background: 'rgba(0,212,160,0.05)' } : {}}>
-                      <td className="cell-ticker">
-                        {p.name}
-                        {settings?.active_profile_id === p.id && (
-                          <span className="badge" style={{ marginLeft: '8px', color: '#00d4a0', background: 'rgba(0,212,160,0.14)' }}>ACTIVE</span>
-                        )}
-                      </td>
-                      <td>{p.min_entry_cents}{'–'}{p.max_entry_cents}{'¢'}</td>
-                      <td>{centsToUSD(p.max_daily_spend_cents)}</td>
-                      <td>{p.max_open_orders}</td>
-                      <td>{p.proactive_mode ? 'Proactive' : 'Reactive'}</td>
-                      <td className="cell-dim" style={{ fontSize: '11px' }}>{p.btc_series_tickers}</td>
-                      <td className="cell-dim">{fmtTime(p.created_at)}</td>
-                      <td>
-                        {settings?.active_profile_id !== p.id ? (
-                          <button
-                            className="btn btn-active"
-                            style={{ padding: '4px 12px', fontSize: '12px' }}
-                            disabled={activating}
-                            onClick={() => activateProfile(p.id)}
-                          >
-                            {activating ? '{…}' : 'Activate'}
-                          </button>
-                        ) : (
-                          <span style={{ fontSize: '12px', color: '#9ca3af' }}>Active</span>
-                        )}
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-
+            <div className="strategies-view">
               {settings && (
-                <div style={{ padding: '24px', maxWidth: '600px', borderTop: '1px solid rgba(255,255,255,0.08)', marginTop: '4px' }}>
-                  <p className="stat-label" style={{ marginBottom: '16px', fontSize: '13px', color: '#f5c842' }}>Configure Active Strategy</p>
-                  <form onSubmit={saveSettings} style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
+                <section className="strategy-active-panel">
+                  <div className="strategy-active-main">
+                    <div className="stat-label">Active Strategy</div>
+                    <h2>{activeProfile?.name || settings.name || 'Current settings'}</h2>
+                    <p>
+                      This is the live bot configuration. Create a new strategy from it, edit saved strategies,
+                      or activate an older strategy from the cards below.
+                    </p>
+                    <div className="strategy-primary-actions">
+                      <button
+                        className="btn btn-active"
+                        onClick={() => setStrategyEditor({ mode: 'new', draft: settingsToDraft(settings, '') })}
+                      >
+                        New Strategy
+                      </button>
+                      {activeProfile && (
+                        <button
+                          className="btn"
+                          onClick={() => setStrategyEditor({ mode: 'edit', profileId: activeProfile.id, draft: profileToDraft(activeProfile) })}
+                        >
+                          Edit Active
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                  <div className="strategy-metrics">
                     <div>
-                      <label className="stat-label" style={{ marginBottom: '8px', display: 'block' }}>Strategy Name (will create new profile if settings change)</label>
+                      <span>Entry</span>
+                      <strong>{settings.min_entry_cents}–{settings.max_entry_cents}¢</strong>
+                    </div>
+                    <div>
+                      <span>Daily Limit</span>
+                      <strong>{centsToUSD(settings.max_daily_spend_cents)}</strong>
+                    </div>
+                    <div>
+                      <span>Max Orders</span>
+                      <strong>{settings.max_open_orders}</strong>
+                    </div>
+                    <div>
+                      <span>Mode</span>
+                      <strong>{settings.proactive_mode ? 'Proactive' : 'Reactive'}</strong>
+                    </div>
+                  </div>
+                </section>
+              )}
+
+              <section className="strategies-grid" aria-label="Saved strategies">
+                {profiles.length === 0 ? (
+                  <div className="strategy-empty">No strategies yet</div>
+                ) : profiles.map(p => {
+                  const isActive = settings?.active_profile_id === p.id
+                  return (
+                    <article key={p.id} className={`strategy-card${isActive ? ' is-active' : ''}`}>
+                      <div className="strategy-card-head">
+                        <div>
+                          <div className="strategy-name">{p.name}</div>
+                          <div className="strategy-created">Created {fmtTime(p.created_at)}</div>
+                        </div>
+                        {isActive && <span className="badge badge-live">ACTIVE</span>}
+                      </div>
+                      <div className="strategy-card-stats">
+                        <div><span>Entry</span><strong>{p.min_entry_cents}–{p.max_entry_cents}¢</strong></div>
+                        <div><span>Limit</span><strong>{centsToUSD(p.max_daily_spend_cents)}</strong></div>
+                        <div><span>Orders</span><strong>{p.max_open_orders}</strong></div>
+                        <div><span>Mode</span><strong>{p.proactive_mode ? 'Proactive' : 'Reactive'}</strong></div>
+                      </div>
+                      <div className="strategy-tickers">{fmtTickers(p.btc_series_tickers)}</div>
+                      <div className="strategy-card-actions">
+                        <button
+                          className="btn"
+                          onClick={() => setStrategyEditor({ mode: 'edit', profileId: p.id, draft: profileToDraft(p) })}
+                        >
+                          Edit
+                        </button>
+                        <button
+                          className={`btn strategy-activate${isActive ? ' is-current' : ' btn-active'}`}
+                          disabled={isActive || activating}
+                          onClick={() => activateProfile(p.id)}
+                        >
+                          {isActive ? 'Active' : activating ? 'Activating…' : 'Activate'}
+                        </button>
+                      </div>
+                    </article>
+                  )
+                })}
+              </section>
+
+              {strategyEditor && (
+                <section className="strategy-config-panel">
+                  <div className="strategy-section-head">
+                    <div>
+                      <div className="stat-label">{strategyEditor.mode === 'edit' ? 'Edit Strategy' : 'Create Strategy'}</div>
+                      <h3>{strategyEditor.mode === 'edit' ? strategyEditor.draft.name : 'New Strategy'}</h3>
+                    </div>
+                    <p>{strategyEditor.mode === 'edit' ? 'Save changes to this strategy. If it is active, the live bot settings update too.' : 'Create a strategy from the current bot settings and make it active.'}</p>
+                  </div>
+
+                  <form onSubmit={saveStrategy} className="strategy-form">
+                    <label className="field field-wide">
+                      <span>Strategy Name</span>
                       <input
                         type="text"
-                        className="btn"
-                        style={{ width: '100%', textAlign: 'left', background: 'rgba(255,255,255,0.05)' }}
-                        value={settings.name || ''}
+                        value={strategyEditor.draft.name}
                         placeholder="Strategy snapshot name..."
-                        onChange={e => setSettings({ ...settings, name: e.target.value })}
+                        onChange={e => updateStrategyDraft({ name: e.target.value })}
                       />
-                    </div>
+                    </label>
 
-                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '20px' }}>
-                      <div>
-                        <label className="stat-label" style={{ marginBottom: '8px', display: 'block' }}>Min Entry (¢)</label>
-                        <input
-                          type="number"
-                          className="btn"
-                          style={{ width: '100%', textAlign: 'left', background: 'rgba(255,255,255,0.05)' }}
-                          value={settings.min_entry_cents}
-                          onChange={e => setSettings({ ...settings, min_entry_cents: parseInt(e.target.value) || 0 })}
-                        />
-                      </div>
-                      <div>
-                        <label className="stat-label" style={{ marginBottom: '8px', display: 'block' }}>Max Entry (¢)</label>
-                        <input
-                          type="number"
-                          className="btn"
-                          style={{ width: '100%', textAlign: 'left', background: 'rgba(255,255,255,0.05)' }}
-                          value={settings.max_entry_cents}
-                          onChange={e => setSettings({ ...settings, max_entry_cents: parseInt(e.target.value) || 0 })}
-                        />
-                      </div>
-                    </div>
-
-                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '20px' }}>
-                      <div>
-                        <label className="stat-label" style={{ marginBottom: '8px', display: 'block' }}>Max Open Orders</label>
-                        <input
-                          type="number"
-                          className="btn"
-                          style={{ width: '100%', textAlign: 'left', background: 'rgba(255,255,255,0.05)' }}
-                          value={settings.max_open_orders}
-                          onChange={e => setSettings({ ...settings, max_open_orders: parseInt(e.target.value) || 0 })}
-                        />
-                      </div>
-                      <div>
-                        <label className="stat-label" style={{ marginBottom: '8px', display: 'block' }}>Daily Limit (¢)</label>
-                        <input
-                          type="number"
-                          className="btn"
-                          style={{ width: '100%', textAlign: 'left', background: 'rgba(255,255,255,0.05)' }}
-                          value={settings.max_daily_spend_cents}
-                          onChange={e => setSettings({ ...settings, max_daily_spend_cents: parseInt(e.target.value) || 0 })}
-                        />
-                      </div>
-                    </div>
-
-                    <div>
-                      <label className="stat-label" style={{ marginBottom: '8px', display: 'block' }}>Scan Interval (seconds)</label>
+                    <label className="field">
+                      <span>Min Entry</span>
                       <input
                         type="number"
-                        className="btn"
-                        style={{ width: '100%', textAlign: 'left', background: 'rgba(255,255,255,0.05)' }}
-                        value={settings.scan_interval_seconds}
-                        onChange={e => setSettings({ ...settings, scan_interval_seconds: parseInt(e.target.value) || 0 })}
+                        value={strategyEditor.draft.min_entry_cents}
+                        onChange={e => updateStrategyDraft({ min_entry_cents: parseInt(e.target.value) || 0 })}
                       />
-                    </div>
-
-                    <div>
-                      <label className="stat-label" style={{ marginBottom: '8px', display: 'block' }}>BTC Series Tickers (comma separated)</label>
+                    </label>
+                    <label className="field">
+                      <span>Max Entry</span>
+                      <input
+                        type="number"
+                        value={strategyEditor.draft.max_entry_cents}
+                        onChange={e => updateStrategyDraft({ max_entry_cents: parseInt(e.target.value) || 0 })}
+                      />
+                    </label>
+                    <label className="field">
+                      <span>Max Open Orders</span>
+                      <input
+                        type="number"
+                        value={strategyEditor.draft.max_open_orders}
+                        onChange={e => updateStrategyDraft({ max_open_orders: parseInt(e.target.value) || 0 })}
+                      />
+                    </label>
+                    <label className="field">
+                      <span>Daily Limit</span>
+                      <input
+                        type="number"
+                        value={strategyEditor.draft.max_daily_spend_cents}
+                        onChange={e => updateStrategyDraft({ max_daily_spend_cents: parseInt(e.target.value) || 0 })}
+                      />
+                    </label>
+                    <label className="field">
+                      <span>Scan Interval</span>
+                      <input
+                        type="number"
+                        value={strategyEditor.draft.scan_interval_seconds}
+                        onChange={e => updateStrategyDraft({ scan_interval_seconds: parseInt(e.target.value) || 0 })}
+                      />
+                    </label>
+                    <label className="field field-wide">
+                      <span>BTC Series Tickers</span>
                       <input
                         type="text"
-                        className="btn"
-                        style={{ width: '100%', textAlign: 'left', background: 'rgba(255,255,255,0.05)' }}
-                        value={settings.btc_series_tickers.join(', ')}
-                        onChange={e => setSettings({ ...settings, btc_series_tickers: e.target.value.split(',').map(s => s.trim()).filter(Boolean) })}
+                        value={strategyEditor.draft.btc_series_tickers.join(', ')}
+                        onChange={e => updateStrategyDraft({ btc_series_tickers: e.target.value.split(',').map(s => s.trim()).filter(Boolean) })}
                       />
-                    </div>
+                    </label>
 
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                    <label className="strategy-toggle field-wide">
                       <input
                         type="checkbox"
-                        id="proactive"
-                        checked={settings.proactive_mode}
-                        onChange={e => setSettings({ ...settings, proactive_mode: e.target.checked })}
-                        style={{ width: '20px', height: '20px', cursor: 'pointer' }}
+                        checked={strategyEditor.draft.proactive_mode}
+                        onChange={e => updateStrategyDraft({ proactive_mode: e.target.checked })}
                       />
-                      <label htmlFor="proactive" className="stat-label" style={{ cursor: 'pointer' }}>Proactive Mode (Place orders before price hits target)</label>
-                    </div>
+                      <span>
+                        <strong>Proactive Mode</strong>
+                        <small>Place orders before price hits target</small>
+                      </span>
+                    </label>
 
-                    <div style={{ borderTop: '1px solid rgba(255,255,255,0.1)', paddingTop: '10px' }}>
-                      <p style={{ fontSize: '12px', color: '#9ca3af', marginBottom: '10px' }}>
-                        Changing entry range, mode, tickers, or limits will archive the current strategy and start a new one.
-                      </p>
-                      <button type="submit" className="btn btn-active" disabled={saving} style={{ padding: '10px 24px' }}>
-                        {saving ? 'Saving{…}' : 'Save Settings'}
-                      </button>
+                    <div className="strategy-form-actions field-wide">
+                      <span>{strategyEditor.mode === 'edit' ? 'This edits the selected saved strategy.' : 'New strategies are activated immediately after saving.'}</span>
+                      <div className="strategy-form-buttons">
+                        <button type="button" className="btn" onClick={() => setStrategyEditor(null)}>Cancel</button>
+                        <button type="submit" className="btn btn-active" disabled={saving}>
+                          {saving ? 'Saving…' : strategyEditor.mode === 'edit' ? 'Save Strategy' : 'Create and Activate'}
+                        </button>
+                      </div>
                     </div>
                   </form>
-                </div>
+                </section>
               )}
-            </>
+            </div>
           )}
         </div>
       </div>
