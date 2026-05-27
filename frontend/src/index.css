@@ -100,13 +100,14 @@ body {
 .table-panel {
   background: #16161f;
   border: 1px solid #1e1e2e;
-  border-top: none;
-  border-radius: 0 0 10px 10px;
+  border-radius: 10px;
   overflow: hidden;
 }
 .table-wrap { overflow-x: auto; }
 
-table { width: 100%; border-collapse: collapse; }
+table { width: 100%; border-collapse: collapse; table-layout: fixed; }
+td, th { overflow: hidden; text-overflow: ellipsis; }
+table th:first-child, table td:first-child { width: 38%; }
 thead { background: #0d0d14; }
 th {
   padding: 10px 16px;
@@ -129,6 +130,9 @@ tbody tr:hover { background: rgba(255,255,255,0.025); }
   font-family: 'Courier New', monospace;
   font-size: 12px; color: #a78bfa;
   white-space: nowrap;
+  max-width: 220px;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 .cell-dim    { color: #64748b; white-space: nowrap; }
 .cell-profit { color: #00d4a0; font-weight: 600; }
