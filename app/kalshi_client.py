@@ -1,8 +1,8 @@
 """
-Kalshi API v2 client with RSA-SHA256 request signing.
+Kalshi API v2 client with RSA-PSS-SHA256 request signing.
 
 Auth flow:
-  timestamp (ms) + METHOD + /path  →  RSA-SHA256 sign  →  base64
+  timestamp (ms) + METHOD + full path (incl. /trade-api/v2)  →  RSA-PSS-SHA256  →  base64
   Headers: KALSHI-ACCESS-KEY, KALSHI-ACCESS-TIMESTAMP, KALSHI-ACCESS-SIGNATURE
 """
 
@@ -33,9 +33,18 @@ class KalshiClient:
         self._session.headers.update({"Content-Type": "application/json"})
 
     def _auth_headers(self, method: str, path: str) -> dict:
+        # Kalshi signs only the URL path, not the query string. /trade-api/v2 prefix included.
         ts = str(int(time.time() * 1000))
-        msg = f"{ts}{method.upper()}{path}".encode()
-        sig = self._private_key.sign(msg, padding.PKCS1v15(), hashes.SHA256())
+        sig_path = "/trade-api/v2" + path
+        msg = f"{ts}{method.upper()}{sig_path}".encode()
+        sig = self._private_key.sign(
+            msg,
+            padding.PSS(
+                mgf=padding.MGF1(hashes.SHA256()),
+                salt_length=padding.PSS.DIGEST_LENGTH,
+            ),
+            hashes.SHA256(),
+        )
         return {
             "KALSHI-ACCESS-KEY":       self._key_id,
             "KALSHI-ACCESS-TIMESTAMP": ts,
