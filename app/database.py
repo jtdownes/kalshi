@@ -26,15 +26,17 @@ def _conn():
 
 def _execute(conn, query, params=None):
     if config.DB_TYPE == "postgres":
+        # Handle SQLite's INSERT OR IGNORE -> Postgres INSERT ... ON CONFLICT DO NOTHING
+        # We do this before converting ? to %s and before any global .upper()
+        if "INSERT OR IGNORE" in query.upper():
+            # Use re.sub for case-insensitive replacement to avoid global .upper()
+            import re
+            query = re.sub(r"(?i)INSERT OR IGNORE INTO", "INSERT INTO", query)
+            if "ORDERS" in query.upper():
+                query += " ON CONFLICT (client_order_id) DO NOTHING"
+        
         # Convert ? to %s for psycopg2
         query = query.replace("?", "%s")
-        # Handle INSERT OR IGNORE and AUTOINCREMENT differences if needed
-        # But for simple cases we just run it.
-        # SQLite's INSERT OR IGNORE -> Postgres INSERT ... ON CONFLICT DO NOTHING
-        if "INSERT OR IGNORE" in query.upper():
-            query = query.upper().replace("INSERT OR IGNORE INTO", "INSERT INTO")
-            if "ORDERS" in query:
-                query += " ON CONFLICT (client_order_id) DO NOTHING"
         
         cur = conn.cursor(cursor_factory=psycopg2.extras.DictCursor)
         cur.execute(query, params)
@@ -101,6 +103,12 @@ def init_db():
                 CREATE INDEX IF NOT EXISTS idx_snaps_ticker   ON market_snapshots(ticker);
                 CREATE INDEX IF NOT EXISTS idx_btc_time       ON btc_prices(recorded_at);
             """)
+            
+            # Sync sequences in case rows were manually inserted
+            cur.execute("SELECT setval(pg_get_serial_sequence('orders', 'id'), coalesce(max(id), 1), max(id) IS NOT null) FROM orders")
+            cur.execute("SELECT setval(pg_get_serial_sequence('market_snapshots', 'id'), coalesce(max(id), 1), max(id) IS NOT null) FROM market_snapshots")
+            cur.execute("SELECT setval(pg_get_serial_sequence('btc_prices', 'id'), coalesce(max(id), 1), max(id) IS NOT null) FROM btc_prices")
+            
             conn.commit()
         else:
             conn.execute("PRAGMA journal_mode=WAL")
