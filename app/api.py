@@ -1,11 +1,13 @@
 """
-Kalshi Dashboard API — reads SQLite, serves JSON for the React frontend.
-Runs as a separate service sharing the same /data volume as the bot.
+Kalshi Dashboard API — reads from the configured DB (Postgres or SQLite),
+serves JSON for the React frontend.
 """
 
-from contextlib import closing
+from contextlib import contextmanager
 from flask import Flask, jsonify, request
 import sqlite3
+import psycopg2
+import psycopg2.extras
 from datetime import date
 
 import config
@@ -13,10 +15,45 @@ import config
 app = Flask(__name__)
 
 
+class _C:
+    """Unified cursor wrapper: execute() returns self for chaining.
+    Postgres: raw is a DictCursor (execute returns None, fetch on same cursor).
+    SQLite:   raw is the Connection (execute returns a new cursor each time)."""
+    def __init__(self, raw):
+        self._raw = raw
+        self._cur = raw  # updated on each execute for SQLite
+
+    def execute(self, sql, params=()):
+        if config.DB_TYPE == "postgres":
+            sql = sql.replace("?", "%s")
+            self._raw.execute(sql, params)
+            self._cur = self._raw
+        else:
+            self._cur = self._raw.execute(sql, params)
+        return self
+
+    def fetchone(self):
+        return self._cur.fetchone()
+
+    def fetchall(self):
+        return self._cur.fetchall()
+
+
+@contextmanager
 def _conn():
-    conn = sqlite3.connect(config.DB_PATH, check_same_thread=False)
-    conn.row_factory = sqlite3.Row
-    return closing(conn)
+    if config.DB_TYPE == "postgres":
+        conn = psycopg2.connect(config.DB_URL)
+        try:
+            yield _C(conn.cursor(cursor_factory=psycopg2.extras.DictCursor))
+        finally:
+            conn.close()
+    else:
+        conn = sqlite3.connect(config.DB_PATH, check_same_thread=False)
+        conn.row_factory = sqlite3.Row
+        try:
+            yield _C(conn)
+        finally:
+            conn.close()
 
 
 @app.get("/api/health")
