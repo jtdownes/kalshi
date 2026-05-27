@@ -146,7 +146,7 @@ export default function App() {
 
   useEffect(() => {
     if (!autoRefresh) return
-    const id = setInterval(refresh, 10_000)
+    const id = setInterval(refresh, 5_000)
     return () => clearInterval(id)
   }, [autoRefresh, refresh])
 
