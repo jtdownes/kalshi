@@ -143,9 +143,10 @@ export default function App() {
   const [snapshots, setSnapshots] = useState<Snapshot[]>([])
   const [settings,  setSettings]  = useState<Settings | null>(null)
   const [profiles,  setProfiles]  = useState<Profile[]>([])
-  const [tab,       setTab]       = useState<'orders' | 'snapshots' | 'settings' | 'profiles'>('orders')
+  const [tab,       setTab]       = useState<'orders' | 'snapshots' | 'strategies'>('orders')
   const [selectedProfile, setSelectedProfile] = useState<number | 'all'>('all')
   const [autoRefresh, setAutoRefresh] = useState(true)
+  const [activating, setActivating] = useState(false)
   const [lastRefresh, setLastRefresh] = useState<Date | null>(null)
   const [loading,   setLoading]   = useState(false)
   const [error,     setError]     = useState<string | null>(null)
@@ -180,7 +181,7 @@ export default function App() {
   useEffect(() => { refresh() }, [refresh])
 
   useEffect(() => {
-    if (!autoRefresh || tab === 'settings') return
+    if (!autoRefresh || tab === 'strategies') return
     const id = setInterval(refresh, 5_000)
     return () => clearInterval(id)
   }, [autoRefresh, refresh, tab])
@@ -196,12 +197,24 @@ export default function App() {
         body: JSON.stringify(settings)
       })
       if (!resp.ok) throw new Error('Failed to save settings')
-      alert('Settings saved successfully. A new strategy profile may have been created.')
-      refresh()
+      await refresh()
     } catch (err: any) {
       alert(err.message)
     } finally {
       setSaving(false)
+    }
+  }
+
+  const activateProfile = async (profileId: number) => {
+    setActivating(true)
+    try {
+      const resp = await fetch(`/api/profiles/${profileId}/activate`, { method: 'POST' })
+      if (!resp.ok) throw new Error('Failed to activate strategy')
+      await refresh()
+    } catch (err: any) {
+      alert(err.message)
+    } finally {
+      setActivating(false)
     }
   }
 
@@ -265,11 +278,8 @@ export default function App() {
         <button className={`tab${tab === 'snapshots' ? ' active' : ''}`} onClick={() => setTab('snapshots')}>
           Snapshots <span className="tab-count">{snapshots.length}</span>
         </button>
-        <button className={`tab${tab === 'settings' ? ' active' : ''}`} onClick={() => setTab('settings')}>
-          Settings
-        </button>
-        <button className={`tab${tab === 'profiles' ? ' active' : ''}`} onClick={() => setTab('profiles')}>
-          Profiles <span className="tab-count">{profiles.length}</span>
+        <button className={`tab${tab === 'strategies' ? ' active' : ''}`} onClick={() => setTab('strategies')}>
+          Strategies <span className="tab-count">{profiles.length}</span>
         </button>
       </div>
 
@@ -363,144 +373,164 @@ export default function App() {
             </table>
           )}
 
-          {tab === 'settings' && settings && (
-            <div style={{ padding: '24px', maxWidth: '600px' }}>
-              <form onSubmit={saveSettings} style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
-                <div>
-                  <label className="stat-label" style={{ marginBottom: '8px', display: 'block' }}>Strategy Name (will create new profile if settings change)</label>
-                  <input
-                    type="text"
-                    className="btn"
-                    style={{ width: '100%', textAlign: 'left', background: 'rgba(255,255,255,0.05)' }}
-                    value={settings.name || ''}
-                    placeholder="Strategy snapshot name..."
-                    onChange={e => setSettings({ ...settings, name: e.target.value })}
-                  />
-                </div>
-
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '20px' }}>
-                  <div>
-                    <label className="stat-label" style={{ marginBottom: '8px', display: 'block' }}>Min Entry (¢)</label>
-                    <input
-                      type="number"
-                      className="btn"
-                      style={{ width: '100%', textAlign: 'left', background: 'rgba(255,255,255,0.05)' }}
-                      value={settings.min_entry_cents}
-                      onChange={e => setSettings({ ...settings, min_entry_cents: parseInt(e.target.value) || 0 })}
-                    />
-                  </div>
-                  <div>
-                    <label className="stat-label" style={{ marginBottom: '8px', display: 'block' }}>Max Entry (¢)</label>
-                    <input
-                      type="number"
-                      className="btn"
-                      style={{ width: '100%', textAlign: 'left', background: 'rgba(255,255,255,0.05)' }}
-                      value={settings.max_entry_cents}
-                      onChange={e => setSettings({ ...settings, max_entry_cents: parseInt(e.target.value) || 0 })}
-                    />
-                  </div>
-                </div>
-
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '20px' }}>
-                  <div>
-                    <label className="stat-label" style={{ marginBottom: '8px', display: 'block' }}>Max Open Orders</label>
-                    <input
-                      type="number"
-                      className="btn"
-                      style={{ width: '100%', textAlign: 'left', background: 'rgba(255,255,255,0.05)' }}
-                      value={settings.max_open_orders}
-                      onChange={e => setSettings({ ...settings, max_open_orders: parseInt(e.target.value) || 0 })}
-                    />
-                  </div>
-                  <div>
-                    <label className="stat-label" style={{ marginBottom: '8px', display: 'block' }}>Daily Limit (¢)</label>
-                    <input
-                      type="number"
-                      className="btn"
-                      style={{ width: '100%', textAlign: 'left', background: 'rgba(255,255,255,0.05)' }}
-                      value={settings.max_daily_spend_cents}
-                      onChange={e => setSettings({ ...settings, max_daily_spend_cents: parseInt(e.target.value) || 0 })}
-                    />
-                  </div>
-                </div>
-
-                <div>
-                  <label className="stat-label" style={{ marginBottom: '8px', display: 'block' }}>Scan Interval (seconds)</label>
-                  <input
-                    type="number"
-                    className="btn"
-                    style={{ width: '100%', textAlign: 'left', background: 'rgba(255,255,255,0.05)' }}
-                    value={settings.scan_interval_seconds}
-                    onChange={e => setSettings({ ...settings, scan_interval_seconds: parseInt(e.target.value) || 0 })}
-                  />
-                </div>
-
-                <div>
-                  <label className="stat-label" style={{ marginBottom: '8px', display: 'block' }}>BTC Series Tickers (comma separated)</label>
-                  <input
-                    type="text"
-                    className="btn"
-                    style={{ width: '100%', textAlign: 'left', background: 'rgba(255,255,255,0.05)' }}
-                    value={settings.btc_series_tickers.join(', ')}
-                    onChange={e => setSettings({ ...settings, btc_series_tickers: e.target.value.split(',').map(s => s.trim()).filter(Boolean) })}
-                  />
-                </div>
-
-                <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-                  <input
-                    type="checkbox"
-                    id="proactive"
-                    checked={settings.proactive_mode}
-                    onChange={e => setSettings({ ...settings, proactive_mode: e.target.checked })}
-                    style={{ width: '20px', height: '20px', cursor: 'pointer' }}
-                  />
-                  <label htmlFor="proactive" className="stat-label" style={{ cursor: 'pointer' }}>Proactive Mode (Place orders before price hits target)</label>
-                </div>
-
-                <div style={{ borderTop: '1px solid rgba(255,255,255,0.1)', paddingTop: '10px' }}>
-                  <p style={{ fontSize: '12px', color: '#9ca3af', marginBottom: '10px' }}>
-                    Note: Changing entry range, mode, tickers, or limits will automatically archive the current strategy as a "Profile" and start a new one.
-                  </p>
-                  <button type="submit" className="btn btn-active" disabled={saving} style={{ padding: '10px 24px' }}>
-                    {saving ? 'Saving...' : 'Save Settings'}
-                  </button>
-                </div>
-              </form>
-            </div>
-          )}
-
-          {tab === 'profiles' && (
-            <table>
-              <thead>
-                <tr>
-                  <th>Name</th>
-                  <th>Created</th>
-                  <th>Entry Range</th>
-                  <th>Daily Limit</th>
-                  <th>Max Orders</th>
-                  <th>Mode</th>
-                  <th>Tickers</th>
-                </tr>
-              </thead>
-              <tbody>
-                {profiles.map(p => (
-                  <tr key={p.id} style={settings?.active_profile_id === p.id ? { background: 'rgba(0,212,160,0.05)' } : {}}>
-                    <td className="cell-ticker">
-                      {p.name}
-                      {settings?.active_profile_id === p.id && (
-                        <span className="badge" style={{ marginLeft: '8px', color: '#00d4a0', background: 'rgba(0,212,160,0.14)' }}>ACTIVE</span>
-                      )}
-                    </td>
-                    <td className="cell-dim">{fmtTime(p.created_at)}</td>
-                    <td>{p.min_entry_cents}-{p.max_entry_cents}¢</td>
-                    <td>{centsToUSD(p.max_daily_spend_cents)}</td>
-                    <td>{p.max_open_orders}</td>
-                    <td>{p.proactive_mode ? 'Proactive' : 'Reactive'}</td>
-                    <td className="cell-dim" style={{ fontSize: '11px' }}>{p.btc_series_tickers}</td>
+          {tab === 'strategies' && (
+            <>
+              <table>
+                <thead>
+                  <tr>
+                    <th>Name</th>
+                    <th>Entry Range</th>
+                    <th>Daily Limit</th>
+                    <th>Max Orders</th>
+                    <th>Mode</th>
+                    <th>Tickers</th>
+                    <th>Created</th>
+                    <th></th>
                   </tr>
-                ))}
-              </tbody>
-            </table>
+                </thead>
+                <tbody>
+                  {profiles.length === 0 ? (
+                    <tr><td colSpan={8} className="cell-empty">No strategies yet</td></tr>
+                  ) : profiles.map(p => (
+                    <tr key={p.id} style={settings?.active_profile_id === p.id ? { background: 'rgba(0,212,160,0.05)' } : {}}>
+                      <td className="cell-ticker">
+                        {p.name}
+                        {settings?.active_profile_id === p.id && (
+                          <span className="badge" style={{ marginLeft: '8px', color: '#00d4a0', background: 'rgba(0,212,160,0.14)' }}>ACTIVE</span>
+                        )}
+                      </td>
+                      <td>{p.min_entry_cents}{'–'}{p.max_entry_cents}{'¢'}</td>
+                      <td>{centsToUSD(p.max_daily_spend_cents)}</td>
+                      <td>{p.max_open_orders}</td>
+                      <td>{p.proactive_mode ? 'Proactive' : 'Reactive'}</td>
+                      <td className="cell-dim" style={{ fontSize: '11px' }}>{p.btc_series_tickers}</td>
+                      <td className="cell-dim">{fmtTime(p.created_at)}</td>
+                      <td>
+                        {settings?.active_profile_id !== p.id ? (
+                          <button
+                            className="btn btn-active"
+                            style={{ padding: '4px 12px', fontSize: '12px' }}
+                            disabled={activating}
+                            onClick={() => activateProfile(p.id)}
+                          >
+                            {activating ? '{…}' : 'Activate'}
+                          </button>
+                        ) : (
+                          <span style={{ fontSize: '12px', color: '#9ca3af' }}>Active</span>
+                        )}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+
+              {settings && (
+                <div style={{ padding: '24px', maxWidth: '600px', borderTop: '1px solid rgba(255,255,255,0.08)', marginTop: '4px' }}>
+                  <p className="stat-label" style={{ marginBottom: '16px', fontSize: '13px', color: '#f5c842' }}>Configure Active Strategy</p>
+                  <form onSubmit={saveSettings} style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
+                    <div>
+                      <label className="stat-label" style={{ marginBottom: '8px', display: 'block' }}>Strategy Name (will create new profile if settings change)</label>
+                      <input
+                        type="text"
+                        className="btn"
+                        style={{ width: '100%', textAlign: 'left', background: 'rgba(255,255,255,0.05)' }}
+                        value={settings.name || ''}
+                        placeholder="Strategy snapshot name..."
+                        onChange={e => setSettings({ ...settings, name: e.target.value })}
+                      />
+                    </div>
+
+                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '20px' }}>
+                      <div>
+                        <label className="stat-label" style={{ marginBottom: '8px', display: 'block' }}>Min Entry (¢)</label>
+                        <input
+                          type="number"
+                          className="btn"
+                          style={{ width: '100%', textAlign: 'left', background: 'rgba(255,255,255,0.05)' }}
+                          value={settings.min_entry_cents}
+                          onChange={e => setSettings({ ...settings, min_entry_cents: parseInt(e.target.value) || 0 })}
+                        />
+                      </div>
+                      <div>
+                        <label className="stat-label" style={{ marginBottom: '8px', display: 'block' }}>Max Entry (¢)</label>
+                        <input
+                          type="number"
+                          className="btn"
+                          style={{ width: '100%', textAlign: 'left', background: 'rgba(255,255,255,0.05)' }}
+                          value={settings.max_entry_cents}
+                          onChange={e => setSettings({ ...settings, max_entry_cents: parseInt(e.target.value) || 0 })}
+                        />
+                      </div>
+                    </div>
+
+                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '20px' }}>
+                      <div>
+                        <label className="stat-label" style={{ marginBottom: '8px', display: 'block' }}>Max Open Orders</label>
+                        <input
+                          type="number"
+                          className="btn"
+                          style={{ width: '100%', textAlign: 'left', background: 'rgba(255,255,255,0.05)' }}
+                          value={settings.max_open_orders}
+                          onChange={e => setSettings({ ...settings, max_open_orders: parseInt(e.target.value) || 0 })}
+                        />
+                      </div>
+                      <div>
+                        <label className="stat-label" style={{ marginBottom: '8px', display: 'block' }}>Daily Limit (¢)</label>
+                        <input
+                          type="number"
+                          className="btn"
+                          style={{ width: '100%', textAlign: 'left', background: 'rgba(255,255,255,0.05)' }}
+                          value={settings.max_daily_spend_cents}
+                          onChange={e => setSettings({ ...settings, max_daily_spend_cents: parseInt(e.target.value) || 0 })}
+                        />
+                      </div>
+                    </div>
+
+                    <div>
+                      <label className="stat-label" style={{ marginBottom: '8px', display: 'block' }}>Scan Interval (seconds)</label>
+                      <input
+                        type="number"
+                        className="btn"
+                        style={{ width: '100%', textAlign: 'left', background: 'rgba(255,255,255,0.05)' }}
+                        value={settings.scan_interval_seconds}
+                        onChange={e => setSettings({ ...settings, scan_interval_seconds: parseInt(e.target.value) || 0 })}
+                      />
+                    </div>
+
+                    <div>
+                      <label className="stat-label" style={{ marginBottom: '8px', display: 'block' }}>BTC Series Tickers (comma separated)</label>
+                      <input
+                        type="text"
+                        className="btn"
+                        style={{ width: '100%', textAlign: 'left', background: 'rgba(255,255,255,0.05)' }}
+                        value={settings.btc_series_tickers.join(', ')}
+                        onChange={e => setSettings({ ...settings, btc_series_tickers: e.target.value.split(',').map(s => s.trim()).filter(Boolean) })}
+                      />
+                    </div>
+
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                      <input
+                        type="checkbox"
+                        id="proactive"
+                        checked={settings.proactive_mode}
+                        onChange={e => setSettings({ ...settings, proactive_mode: e.target.checked })}
+                        style={{ width: '20px', height: '20px', cursor: 'pointer' }}
+                      />
+                      <label htmlFor="proactive" className="stat-label" style={{ cursor: 'pointer' }}>Proactive Mode (Place orders before price hits target)</label>
+                    </div>
+
+                    <div style={{ borderTop: '1px solid rgba(255,255,255,0.1)', paddingTop: '10px' }}>
+                      <p style={{ fontSize: '12px', color: '#9ca3af', marginBottom: '10px' }}>
+                        Changing entry range, mode, tickers, or limits will archive the current strategy and start a new one.
+                      </p>
+                      <button type="submit" className="btn btn-active" disabled={saving} style={{ padding: '10px 24px' }}>
+                        {saving ? 'Saving{…}' : 'Save Settings'}
+                      </button>
+                    </div>
+                  </form>
+                </div>
+              )}
+            </>
           )}
         </div>
       </div>

@@ -410,3 +410,35 @@ def update_settings(settings: dict):
         cur = conn.cursor()
         cur.execute(query, vals)
         conn.commit()
+
+def activate_profile(profile_id: int):
+    """Copy a profile's params into settings and mark it active."""
+    with _lock, _conn() as conn:
+        cur = conn.cursor(cursor_factory=psycopg2.extras.DictCursor)
+        cur.execute("SELECT * FROM profiles WHERE id = %s", (profile_id,))
+        row = cur.fetchone()
+        if not row:
+            raise ValueError(f"Profile {profile_id} not found")
+        p = dict(row)
+        cur.execute("""
+            UPDATE settings SET
+                min_entry_cents       = %s,
+                max_entry_cents       = %s,
+                proactive_mode        = %s,
+                max_open_orders       = %s,
+                max_daily_spend_cents = %s,
+                scan_interval_seconds = %s,
+                btc_series_tickers    = %s,
+                active_profile_id     = %s
+            WHERE id = 1
+        """, (
+            p['min_entry_cents'],
+            p['max_entry_cents'],
+            p['proactive_mode'],
+            p['max_open_orders'],
+            p['max_daily_spend_cents'],
+            p['scan_interval_seconds'],
+            p['btc_series_tickers'],
+            profile_id,
+        ))
+        conn.commit()

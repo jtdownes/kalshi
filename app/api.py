@@ -172,5 +172,14 @@ def update_settings():
     return jsonify({"status": "success"})
 
 
+@app.post("/api/profiles/<int:profile_id>/activate")
+def activate_profile(profile_id: int):
+    try:
+        database.activate_profile(profile_id)
+    except ValueError as e:
+        return jsonify({"error": str(e)}), 404
+    return jsonify({"status": "success", "active_profile_id": profile_id})
+
+
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=8820, debug=False)
