@@ -116,7 +116,7 @@ def has_open_order(market_ticker: str, side: str) -> bool:
     with _lock, _conn() as c:
         row = c.execute(
             "SELECT 1 FROM orders WHERE market_ticker = ? AND side = ?"
-            " AND status IN ('resting', 'pending')",
+            " AND status IN ('resting', 'pending', 'filled')",
             (market_ticker, side)
         ).fetchone()
     return row is not None
