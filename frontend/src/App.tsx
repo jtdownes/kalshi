@@ -133,6 +133,7 @@ export default function App() {
   const [lastRefresh, setLastRefresh] = useState<Date | null>(null)
   const [loading,     setLoading]     = useState(false)
   const [error,       setError]       = useState<string | null>(null)
+  const [wsConnected, setWsConnected] = useState(false)
 
   const refresh = useCallback(async () => {
     setLoading(true)
@@ -162,27 +163,62 @@ export default function App() {
 
   const openOrders = orders.filter(o => o.status === 'resting')
 
+  // Periodic refresh for orders / snapshots / settings (not positions or quotes — WS handles those)
   useEffect(() => {
     if (!autoRefresh) return
-    const id = setInterval(refresh, 5_000)
+    const id = setInterval(async () => {
+      try {
+        const [o, snap, st, pr] = await Promise.all([
+          fetch('/api/orders?limit=200').then(r => r.json()),
+          fetch('/api/snapshots?limit=200').then(r => r.json()),
+          fetch('/api/settings').then(r => r.json()),
+          fetch('/api/profiles').then(r => r.json()),
+        ])
+        setOrders(o)
+        setSnapshots(snap)
+        setSettings(st)
+        setProfiles(pr)
+        setLastRefresh(new Date())
+      } catch { /* silent */ }
+    }, 10_000)
     return () => clearInterval(id)
-  }, [autoRefresh, refresh])
+  }, [autoRefresh])
 
+  // Real-time positions + quotes via SSE → Kalshi WebSocket
   useEffect(() => {
-    const fetchQuotes = async () => {
-      const posTickers = Array.isArray(positions) ? positions.map(p => p.ticker) : []
-      const orderTickers = openOrders.map(o => o.market_ticker)
-      const tickers = [...new Set([...posTickers, ...orderTickers])]
-      if (tickers.length === 0) return
+    const es = new EventSource('/api/events')
+    es.onmessage = (e) => {
+      const msg = JSON.parse(e.data)
+      if (msg.type === 'init') {
+        setPositions(msg.data.positions)
+        setQuotes(msg.data.quotes)
+        setWsConnected(msg.data.connected)
+      } else if (msg.type === 'positions') {
+        setPositions(msg.data)
+      } else if (msg.type === 'quotes') {
+        setQuotes(prev => ({ ...prev, ...msg.data }))
+      } else if (msg.type === 'status') {
+        setWsConnected(msg.data.connected)
+      }
+    }
+    es.onerror = () => setWsConnected(false)
+    return () => es.close()
+  }, [])
+
+  // Open order tickers aren't in the WS subscription — poll for their quotes
+  useEffect(() => {
+    const tickers = [...new Set(openOrders.map(o => o.market_ticker))]
+    if (tickers.length === 0) return
+    const fetch_ = async () => {
       try {
         const data = await fetch(`/api/quotes?tickers=${tickers.join(',')}`).then(r => r.json())
-        if (!data.error) setQuotes(data)
+        if (!data.error) setQuotes(prev => ({ ...prev, ...data }))
       } catch { /* silent */ }
     }
-    fetchQuotes()
-    const id = setInterval(fetchQuotes, 2_000)
+    fetch_()
+    const id = setInterval(fetch_, 3_000)
     return () => clearInterval(id)
-  }, [positions, openOrders])
+  }, [openOrders])
 
   return (
     <div className="app">
@@ -201,6 +237,12 @@ export default function App() {
         </div>
         <div className="header-right">
           {error && <span style={{ color: '#ff4444', fontSize: 12 }}>{error}</span>}
+          <span
+            title={wsConnected ? 'Kalshi WS connected' : 'Kalshi WS reconnecting…'}
+            style={{ fontSize: 11, color: wsConnected ? '#00d4a0' : '#f5c842', userSelect: 'none' }}
+          >
+            ● WS
+          </span>
           {lastRefresh && !error && (
             <span className="last-refresh">
               {loading ? 'Refreshing…' : `Updated ${fmtTime(lastRefresh.toISOString())}`}

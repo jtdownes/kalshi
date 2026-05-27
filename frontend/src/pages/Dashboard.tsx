@@ -73,23 +73,32 @@ export default function Dashboard({ orders, openOrders, positions, snapshots, qu
                 <th>Market</th>
                 <th>Side</th>
                 <th>Contracts</th>
+                <th>Fill</th>
                 <th>Cost</th>
                 <th>Ask</th>
                 <th>OI</th>
                 <th>Realized P&L</th>
+                <th>Unr. P&L</th>
               </tr>
             </thead>
             <tbody>
               {!Array.isArray(positions) ? (
-                <tr><td colSpan={7} className="cell-empty" style={{ color: '#ff4444' }}>Error: {(positions as any).error}</td></tr>
+                <tr><td colSpan={9} className="cell-empty" style={{ color: '#ff4444' }}>Error: {(positions as any).error}</td></tr>
               ) : positions.length === 0 ? (
-                <tr><td colSpan={7} className="cell-empty">No active positions</td></tr>
+                <tr><td colSpan={9} className="cell-empty">No active positions</td></tr>
               ) : (positions as Position[]).map(p => {
                 const contracts = parseFloat(p.position_fp)
+                const absContracts = Math.abs(contracts)
                 const side = contracts >= 0 ? 'yes' : 'no'
                 const pnl = parseFloat(p.realized_pnl_dollars)
                 const q = quotes[p.ticker]
                 const ask = q ? (side === 'yes' ? q.yes_ask : q.no_ask) : null
+                const bid = q ? (side === 'yes' ? q.yes_bid : q.no_bid) : null
+                const exposure = parseFloat(p.market_exposure_dollars)
+                const fillPrice = absContracts > 0 ? (exposure / absContracts) * 100 : null
+                const unrealizedPnL = bid != null && absContracts > 0
+                  ? (bid / 100) * absContracts - exposure
+                  : null
                 return (
                   <tr key={p.ticker}>
                     <td className="cell-ticker">
@@ -98,12 +107,18 @@ export default function Dashboard({ orders, openOrders, positions, snapshots, qu
                       </a>
                     </td>
                     <td><span className={`badge ${side === 'yes' ? 'side-yes' : 'side-no'}`}>{side.toUpperCase()}</span></td>
-                    <td>{Math.abs(contracts)}</td>
+                    <td>{absContracts}</td>
+                    <td className="cell-dim">{fillPrice != null ? `${fillPrice.toFixed(1)}¢` : '—'}</td>
                     <td className="cell-dim">${p.total_traded_dollars}</td>
                     <td className="cell-dim">{ask != null ? `${ask}¢` : '—'}</td>
                     <td className="cell-dim">{q?.open_interest != null ? q.open_interest.toLocaleString() : '—'}</td>
                     <td className={pnl > 0 ? 'cell-profit' : pnl < 0 ? 'cell-loss' : 'cell-dim'}>
                       {pnl > 0 ? '+' : ''}${p.realized_pnl_dollars}
+                    </td>
+                    <td className={unrealizedPnL != null && unrealizedPnL > 0 ? 'cell-profit' : unrealizedPnL != null && unrealizedPnL < 0 ? 'cell-loss' : 'cell-dim'}>
+                      {unrealizedPnL != null
+                        ? `${unrealizedPnL > 0 ? '+' : unrealizedPnL < 0 ? '-' : ''}$${Math.abs(unrealizedPnL).toFixed(2)}`
+                        : '—'}
                     </td>
                   </tr>
                 )

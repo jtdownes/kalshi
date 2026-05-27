@@ -8,6 +8,12 @@ export default defineConfig({
     port: 5173,
     watch: { usePolling: true },
     proxy: {
+      '/api/events': {
+        target: 'http://kalshi-api:8820',
+        changeOrigin: true,
+        proxyTimeout: 0,
+        timeout: 0,
+      },
       '/api': {
         target: 'http://kalshi-api:8820',
         changeOrigin: true,
