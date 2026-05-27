@@ -7,6 +7,8 @@ KALSHI_PRIVATE_KEY_PATH = os.environ.get("KALSHI_PRIVATE_KEY_PATH", "/data/kalsh
 
 # ── Storage ───────────────────────────────────────────────────────────────────
 DB_PATH = os.environ.get("DB_PATH", "/data/kalshi_trades.db")
+DB_TYPE = os.environ.get("DB_TYPE", "sqlite")
+DB_URL  = os.environ.get("DB_URL", "")
 
 # ── Strategy ──────────────────────────────────────────────────────────────────
 MIN_ENTRY_CENTS = int(os.environ.get("MIN_ENTRY_CENTS", "1"))
