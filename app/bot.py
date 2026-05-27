@@ -171,6 +171,7 @@ def _sync_order_statuses(client: KalshiClient):
 
     # Look up each resting order individually — bulk-fetching all filled/canceled
     # orders is unreliable due to pagination and sort order.
+    # Kalshi uses status="executed" for filled orders (not "filled").
     for order in resting:
         oid = order.get("kalshi_order_id")
         if not oid:
@@ -178,7 +179,7 @@ def _sync_order_statuses(client: KalshiClient):
         try:
             remote = client.get_order(oid).get("order", {})
             remote_status = remote.get("status", "").lower()
-            if remote_status == "filled":
+            if remote_status == "executed":
                 db.update_order(oid, status="filled",
                                 filled_at=datetime.utcnow().isoformat())
                 log.info("FILLED   %-6s %-50s  %d\u00a2",
