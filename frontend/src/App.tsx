@@ -1,6 +1,15 @@
 import { useState, useEffect, useCallback } from 'react'
 
 // ── Types ────────────────────────────────────────────────────────────────────────────────
+interface Position {
+  ticker: string
+  position: number
+  total_traded: number
+  resting_orders_cost: number
+  realized_pnl: number
+  fees_paid: number
+}
+
 interface Order {
   id: number
   kalshi_order_id: string | null
@@ -141,6 +150,7 @@ function StatusBadge({ status, outcome }: { status: string; outcome: string | nu
 // ── Main ─────────────────────────────────────────────────────────────────────────────────
 export default function App() {
   const [orders,    setOrders]    = useState<Order[]>([])
+  const [positions, setPositions] = useState<Position[]>([])
   const [settings,  setSettings]  = useState<Settings | null>(null)
   const [profiles,  setProfiles]  = useState<Profile[]>([])
   const [autoRefresh, setAutoRefresh] = useState(true)
@@ -155,12 +165,14 @@ export default function App() {
     setLoading(true)
     setError(null)
     try {
-      const [o, st, pr] = await Promise.all([
+      const [o, pos, st, pr] = await Promise.all([
         fetch('/api/orders?limit=200').then(r => { if (!r.ok) throw new Error('orders'); return r.json() }),
+        fetch('/api/positions').then(r => { if (!r.ok) throw new Error('positions'); return r.json() }),
         fetch('/api/settings').then(r => { if (!r.ok) throw new Error('settings'); return r.json() }),
         fetch('/api/profiles').then(r => { if (!r.ok) throw new Error('profiles'); return r.json() }),
       ])
       setOrders(o)
+      setPositions(Array.isArray(pos) ? pos : [])
       setSettings(st)
       setProfiles(pr)
       setLastRefresh(new Date())
@@ -215,7 +227,6 @@ export default function App() {
 
   const activeProfile = profiles.find(p => p.id === settings?.active_profile_id)
   const openOrders = orders.filter(o => o.status === 'resting')
-  const activePositions = orders.filter(o => o.status === 'filled' && o.outcome === null)
   const updateStrategyDraft = (patch: Partial<StrategyDraft>) => {
     setStrategyEditor(editor => editor ? { ...editor, draft: { ...editor.draft, ...patch } } : editor)
   }
@@ -435,7 +446,7 @@ export default function App() {
       <div className="table-panel" style={{ marginTop: 16, marginLeft: 18, marginRight: 18 }}>
         <div style={{ padding: '10px', display: 'flex', alignItems: 'center', gap: 8 }}>
           <span style={{ fontWeight: 600, fontSize: 13 }}>Active Positions</span>
-          <span className="tab-count">{activePositions.length}</span>
+          <span className="tab-count">{positions.length}</span>
         </div>
         <div className="table-wrap">
           <table>
@@ -443,33 +454,37 @@ export default function App() {
               <tr>
                 <th>Market</th>
                 <th>Side</th>
-                <th>Entry</th>
-                <th>Filled</th>
-                <th>TTC</th>
-                <th>Payout</th>
+                <th>Contracts</th>
+                <th>Cost</th>
+                <th>Realized P&L</th>
               </tr>
             </thead>
             <tbody>
-              {activePositions.length === 0 ? (
-                <tr><td colSpan={6} className="cell-empty">No active positions</td></tr>
-              ) : activePositions.map(o => (
-                <tr key={o.id}>
-                  <td className="cell-ticker">
-                    <a href={kalshiMarketUrl(o.market_ticker)} target="_blank" rel="noreferrer" style={{ color: 'inherit', textDecoration: 'none' }}>
-                      {o.market_ticker}
-                    </a>
-                  </td>
-                  <td>
-                    <span className={`badge ${o.side === 'yes' ? 'side-yes' : 'side-no'}`}>
-                      {o.side.toUpperCase()}
-                    </span>
-                  </td>
-                  <td>{o.entry_price_cents}¢</td>
-                  <td className="cell-dim">{fmtTime(o.filled_at)}</td>
-                  <td className="cell-dim">{fmtDur(o.time_to_close_at_placement)}</td>
-                  <td className="cell-dim">{o.payout_cents != null ? `${o.payout_cents}¢` : '—'}</td>
-                </tr>
-              ))}
+              {positions.length === 0 ? (
+                <tr><td colSpan={5} className="cell-empty">No active positions</td></tr>
+              ) : positions.map(p => {
+                const side = p.position >= 0 ? 'yes' : 'no'
+                const contracts = Math.abs(p.position)
+                return (
+                  <tr key={p.ticker}>
+                    <td className="cell-ticker">
+                      <a href={kalshiMarketUrl(p.ticker)} target="_blank" rel="noreferrer" style={{ color: 'inherit', textDecoration: 'none' }}>
+                        {p.ticker}
+                      </a>
+                    </td>
+                    <td>
+                      <span className={`badge ${side === 'yes' ? 'side-yes' : 'side-no'}`}>
+                        {side.toUpperCase()}
+                      </span>
+                    </td>
+                    <td>{contracts}</td>
+                    <td className="cell-dim">{p.total_traded != null ? `${p.total_traded}¢` : '—'}</td>
+                    <td className={p.realized_pnl > 0 ? 'cell-profit' : p.realized_pnl < 0 ? 'cell-loss' : 'cell-dim'}>
+                      {fmtPnL(p.realized_pnl)}
+                    </td>
+                  </tr>
+                )
+              })}
             </tbody>
           </table>
         </div>

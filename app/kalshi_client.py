@@ -120,6 +120,9 @@ class KalshiClient:
             params["ticker"] = ticker
         return self._get("/portfolio/fills", params=params)
 
+    def get_positions(self, limit: int = 100) -> dict:
+        return self._get("/portfolio/positions", params={"limit": limit})
+
     def ws_auth_headers(self) -> dict:
         """Generate authentication headers for the WebSocket handshake.
         Signs: timestamp + 'GET' + '/trade-api/ws/v2'  (no /v2 prefix on path)

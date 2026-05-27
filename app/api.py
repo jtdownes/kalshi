@@ -10,6 +10,7 @@ from datetime import date
 
 import config
 import database
+from kalshi_client import KalshiClient
 
 database.init_db()
 
@@ -24,6 +25,16 @@ def _conn():
             yield cur
     finally:
         conn.close()
+
+
+@app.get("/api/positions")
+def positions():
+    try:
+        client = KalshiClient()
+        data = client.get_positions()
+        return jsonify(data.get("market_positions", []))
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
 
 
 @app.get("/api/health")
