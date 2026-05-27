@@ -121,7 +121,7 @@ export default function Strategies({ settings, profiles, refresh }: Props) {
             </div>
           </div>
           <div className="strategy-metrics">
-            <div><span>Entry</span><strong>{settings.min_entry_cents}–{settings.max_entry_cents}¢</strong></div>
+            <div><span>Max Bid</span><strong>{settings.max_entry_cents}¢</strong></div>
             <div><span>Daily Limit</span><strong>{centsToUSD(settings.max_daily_spend_cents)}</strong></div>
             <div><span>Max Orders</span><strong>{settings.max_open_orders}</strong></div>
             <div><span>Mode</span><strong>{settings.proactive_mode ? 'Proactive' : 'Reactive'}</strong></div>
@@ -144,7 +144,7 @@ export default function Strategies({ settings, profiles, refresh }: Props) {
                 {isActive && <span className="badge badge-live">ACTIVE</span>}
               </div>
               <div className="strategy-card-stats">
-                <div><span>Entry</span><strong>{p.min_entry_cents}–{p.max_entry_cents}¢</strong></div>
+                <div><span>Max Bid</span><strong>{p.max_entry_cents}¢</strong></div>
                 <div><span>Limit</span><strong>{centsToUSD(p.max_daily_spend_cents)}</strong></div>
                 <div><span>Orders</span><strong>{p.max_open_orders}</strong></div>
                 <div><span>Mode</span><strong>{p.proactive_mode ? 'Proactive' : 'Reactive'}</strong></div>
