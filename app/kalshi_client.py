@@ -123,7 +123,7 @@ class KalshiClient:
     def get_positions(self, limit: int = 100) -> dict:
         return self._get("/portfolio/positions", params={
             "limit": limit,
-            "count_filter": "position,total_traded",
+            "count_filter": "position",
         })
 
     def ws_auth_headers(self) -> dict:
