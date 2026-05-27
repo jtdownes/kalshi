@@ -1,0 +1,9 @@
+# Credentials and live data — never commit these
+.env
+data/
+
+# Python cache
+__pycache__/
+app/__pycache__/
+*.pyc
+*.pyo
