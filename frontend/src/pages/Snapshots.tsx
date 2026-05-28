@@ -177,6 +177,7 @@ export default function Snapshots({ snapshots }: Props) {
                               <thead>
                                 <tr>
                                   <th>Scanned</th>
+                                  <th>Live Price</th>
                                   <th>Yes Ask</th>
                                   <th>Yes Bid</th>
                                   <th>No Ask</th>
@@ -191,6 +192,7 @@ export default function Snapshots({ snapshots }: Props) {
                                 {expandedHistory.map(snap => (
                                   <tr key={snap.id}>
                                     <td className="cell-dim">{fmtTime(snap.scanned_at)}</td>
+                                    <td className="cell-dim">{snap.btc_price != null ? `$${snap.btc_price.toLocaleString()}` : '—'}</td>
                                     <td>{fmtCents(snap.yes_ask)}</td>
                                     <td className="cell-dim">{fmtCents(snap.yes_bid)}</td>
                                     <td className="cell-dim">{fmtCents(snap.no_ask)}</td>
