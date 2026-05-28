@@ -199,7 +199,7 @@ def orders():
     status = request.args.get("status", "all")
     profile_id = request.args.get("profile_id")
     
-    where_clauses = ["order_role = 'entry'"]
+    where_clauses = []
     params = []
     
     if status != "all":
@@ -215,7 +215,7 @@ def orders():
         where_sql = "WHERE " + " AND ".join(where_clauses)
         
     query = f"""
-        SELECT id, kalshi_order_id, market_ticker, side,
+        SELECT id, kalshi_order_id, market_ticker, side, order_role,
                entry_price_cents, count, status, placed_at,
                filled_at, market_close_time,
                time_to_close_at_placement,

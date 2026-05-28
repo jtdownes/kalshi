@@ -212,6 +212,7 @@ export default function Dashboard({ orders, trades, openOrders, positions, snaps
               <tr>
                 <th>Market</th>
                 <th>Side</th>
+                <th>Direction</th>
                 <th>Entry</th>
                 <th>Ask</th>
                 <th>OI</th>
@@ -222,10 +223,11 @@ export default function Dashboard({ orders, trades, openOrders, positions, snaps
             </thead>
             <tbody>
               {openOrders.length === 0 ? (
-                <tr><td colSpan={8} className="cell-empty">No open orders</td></tr>
+                <tr><td colSpan={9} className="cell-empty">No open orders</td></tr>
               ) : openOrders.map(o => {
                 const q = quotes[o.market_ticker]
                 const ask = q ? (o.side === 'yes' ? q.yes_ask : q.no_ask) : null
+                const isBuy = o.order_role === 'entry'
                 return (
                   <tr key={o.id}>
                     <td className="cell-ticker">
@@ -233,6 +235,7 @@ export default function Dashboard({ orders, trades, openOrders, positions, snaps
                         {o.market_ticker}
                       </a>
                     </td>
+                    <td><span className={`badge ${isBuy ? 'side-buy' : 'side-sell'}`}>{isBuy ? 'BUY' : 'SELL'}</span></td>
                     <td><span className={`badge ${o.side === 'yes' ? 'side-yes' : 'side-no'}`}>{o.side.toUpperCase()}</span></td>
                     <td>{o.entry_price_cents}¢</td>
                     <td className="cell-dim">{fmtCents(ask)}</td>
@@ -270,6 +273,7 @@ export default function Dashboard({ orders, trades, openOrders, positions, snaps
               <tr>
                 <th>Market</th>
                 <th>Side</th>
+                <th>Direction</th>
                 <th>Entry</th>
                 <th>Qty</th>
                 <th>Result</th>
@@ -280,7 +284,7 @@ export default function Dashboard({ orders, trades, openOrders, positions, snaps
             </thead>
             <tbody>
               {history.length === 0 ? (
-                <tr><td colSpan={8} className="cell-empty">No order history</td></tr>
+                <tr><td colSpan={9} className="cell-empty">No order history</td></tr>
               ) : history.map(o => (
                 <tr key={o.id}>
                   <td className="cell-ticker">
@@ -288,6 +292,7 @@ export default function Dashboard({ orders, trades, openOrders, positions, snaps
                       {o.market_ticker}
                     </a>
                   </td>
+                  <td><span className={`badge ${o.order_role === 'entry' ? 'side-buy' : 'side-sell'}`}>{o.order_role === 'entry' ? 'BUY' : 'SELL'}</span></td>
                   <td><span className={`badge ${o.side === 'yes' ? 'side-yes' : 'side-no'}`}>{o.side.toUpperCase()}</span></td>
                   <td>{o.entry_price_cents}¢</td>
                   <td>{o.count}</td>

@@ -20,6 +20,7 @@ export interface Order {
   kalshi_order_id: string | null
   market_ticker: string
   side: string
+  order_role: string
   entry_price_cents: number
   count: number
   status: string
