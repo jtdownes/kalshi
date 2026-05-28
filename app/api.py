@@ -323,6 +323,23 @@ def snapshots():
     return jsonify(database.get_recent_market_snapshots(limit))
 
 
+@app.get("/api/snapshots/tickers")
+def snapshot_tickers():
+    """Return one summary row per distinct ticker in market_snapshots, ordered by most recent scan."""
+    with _conn() as c:
+        c.execute("""
+            SELECT DISTINCT ON (ticker)
+                   ticker, title, strike_str,
+                   yes_ask, yes_bid, no_ask,
+                   volume, open_interest, time_to_close_secs,
+                   scanned_at
+            FROM market_snapshots
+            ORDER BY ticker, id DESC
+        """)
+        rows = c.fetchall()
+    return jsonify([dict(r) for r in rows])
+
+
 @app.get("/api/profiles")
 def get_profiles():
     with _conn() as c:

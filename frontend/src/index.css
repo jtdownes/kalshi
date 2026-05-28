@@ -257,6 +257,44 @@ tbody tr:hover { background: rgba(255,255,255,0.025); }
   background: rgba(96,165,250,0.14);
 }
 
+.cell-chevron-th { width: 28px; padding: 0 4px 0 12px !important; }
+.cell-chevron    { width: 28px; padding: 0 4px 0 12px !important; color: #64748b; font-size: 12px; user-select: none; }
+
+.snapshot-history-row:hover { background: transparent !important; }
+.snapshot-history-cell {
+  padding: 0 !important;
+  border-bottom: 2px solid #1e1e2e !important;
+  background: #0d0d14;
+}
+
+.snapshot-history-scroll {
+  max-height: 340px;
+  overflow-y: auto;
+  overflow-x: auto;
+}
+
+.snapshot-history-status {
+  padding: 24px 20px;
+  color: #64748b;
+  font-size: 13px;
+}
+.snapshot-history-error { color: #ff4444; }
+
+.snapshot-history-table { width: 100%; border-collapse: collapse; }
+.snapshot-history-table th {
+  background: #111119;
+  position: sticky;
+  top: 0;
+  z-index: 1;
+}
+.snapshot-history-table td {
+  padding: 9px 16px;
+  border-bottom: 1px solid #111119;
+  vertical-align: middle;
+}
+.snapshot-history-table tbody tr:last-child td { border-bottom: none; }
+.snapshot-history-table tbody tr:hover { background: rgba(255,255,255,0.02); }
+
 .strategy-active-panel {
   display: grid;
   grid-template-columns: minmax(260px, 1.2fr) minmax(360px, 1fr);
