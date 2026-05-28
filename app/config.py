@@ -1,5 +1,8 @@
 import os
 
+# ── Auth ─────────────────────────────────────────────────────────────────────
+SECRET_KEY = os.environ["SECRET_KEY"]
+
 # ── Kalshi API ────────────────────────────────────────────────────────────────
 KALSHI_API_BASE        = "https://api.elections.kalshi.com/trade-api/v2"
 KALSHI_WS_URL          = os.environ.get("KALSHI_WS_URL", "wss://api.elections.kalshi.com/trade-api/ws/v2")

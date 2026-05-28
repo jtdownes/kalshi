@@ -7,6 +7,12 @@ export default defineConfig({
     host: true,
     port: 5173,
     watch: { usePolling: true },
+    allowedHosts: ['kalshi.jtdownes.com'],
+    hmr: {
+      protocol: 'wss',
+      host: 'kalshi.jtdownes.com',
+      clientPort: 443,
+    },
     proxy: {
       '/api/events': {
         target: 'http://kalshi-api:8820',
