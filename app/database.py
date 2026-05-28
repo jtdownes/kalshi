@@ -47,7 +47,8 @@ def init_db():
                 max_daily_spend_cents   INTEGER NOT NULL,
                 scan_interval_seconds   INTEGER NOT NULL,
                 btc_series_tickers      TEXT NOT NULL,
-                exit_strategy           TEXT NOT NULL DEFAULT 'hold_to_expiration'
+                exit_strategy           TEXT NOT NULL DEFAULT 'hold_to_expiration',
+                limit_sell_price_cents  INTEGER
             );
 
             DO $$
@@ -57,12 +58,22 @@ def init_db():
                 END IF;
             END $$;
 
+            DO $$
+            BEGIN
+                IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='profiles' AND column_name='limit_sell_price_cents') THEN
+                    ALTER TABLE profiles ADD COLUMN limit_sell_price_cents INTEGER;
+                END IF;
+            END $$;
+
             CREATE TABLE IF NOT EXISTS orders (
                 id                              SERIAL PRIMARY KEY,
                 kalshi_order_id                 TEXT UNIQUE,
                 client_order_id                 TEXT UNIQUE NOT NULL,
                 market_ticker                   TEXT NOT NULL,
                 side                            TEXT NOT NULL,
+                order_role                      TEXT NOT NULL DEFAULT 'entry',
+                parent_kalshi_order_id          TEXT,
+                exit_order_kalshi_id            TEXT,
                 entry_price_cents               INTEGER NOT NULL,
                 count                           INTEGER NOT NULL DEFAULT 1,
                 status                          TEXT NOT NULL DEFAULT 'resting',
@@ -73,6 +84,11 @@ def init_db():
                 distance_to_strike_at_placement REAL,
                 market_close_time               TEXT,
                 time_to_close_at_placement      INTEGER,
+                exit_strategy                   TEXT NOT NULL DEFAULT 'hold_to_expiration',
+                exit_target_cents               INTEGER,
+                closed_at                       TEXT,
+                close_reason                    TEXT,
+                close_price_cents               INTEGER,
                 outcome                         TEXT,
                 payout_cents                    INTEGER,
                 fee_cents                       INTEGER,
@@ -86,6 +102,62 @@ def init_db():
             BEGIN 
                 IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='orders' AND column_name='profile_id') THEN
                     ALTER TABLE orders ADD COLUMN profile_id INTEGER;
+                END IF;
+            END $$;
+
+            DO $$
+            BEGIN
+                IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='orders' AND column_name='order_role') THEN
+                    ALTER TABLE orders ADD COLUMN order_role TEXT NOT NULL DEFAULT 'entry';
+                END IF;
+            END $$;
+
+            DO $$
+            BEGIN
+                IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='orders' AND column_name='parent_kalshi_order_id') THEN
+                    ALTER TABLE orders ADD COLUMN parent_kalshi_order_id TEXT;
+                END IF;
+            END $$;
+
+            DO $$
+            BEGIN
+                IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='orders' AND column_name='exit_order_kalshi_id') THEN
+                    ALTER TABLE orders ADD COLUMN exit_order_kalshi_id TEXT;
+                END IF;
+            END $$;
+
+            DO $$
+            BEGIN
+                IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='orders' AND column_name='exit_strategy') THEN
+                    ALTER TABLE orders ADD COLUMN exit_strategy TEXT NOT NULL DEFAULT 'hold_to_expiration';
+                END IF;
+            END $$;
+
+            DO $$
+            BEGIN
+                IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='orders' AND column_name='exit_target_cents') THEN
+                    ALTER TABLE orders ADD COLUMN exit_target_cents INTEGER;
+                END IF;
+            END $$;
+
+            DO $$
+            BEGIN
+                IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='orders' AND column_name='closed_at') THEN
+                    ALTER TABLE orders ADD COLUMN closed_at TEXT;
+                END IF;
+            END $$;
+
+            DO $$
+            BEGIN
+                IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='orders' AND column_name='close_reason') THEN
+                    ALTER TABLE orders ADD COLUMN close_reason TEXT;
+                END IF;
+            END $$;
+
+            DO $$
+            BEGIN
+                IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='orders' AND column_name='close_price_cents') THEN
+                    ALTER TABLE orders ADD COLUMN close_price_cents INTEGER;
                 END IF;
             END $$;
 
@@ -122,6 +194,7 @@ def init_db():
                 scan_interval_seconds  INTEGER NOT NULL,
                 btc_series_tickers     TEXT NOT NULL,
                 exit_strategy          TEXT NOT NULL DEFAULT 'hold_to_expiration',
+                limit_sell_price_cents INTEGER,
                 active_profile_id      INTEGER
             );
 
@@ -137,6 +210,13 @@ def init_db():
             BEGIN
                 IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='settings' AND column_name='exit_strategy') THEN
                     ALTER TABLE settings ADD COLUMN exit_strategy TEXT NOT NULL DEFAULT 'hold_to_expiration';
+                END IF;
+            END $$;
+
+            DO $$
+            BEGIN
+                IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='settings' AND column_name='limit_sell_price_cents') THEN
+                    ALTER TABLE settings ADD COLUMN limit_sell_price_cents INTEGER;
                 END IF;
             END $$;
 
@@ -160,24 +240,24 @@ def init_db():
                 INSERT INTO profiles (
                     name, created_at, min_entry_cents, max_entry_cents, proactive_mode,
                     max_open_orders, max_daily_spend_cents, scan_interval_seconds,
-                    btc_series_tickers, exit_strategy
-                ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s) RETURNING id
+                    btc_series_tickers, exit_strategy, limit_sell_price_cents
+                ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s) RETURNING id
             """, ("Default", now, config.MIN_ENTRY_CENTS, config.MAX_ENTRY_CENTS, config.PROACTIVE_MODE,
                    config.MAX_OPEN_ORDERS, config.MAX_DAILY_SPEND_CENTS, 
                    config.SCAN_INTERVAL_SECONDS, ",".join(config.BTC_SERIES_TICKERS),
-                   'hold_to_expiration'))
+                   'hold_to_expiration', None))
             default_profile_id = cur.fetchone()[0]
 
             cur.execute("""
                 INSERT INTO settings (
                     id, min_entry_cents, max_entry_cents, proactive_mode, 
                     max_open_orders, max_daily_spend_cents, scan_interval_seconds, 
-                    btc_series_tickers, exit_strategy, active_profile_id
-                ) VALUES (1, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                    btc_series_tickers, exit_strategy, limit_sell_price_cents, active_profile_id
+                ) VALUES (1, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
             """, (
                 config.MIN_ENTRY_CENTS, config.MAX_ENTRY_CENTS, config.PROACTIVE_MODE,
                 config.MAX_OPEN_ORDERS, config.MAX_DAILY_SPEND_CENTS, 
-                config.SCAN_INTERVAL_SECONDS, ",".join(config.BTC_SERIES_TICKERS), 'hold_to_expiration',
+                config.SCAN_INTERVAL_SECONDS, ",".join(config.BTC_SERIES_TICKERS), 'hold_to_expiration', None,
                 default_profile_id
             ))
             
@@ -193,15 +273,15 @@ def init_db():
                 profile_row = cur.fetchone()
                 if not profile_row:
                     now = datetime.utcnow().isoformat()
-                    cur.execute("SELECT min_entry_cents, max_entry_cents, proactive_mode, max_open_orders, max_daily_spend_cents, scan_interval_seconds, btc_series_tickers, exit_strategy FROM settings WHERE id = 1")
+                    cur.execute("SELECT min_entry_cents, max_entry_cents, proactive_mode, max_open_orders, max_daily_spend_cents, scan_interval_seconds, btc_series_tickers, exit_strategy, limit_sell_price_cents FROM settings WHERE id = 1")
                     s = cur.fetchone()
                     cur.execute("""
                         INSERT INTO profiles (
                             name, created_at, min_entry_cents, max_entry_cents, proactive_mode,
                             max_open_orders, max_daily_spend_cents, scan_interval_seconds,
-                            btc_series_tickers, exit_strategy
-                        ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s) RETURNING id
-                    """, ("Default", now, s[0], s[1], s[2], s[3], s[4], s[5], s[6], s[7]))
+                            btc_series_tickers, exit_strategy, limit_sell_price_cents
+                        ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s) RETURNING id
+                    """, ("Default", now, s[0], s[1], s[2], s[3], s[4], s[5], s[6], s[7], s[8]))
                     pid = cur.fetchone()[0]
                 else:
                     pid = profile_row[0]
@@ -232,8 +312,8 @@ def create_profile(settings_dict, name=None):
         INSERT INTO profiles (
             name, created_at, min_entry_cents, max_entry_cents, proactive_mode,
             max_open_orders, max_daily_spend_cents, scan_interval_seconds,
-            btc_series_tickers, exit_strategy
-        ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s) RETURNING id
+            btc_series_tickers, exit_strategy, limit_sell_price_cents
+        ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s) RETURNING id
     """
     params = (
         name, datetime.utcnow().isoformat(),
@@ -241,7 +321,8 @@ def create_profile(settings_dict, name=None):
         settings_dict['proactive_mode'], settings_dict['max_open_orders'],
         settings_dict['max_daily_spend_cents'], settings_dict['scan_interval_seconds'],
         btc_tickers,
-        settings_dict.get('exit_strategy', 'hold_to_expiration')
+        settings_dict.get('exit_strategy', 'hold_to_expiration'),
+        settings_dict.get('limit_sell_price_cents')
     )
     with _lock, _conn() as conn:
         cur = conn.cursor()
@@ -254,7 +335,7 @@ def update_profile(profile_id: int, settings_dict: dict):
     allowed_keys = [
         'name', 'min_entry_cents', 'max_entry_cents', 'proactive_mode',
         'max_open_orders', 'max_daily_spend_cents', 'scan_interval_seconds',
-        'btc_series_tickers', 'exit_strategy'
+        'btc_series_tickers', 'exit_strategy', 'limit_sell_price_cents'
     ]
     to_update = {k: v for k, v in settings_dict.items() if k in allowed_keys}
     if not to_update:
@@ -285,7 +366,8 @@ def update_profile(profile_id: int, settings_dict: dict):
                     max_daily_spend_cents = p.max_daily_spend_cents,
                     scan_interval_seconds = p.scan_interval_seconds,
                     btc_series_tickers    = p.btc_series_tickers,
-                    exit_strategy         = p.exit_strategy
+                    exit_strategy         = p.exit_strategy,
+                    limit_sell_price_cents = p.limit_sell_price_cents
                 FROM profiles p
                 WHERE settings.id = 1 AND p.id = %s
             """, (profile_id,))
@@ -295,19 +377,25 @@ def save_order(client_order_id: str, market_ticker: str, side: str,
                entry_price_cents: int, kalshi_order_id: str = None,
                btc_price: float = None, distance_to_strike: float = None,
                market_close_time: str = None, time_to_close_seconds: int = None,
-               profile_id: int = None):
+               profile_id: int = None, order_role: str = 'entry',
+               parent_kalshi_order_id: str = None,
+               exit_strategy: str = 'hold_to_expiration',
+               exit_target_cents: int = None):
     now = datetime.utcnow().isoformat()
     query = """
         INSERT OR IGNORE INTO orders
           (client_order_id, kalshi_order_id, market_ticker, side,
            entry_price_cents, placed_at, btc_price_at_placement,
            distance_to_strike_at_placement, market_close_time,
-           time_to_close_at_placement, profile_id)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+           time_to_close_at_placement, profile_id, order_role,
+           parent_kalshi_order_id, exit_strategy, exit_target_cents)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     """
     params = (client_order_id, kalshi_order_id, market_ticker, side,
               entry_price_cents, now, btc_price, distance_to_strike,
-              market_close_time, time_to_close_seconds, profile_id)
+              market_close_time, time_to_close_seconds, profile_id,
+              order_role, parent_kalshi_order_id, exit_strategy,
+              exit_target_cents)
     
     with _lock, _conn() as conn:
         _execute(conn, query, params)
@@ -326,7 +414,7 @@ def update_order(kalshi_order_id: str, **fields):
         conn.commit()
 
 def has_open_order(market_ticker: str, side: str) -> bool:
-    query = "SELECT 1 FROM orders WHERE market_ticker = %s AND side = %s AND status IN ('resting', 'pending', 'filled')"
+    query = "SELECT 1 FROM orders WHERE market_ticker = %s AND side = %s AND order_role = 'entry' AND status IN ('resting', 'pending', 'filled')"
     with _lock, _conn() as conn:
         cur = conn.cursor()
         cur.execute(query, (market_ticker, side))
@@ -338,7 +426,7 @@ def get_today_spend_cents() -> int:
     query = """
         SELECT COALESCE(SUM(entry_price_cents * count), 0)
         FROM orders
-        WHERE status IN ('resting', 'filled') AND placed_at::date = %s
+        WHERE order_role = 'entry' AND status IN ('resting', 'filled') AND placed_at::date = %s
     """
     with _lock, _conn() as conn:
         cur = conn.cursor()
@@ -347,7 +435,7 @@ def get_today_spend_cents() -> int:
     return row[0] if row else 0
 
 def count_resting_orders() -> int:
-    query = "SELECT COUNT(*) FROM orders WHERE status = 'resting'"
+    query = "SELECT COUNT(*) FROM orders WHERE order_role = 'entry' AND status = 'resting'"
     with _lock, _conn() as conn:
         cur = conn.cursor()
         cur.execute(query)
@@ -355,7 +443,14 @@ def count_resting_orders() -> int:
     return row[0] if row else 0
 
 def get_resting_orders() -> list[dict]:
-    query = "SELECT kalshi_order_id, market_ticker, side, entry_price_cents FROM orders WHERE status = 'resting'"
+    query = """
+        SELECT kalshi_order_id, market_ticker, side, entry_price_cents,
+               count, market_close_time, profile_id, order_role,
+               parent_kalshi_order_id, exit_order_kalshi_id,
+               exit_strategy, exit_target_cents
+        FROM orders
+        WHERE status = 'resting'
+    """
     with _lock, _conn() as conn:
         cur = conn.cursor(cursor_factory=psycopg2.extras.DictCursor)
         cur.execute(query)
@@ -367,13 +462,47 @@ def get_filled_without_outcome() -> list[dict]:
         SELECT kalshi_order_id, market_ticker, side, entry_price_cents,
                market_close_time
         FROM orders
-        WHERE status = 'filled' AND outcome IS NULL
+        WHERE order_role = 'entry'
+          AND status = 'filled'
+          AND outcome IS NULL
+          AND closed_at IS NULL
     """
     with _lock, _conn() as conn:
         cur = conn.cursor(cursor_factory=psycopg2.extras.DictCursor)
         cur.execute(query)
         rows = cur.fetchall()
     return [dict(r) for r in rows]
+
+def get_order_by_kalshi_order_id(kalshi_order_id: str) -> dict | None:
+    query = "SELECT * FROM orders WHERE kalshi_order_id = %s"
+    with _lock, _conn() as conn:
+        cur = conn.cursor(cursor_factory=psycopg2.extras.DictCursor)
+        cur.execute(query, (kalshi_order_id,))
+        row = cur.fetchone()
+    return dict(row) if row else None
+
+def close_entry_order_with_exit(parent_kalshi_order_id: str, close_price_cents: int,
+                                closed_at: str = None, close_reason: str = 'limit_sell'):
+    parent = get_order_by_kalshi_order_id(parent_kalshi_order_id)
+    if not parent:
+        return
+    if parent.get('closed_at'):
+        return
+
+    if closed_at is None:
+        closed_at = datetime.utcnow().isoformat()
+
+    count = parent.get('count') or 1
+    net_profit_cents = (close_price_cents - parent['entry_price_cents']) * count
+
+    update_order(
+        parent_kalshi_order_id,
+        closed_at=closed_at,
+        close_reason=close_reason,
+        close_price_cents=close_price_cents,
+        payout_cents=close_price_cents * count,
+        net_profit_cents=net_profit_cents,
+    )
 
 def save_market_snapshot(ticker: str, title: str, close_time: str,
                          yes_ask: int, yes_bid: int, no_ask: int, no_bid: int,
@@ -432,7 +561,7 @@ def update_settings(settings: dict):
     allowed_keys = [
         'min_entry_cents', 'max_entry_cents', 'proactive_mode', 
         'max_open_orders', 'max_daily_spend_cents', 'scan_interval_seconds',
-        'btc_series_tickers', 'exit_strategy', 'active_profile_id'
+        'btc_series_tickers', 'exit_strategy', 'limit_sell_price_cents', 'active_profile_id'
     ]
     to_update = {k: v for k, v in settings.items() if k in allowed_keys}
     if not to_update:
@@ -442,7 +571,7 @@ def update_settings(settings: dict):
     critical_keys = [
         'min_entry_cents', 'max_entry_cents', 'proactive_mode', 
         'max_open_orders', 'max_daily_spend_cents', 'scan_interval_seconds',
-        'btc_series_tickers', 'exit_strategy'
+        'btc_series_tickers', 'exit_strategy', 'limit_sell_price_cents'
     ]
     
     for k in critical_keys:
@@ -489,6 +618,7 @@ def activate_profile(profile_id: int):
                 scan_interval_seconds = %s,
                 btc_series_tickers    = %s,
                 exit_strategy         = %s,
+                limit_sell_price_cents = %s,
                 active_profile_id     = %s
             WHERE id = 1
         """, (
@@ -500,6 +630,7 @@ def activate_profile(profile_id: int):
             p['scan_interval_seconds'],
             p['btc_series_tickers'],
             p['exit_strategy'],
+            p['limit_sell_price_cents'],
             profile_id,
         ))
         conn.commit()

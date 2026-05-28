@@ -70,6 +70,7 @@ export interface Settings {
   scan_interval_seconds: number
   btc_series_tickers: string[]
   exit_strategy: 'hold_to_expiration' | 'limit_sell'
+  limit_sell_price_cents: number | null
   active_profile_id: number | null
   name?: string
 }
@@ -86,6 +87,7 @@ export interface Profile {
   scan_interval_seconds: number
   btc_series_tickers: string
   exit_strategy: 'hold_to_expiration' | 'limit_sell'
+  limit_sell_price_cents: number | null
   order_count: number
 }
 

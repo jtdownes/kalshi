@@ -87,13 +87,14 @@ class KalshiClient:
         return self._get(f"/markets/{ticker}")
 
     def place_order(self, ticker: str, side: str, price_cents: int,
-                    client_order_id: str, count: int = 1) -> dict:
+                    client_order_id: str, count: int = 1,
+                    action: str = "buy") -> dict:
         yes_price = price_cents if side == "yes" else (100 - price_cents)
         body = {
             "ticker":           ticker,
             "client_order_id":  client_order_id,
             "type":             "limit",
-            "action":           "buy",
+            "action":           action,
             "side":             side,
             "count":            count,
             "yes_price":        yes_price,

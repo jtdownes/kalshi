@@ -2,10 +2,10 @@
 Kalshi longshot bot -- main entry point.
 
 Two threads run concurrently:
-  scanner  -- every SCAN_INTERVAL_SECONDS: fetch BTC markets, log snapshots,
-              place limit buy orders within safety limits.
-  monitor  -- every ORDER_CHECK_INTERVAL_SECONDS: sync resting/filled status,
-              resolve outcomes after market settlement.
+    scanner  -- every SCAN_INTERVAL_SECONDS: fetch BTC markets, log snapshots,
+                            place limit buy orders within safety limits.
+    monitor  -- every ORDER_CHECK_INTERVAL_SECONDS: sync resting/filled status,
+                            resolve outcomes after market settlement.
 """
 
 import asyncio
@@ -76,6 +76,94 @@ def scan_loop(client: KalshiClient):
         except Exception:
             log.exception("Unhandled error in scanner")
         time.sleep(interval)
+
+
+def _place_limit_sell_exit(client: KalshiClient, entry_order: dict):
+    target_cents = entry_order.get("exit_target_cents")
+    if target_cents is None:
+        log.warning("Limit sell skipped for %s: no exit target saved", entry_order["market_ticker"])
+        return
+
+    current_entry = db.get_order_by_kalshi_order_id(entry_order["kalshi_order_id"]) or entry_order
+    if current_entry.get("exit_order_kalshi_id"):
+        return
+
+    exit_client_oid = str(uuid.uuid4())
+    close_ts = close_ts_to_int(entry_order.get("market_close_time"))
+    time_to_close = seconds_until(close_ts) if close_ts else None
+    resp = client.place_order(
+        entry_order["market_ticker"],
+        entry_order["side"],
+        target_cents,
+        exit_client_oid,
+        count=entry_order.get("count") or 1,
+        action="sell",
+    )
+    exit_order_id = resp.get("order", {}).get("order_id")
+
+    db.save_order(
+        client_order_id=exit_client_oid,
+        market_ticker=entry_order["market_ticker"],
+        side=entry_order["side"],
+        entry_price_cents=target_cents,
+        kalshi_order_id=exit_order_id,
+        market_close_time=entry_order.get("market_close_time"),
+        time_to_close_seconds=time_to_close,
+        profile_id=entry_order.get("profile_id"),
+        order_role="exit",
+        parent_kalshi_order_id=entry_order["kalshi_order_id"],
+        exit_strategy=entry_order.get("exit_strategy") or "limit_sell",
+        exit_target_cents=target_cents,
+    )
+    db.update_order(entry_order["kalshi_order_id"], exit_order_kalshi_id=exit_order_id)
+
+    log.info(
+        "EXIT SET %-6s %-50s  %d¢  parent=%s  id=%s",
+        entry_order["side"],
+        entry_order["market_ticker"],
+        target_cents,
+        entry_order["kalshi_order_id"],
+        exit_order_id,
+    )
+
+
+def _handle_filled_order(client: KalshiClient, order: dict, filled_at: str = None):
+    filled_at = filled_at or datetime.utcnow().isoformat()
+    db.update_order(order["kalshi_order_id"], status="filled", filled_at=filled_at)
+
+    if order.get("order_role") == "exit":
+        db.close_entry_order_with_exit(
+            order["parent_kalshi_order_id"],
+            order["entry_price_cents"],
+            closed_at=filled_at,
+        )
+        log.info(
+            "EXIT HIT %-6s %-50s  %d¢",
+            order["side"],
+            order["market_ticker"],
+            order["entry_price_cents"],
+        )
+        return
+
+    log.info(
+        "FILLED   %-6s %-50s  %d¢",
+        order["side"],
+        order["market_ticker"],
+        order["entry_price_cents"],
+    )
+
+    if order.get("exit_strategy") != "limit_sell":
+        return
+
+    try:
+        _place_limit_sell_exit(client, order)
+    except KalshiError as e:
+        log.error(
+            "limit sell placement failed on %s %s: %s",
+            order["side"],
+            order["market_ticker"],
+            e,
+        )
 
 
 def _scan(client: KalshiClient, settings: dict):
@@ -164,6 +252,8 @@ def _scan(client: KalshiClient, settings: dict):
                         distance_to_strike=None, market_close_time=str(close_ts),
                         time_to_close_seconds=time_to_close,
                         profile_id=active_profile_id,
+                        exit_strategy=settings.get("exit_strategy", "hold_to_expiration"),
+                        exit_target_cents=settings.get("limit_sell_price_cents"),
                     )
                 except KalshiError as e:
                     log.error("place_order failed on %s %s: %s", side, ticker, e)
@@ -287,8 +377,12 @@ async def _ws_fills_async(client: KalshiClient):
                     if msg_type == "fill":
                         order_id = data.get("order_id")
                         if order_id:
-                            db.update_order(order_id, status="filled",
-                                            filled_at=datetime.utcnow().isoformat())
+                            order = db.get_order_by_kalshi_order_id(order_id)
+                            if order:
+                                _handle_filled_order(client, order)
+                            else:
+                                db.update_order(order_id, status="filled",
+                                                filled_at=datetime.utcnow().isoformat())
                             log.info("WS FILL  order_id=%s  ticker=%s  side=%s",
                                      order_id,
                                      data.get("ticker") or data.get("market_ticker", "?"),

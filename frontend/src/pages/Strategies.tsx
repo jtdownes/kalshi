@@ -12,10 +12,15 @@ interface StrategyDraft {
   scan_interval_seconds: number
   btc_series_tickers: string[]
   exit_strategy: 'hold_to_expiration' | 'limit_sell'
+  limit_sell_price_cents: number | null
 }
 
 function formatExitStrategy(exitStrategy: StrategyDraft['exit_strategy'] | Profile['exit_strategy'] | Settings['exit_strategy']): string {
   return exitStrategy === 'limit_sell' ? 'Limit Sell' : 'Hold to Expiration'
+}
+
+function formatExitTarget(limitSellPriceCents: number | null | undefined): string {
+  return limitSellPriceCents == null ? '—' : `${limitSellPriceCents}¢`
 }
 
 function profileToDraft(profile: Profile): StrategyDraft {
@@ -29,6 +34,7 @@ function profileToDraft(profile: Profile): StrategyDraft {
     scan_interval_seconds: profile.scan_interval_seconds,
     btc_series_tickers: profile.btc_series_tickers.split(',').map(t => t.trim()).filter(Boolean),
     exit_strategy: profile.exit_strategy,
+    limit_sell_price_cents: profile.limit_sell_price_cents,
   }
 }
 
@@ -43,6 +49,7 @@ function settingsToDraft(settings: Settings, name = ''): StrategyDraft {
     scan_interval_seconds: settings.scan_interval_seconds,
     btc_series_tickers: settings.btc_series_tickers,
     exit_strategy: settings.exit_strategy,
+    limit_sell_price_cents: settings.limit_sell_price_cents,
   }
 }
 
@@ -70,6 +77,10 @@ export default function Strategies({ settings, profiles, refresh }: Props) {
   const saveStrategy = async (ev: React.FormEvent) => {
     ev.preventDefault()
     if (!strategyEditor) return
+    if (strategyEditor.draft.exit_strategy === 'limit_sell' && strategyEditor.draft.limit_sell_price_cents == null) {
+      alert('Set a limit sell price before saving a limit sell strategy')
+      return
+    }
     setSaving(true)
     try {
       const resp = await fetch(
@@ -137,6 +148,7 @@ export default function Strategies({ settings, profiles, refresh }: Props) {
             <div><span>Max Orders</span><strong>{settings.max_open_orders}</strong></div>
             <div><span>Mode</span><strong>{settings.proactive_mode ? 'Proactive' : 'Reactive'}</strong></div>
             <div><span>Exit</span><strong>{formatExitStrategy(settings.exit_strategy)}</strong></div>
+            <div><span>Exit Target</span><strong>{formatExitTarget(settings.limit_sell_price_cents)}</strong></div>
           </div>
         </section>
       )}
@@ -173,6 +185,7 @@ export default function Strategies({ settings, profiles, refresh }: Props) {
                 <div><span>Orders</span><strong>{p.max_open_orders}</strong></div>
                 <div><span>Runs</span><strong>{(p.order_count ?? 0).toLocaleString()}</strong></div>
                 <div><span>Exit</span><strong>{formatExitStrategy(p.exit_strategy)}</strong></div>
+                <div><span>Exit Target</span><strong>{formatExitTarget(p.limit_sell_price_cents)}</strong></div>
               </div>
               <div className="strategy-tickers">{fmtTickers(p.btc_series_tickers)}</div>
             </article>
@@ -267,9 +280,25 @@ export default function Strategies({ settings, profiles, refresh }: Props) {
                 onChange={e => updateDraft({ exit_strategy: e.target.value as StrategyDraft['exit_strategy'] })}
               >
                 <option value="hold_to_expiration">Hold to Expiration</option>
+                <option value="limit_sell">Limit Sell</option>
               </select>
-              <small className="field-help">Existing strategies default to hold-to-expiration. Limit sell exits will be added next.</small>
+              <small className="field-help">Hold to expiration keeps the historical behavior. Limit sell places a sell order after the buy fills.</small>
             </label>
+            {strategyEditor.draft.exit_strategy === 'limit_sell' && (
+              <label className="field field-wide">
+                <span>Limit Sell Price</span>
+                <input
+                  type="number"
+                  min={1}
+                  max={99}
+                  value={strategyEditor.draft.limit_sell_price_cents ?? ''}
+                  onChange={e => updateDraft({
+                    limit_sell_price_cents: e.target.value === '' ? null : parseInt(e.target.value, 10) || null,
+                  })}
+                />
+                <small className="field-help">When the entry fill lands, the bot places a same-market sell order at this price.</small>
+              </label>
+            )}
             <label className="strategy-toggle field-wide">
               <input
                 type="checkbox"

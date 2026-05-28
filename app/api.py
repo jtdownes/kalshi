@@ -141,33 +141,33 @@ def stats():
         c.execute(f"""
             SELECT COALESCE(SUM(entry_price_cents * count), 0)
             FROM orders
-            WHERE status IN ('resting','filled') AND DATE(placed_at) = %s {where_clause}
+            WHERE order_role = 'entry' AND status IN ('resting','filled') AND DATE(placed_at) = %s {where_clause}
         """, params)
         today_spend = c.fetchone()[0]
 
         # Reset params for counts, keeping only profile_id if present
-        count_where = ""
+        count_where = "WHERE order_role = 'entry'"
         count_params = []
         if profile_id:
-            count_where = " WHERE profile_id = %s"
+            count_where += " AND profile_id = %s"
             count_params = [profile_id]
 
-        c.execute(f"SELECT COUNT(*) FROM orders WHERE status='resting' {where_clause if profile_id else ''}", count_params)
+        c.execute(f"SELECT COUNT(*) FROM orders {count_where} AND status='resting'", count_params)
         resting = c.fetchone()[0]
 
-        c.execute(f"SELECT COUNT(*) FROM orders WHERE status='filled' {where_clause if profile_id else ''}", count_params)
+        c.execute(f"SELECT COUNT(*) FROM orders {count_where} AND status='filled'", count_params)
         filled = c.fetchone()[0]
 
-        c.execute(f"SELECT COUNT(*) FROM orders WHERE status='canceled' {where_clause if profile_id else ''}", count_params)
+        c.execute(f"SELECT COUNT(*) FROM orders {count_where} AND status='canceled'", count_params)
         canceled = c.fetchone()[0]
 
-        c.execute(f"SELECT COUNT(*) FROM orders WHERE outcome='win' {where_clause if profile_id else ''}", count_params)
+        c.execute(f"SELECT COUNT(*) FROM orders {count_where} AND outcome='win'", count_params)
         wins = c.fetchone()[0]
 
-        c.execute(f"SELECT COUNT(*) FROM orders WHERE outcome='loss' {where_clause if profile_id else ''}", count_params)
+        c.execute(f"SELECT COUNT(*) FROM orders {count_where} AND outcome='loss'", count_params)
         losses = c.fetchone()[0]
 
-        c.execute(f"SELECT COALESCE(SUM(net_profit_cents), 0) FROM orders WHERE net_profit_cents IS NOT NULL {where_clause if profile_id else ''}", count_params)
+        c.execute(f"SELECT COALESCE(SUM(net_profit_cents), 0) FROM orders {count_where} AND net_profit_cents IS NOT NULL", count_params)
         total_pnl = c.fetchone()[0]
 
         c.execute(f"SELECT COUNT(*) FROM orders {count_where}", count_params)
@@ -198,7 +198,7 @@ def orders():
     status = request.args.get("status", "all")
     profile_id = request.args.get("profile_id")
     
-    where_clauses = []
+    where_clauses = ["order_role = 'entry'"]
     params = []
     
     if status != "all":
@@ -238,7 +238,7 @@ def trades():
     limit = min(int(request.args.get("limit", 200)), 500)
     profile_id = request.args.get("profile_id")
 
-    where_clauses = []
+    where_clauses = ["order_role = 'entry'"]
     params = []
     if profile_id:
         where_clauses.append("o.profile_id = %s")
@@ -334,7 +334,7 @@ def get_profiles():
             SELECT p.*,
                    COUNT(DISTINCT o.market_ticker) AS order_count
             FROM profiles p
-            LEFT JOIN orders o ON o.profile_id = p.id
+                 LEFT JOIN orders o ON o.profile_id = p.id AND o.order_role = 'entry'
             GROUP BY p.id
             ORDER BY p.created_at DESC
         """)

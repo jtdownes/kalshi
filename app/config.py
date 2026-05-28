@@ -18,6 +18,7 @@ PROACTIVE_MODE = os.environ.get("PROACTIVE_MODE", "true").lower() == "true"
 
 MAX_OPEN_ORDERS      = int(os.environ.get("MAX_OPEN_ORDERS", "20"))
 MAX_DAILY_SPEND_CENTS = int(os.environ.get("MAX_DAILY_SPEND_CENTS", "200"))
+LIMIT_SELL_PRICE_CENTS = os.environ.get("LIMIT_SELL_PRICE_CENTS")
 
 _series_raw = os.environ.get("BTC_SERIES_TICKERS", "")
 BTC_SERIES_TICKERS = [s.strip() for s in _series_raw.split(",") if s.strip()]
@@ -44,6 +45,11 @@ def get_all_settings():
         "max_daily_spend_cents":  db_settings.get("max_daily_spend_cents", MAX_DAILY_SPEND_CENTS),
         "scan_interval_seconds":  db_settings.get("scan_interval_seconds", SCAN_INTERVAL_SECONDS),
         "btc_series_tickers":     db_settings.get("btc_series_tickers", BTC_SERIES_TICKERS),
+        "exit_strategy":          db_settings.get("exit_strategy", "hold_to_expiration"),
+        "limit_sell_price_cents": db_settings.get(
+            "limit_sell_price_cents",
+            int(LIMIT_SELL_PRICE_CENTS) if LIMIT_SELL_PRICE_CENTS else None,
+        ),
         "active_profile_id":      db_settings.get("active_profile_id"),
         "look_ahead_seconds":     LOOK_AHEAD_SECONDS,
         "min_seconds_to_close":   MIN_SECONDS_TO_CLOSE,
