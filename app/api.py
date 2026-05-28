@@ -332,7 +332,7 @@ def get_profiles():
     with _conn() as c:
         c.execute("""
             SELECT p.*,
-                   COUNT(o.id) AS order_count
+                   COUNT(DISTINCT o.market_ticker) AS order_count
             FROM profiles p
             LEFT JOIN orders o ON o.profile_id = p.id
             GROUP BY p.id
