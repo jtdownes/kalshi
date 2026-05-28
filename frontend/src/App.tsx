@@ -161,6 +161,7 @@ export default function App() {
   const [loading,     setLoading]     = useState(false)
   const [error,       setError]       = useState<string | null>(null)
   const [wsConnected, setWsConnected] = useState(false)
+  const dashboardRefreshMs = Math.max(1000, (settings?.scan_interval_seconds ?? 1) * 1000)
 
   const refresh = useCallback(async () => {
     setLoading(true)
@@ -192,7 +193,7 @@ export default function App() {
 
   const openOrders = orders.filter(o => o.status === 'resting')
 
-  // Periodic refresh for orders / snapshots / settings (not positions or quotes — WS handles those)
+  // Periodic refresh for dashboard data not covered by the SSE stream.
   useEffect(() => {
     if (!autoRefresh) return
     const id = setInterval(async () => {
@@ -211,9 +212,9 @@ export default function App() {
         setProfiles(pr)
         setLastRefresh(new Date())
       } catch { /* silent */ }
-    }, 10_000)
+    }, dashboardRefreshMs)
     return () => clearInterval(id)
-  }, [autoRefresh])
+  }, [autoRefresh, dashboardRefreshMs])
 
   // Real-time positions + quotes via SSE → Kalshi WebSocket
   useEffect(() => {
