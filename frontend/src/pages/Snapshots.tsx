@@ -2,8 +2,6 @@ import { useEffect, useMemo, useState } from 'react'
 import type { Snapshot } from '../App'
 import { fmtCents, fmtDur, fmtTime, fmtUnixTime, kalshiMarketUrl } from '../App'
 
-const DEFAULT_HISTORY_LIMIT = 200
-const HISTORY_LIMIT_STORAGE_KEY = 'kalshi-snapshots-history-limit'
 
 interface TickerSummary {
   ticker: string
@@ -23,21 +21,11 @@ interface Props {
 }
 
 export default function Snapshots({ snapshots }: Props) {
-  const [historyLimit, setHistoryLimit] = useState(() => {
-    if (typeof window === 'undefined') return DEFAULT_HISTORY_LIMIT
-    const stored = window.localStorage.getItem(HISTORY_LIMIT_STORAGE_KEY)
-    const parsed = Number.parseInt(stored ?? '', 10)
-    return Number.isFinite(parsed) && parsed > 0 ? parsed : DEFAULT_HISTORY_LIMIT
-  })
   const [allTickers, setAllTickers] = useState<TickerSummary[]>([])
   const [expandedTicker, setExpandedTicker] = useState<string | null>(null)
   const [expandedHistory, setExpandedHistory] = useState<Snapshot[]>([])
   const [expandedLoading, setExpandedLoading] = useState(false)
   const [expandedError, setExpandedError] = useState<string | null>(null)
-
-  useEffect(() => {
-    window.localStorage.setItem(HISTORY_LIMIT_STORAGE_KEY, String(historyLimit))
-  }, [historyLimit])
 
   // Fetch all distinct tickers from the DB for the historical panel
   useEffect(() => {
@@ -55,14 +43,6 @@ export default function Snapshots({ snapshots }: Props) {
     return Array.from(latestByTicker.values())
   }, [snapshots])
 
-  function updateHistoryLimit() {
-    const nextValue = window.prompt('Set historical snapshot limit', String(historyLimit))
-    if (nextValue == null) return
-    const parsed = Number.parseInt(nextValue, 10)
-    if (!Number.isFinite(parsed) || parsed < 1) return
-    setHistoryLimit(Math.min(parsed, 1000))
-  }
-
   function toggleExpanded(ticker: string) {
     if (expandedTicker === ticker) {
       setExpandedTicker(null)
@@ -74,7 +54,7 @@ export default function Snapshots({ snapshots }: Props) {
     setExpandedHistory([])
     setExpandedError(null)
     setExpandedLoading(true)
-    fetch(`/api/snapshots?ticker=${encodeURIComponent(ticker)}&limit=${historyLimit}`)
+    fetch(`/api/snapshots?ticker=${encodeURIComponent(ticker)}&limit=1000`)
       .then(r => {
         if (!r.ok) throw new Error('Failed to load snapshot history')
         return r.json()
@@ -137,13 +117,7 @@ export default function Snapshots({ snapshots }: Props) {
 
       <section className="table-panel">
         <div className="snapshot-panel-head">
-          <div>
-            <span className="section-toggle-label">Historical Feed</span>
-            <span className="snapshot-panel-subtitle">All markets in the database. Click a market to expand its snapshot history.</span>
-          </div>
-          <button type="button" className="tab-count-button" onClick={updateHistoryLimit} title="Click to change the historical snapshot limit">
-            <span className="tab-count">LIMIT {historyLimit}</span>
-          </button>
+          <span className="section-toggle-label">Historical Feed</span>
         </div>
         <div className="table-wrap">
           <table>
