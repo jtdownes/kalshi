@@ -531,7 +531,7 @@ def get_recent_market_snapshots(limit: int | None = None) -> list[dict]:
     query = f"""
         SELECT id, ticker, title, scanned_at, close_time,
                yes_ask, no_ask, yes_bid, no_bid,
-               time_to_close_secs, strike_str, volume, open_interest
+               btc_price, time_to_close_secs, strike_str, volume, open_interest
         FROM market_snapshots
         ORDER BY id DESC
         {limit_sql}
@@ -547,7 +547,7 @@ def get_market_snapshots_for_ticker(ticker: str, limit: int | None = None) -> li
     query = f"""
         SELECT id, ticker, title, scanned_at, close_time,
                yes_ask, no_ask, yes_bid, no_bid,
-               time_to_close_secs, strike_str, volume, open_interest
+               btc_price, time_to_close_secs, strike_str, volume, open_interest
         FROM market_snapshots
         WHERE ticker = %s
         ORDER BY id DESC
@@ -570,7 +570,7 @@ def get_latest_snapshots_for_series(series_tickers: list[str], max_age_seconds: 
         SELECT DISTINCT ON (ticker)
                id, ticker, title, scanned_at, close_time,
                yes_ask, no_ask, yes_bid, no_bid,
-               time_to_close_secs, strike_str, volume, open_interest
+               btc_price, time_to_close_secs, strike_str, volume, open_interest
         FROM market_snapshots
         WHERE ({where})
           AND scanned_at::timestamp >= ((CURRENT_TIMESTAMP AT TIME ZONE 'UTC') - (%s || ' seconds')::interval)
