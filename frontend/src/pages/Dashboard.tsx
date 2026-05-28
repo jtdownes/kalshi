@@ -1,13 +1,11 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import type { Order, Trade, Position, Snapshot, Settings, Profile, Quotes } from '../App'
 import { centsToUSD, fmtCents, fmtPnL, fmtTime, fmtUnixTime, fmtDur, kalshiMarketUrl } from '../App'
 
 const DEFAULT_HISTORY_LIMIT = 10
 const HISTORY_LIMIT_STORAGE_KEY = 'kalshi-order-history-limit'
-const DEFAULT_SNAPSHOT_LIMIT = 10
-const SNAPSHOT_LIMIT_STORAGE_KEY = 'kalshi-snapshot-limit'
-type CollapsibleSection = 'history' | 'trades' | 'snapshots'
+type CollapsibleSection = 'history' | 'trades'
 
 function tickerOpenTime(ticker: string): string {
   const parts = ticker.split('-')
@@ -55,7 +53,6 @@ export default function Dashboard({ orders, trades, openOrders, positions, snaps
   const [collapsedSections, setCollapsedSections] = useState<Record<CollapsibleSection, boolean>>({
     history: false,
     trades: false,
-    snapshots: false,
   })
   const [historyLimit, setHistoryLimit] = useState(() => {
     if (typeof window === 'undefined') return DEFAULT_HISTORY_LIMIT
@@ -63,24 +60,19 @@ export default function Dashboard({ orders, trades, openOrders, positions, snaps
     const parsed = Number.parseInt(stored ?? '', 10)
     return Number.isFinite(parsed) && parsed > 0 ? parsed : DEFAULT_HISTORY_LIMIT
   })
-  const [snapshotLimit, setSnapshotLimit] = useState(() => {
-    if (typeof window === 'undefined') return DEFAULT_SNAPSHOT_LIMIT
-    const stored = window.localStorage.getItem(SNAPSHOT_LIMIT_STORAGE_KEY)
-    const parsed = Number.parseInt(stored ?? '', 10)
-    return Number.isFinite(parsed) && parsed > 0 ? parsed : DEFAULT_SNAPSHOT_LIMIT
-  })
-
   useEffect(() => {
     window.localStorage.setItem(HISTORY_LIMIT_STORAGE_KEY, String(historyLimit))
   }, [historyLimit])
 
-  useEffect(() => {
-    window.localStorage.setItem(SNAPSHOT_LIMIT_STORAGE_KEY, String(snapshotLimit))
-  }, [snapshotLimit])
-
   const activeProfile = profiles.find(p => p.id === settings?.active_profile_id)
   const history = orders.filter(o => o.status !== 'resting').slice(0, historyLimit)
-  const visibleSnapshots = snapshots.slice(0, snapshotLimit)
+  const marketSnapshots = useMemo(() => {
+    const latestByTicker = new Map<string, Snapshot>()
+    for (const snapshot of snapshots) {
+      if (!latestByTicker.has(snapshot.ticker)) latestByTicker.set(snapshot.ticker, snapshot)
+    }
+    return Array.from(latestByTicker.values())
+  }, [snapshots])
 
   function updateHistoryLimit() {
     const nextValue = window.prompt('Set order history limit', String(historyLimit))
@@ -90,16 +82,6 @@ export default function Dashboard({ orders, trades, openOrders, positions, snaps
     if (!Number.isFinite(parsed) || parsed < 1) return
 
     setHistoryLimit(Math.min(parsed, 500))
-  }
-
-  function updateSnapshotLimit() {
-    const nextValue = window.prompt('Set market snapshot limit', String(snapshotLimit))
-    if (nextValue == null) return
-
-    const parsed = Number.parseInt(nextValue, 10)
-    if (!Number.isFinite(parsed) || parsed < 1) return
-
-    setSnapshotLimit(Math.min(parsed, 500))
   }
 
   function toggleSection(section: CollapsibleSection) {
@@ -131,6 +113,52 @@ export default function Dashboard({ orders, trades, openOrders, positions, snaps
           </div>
         </section>
       )}
+
+      {/* Live Markets */}
+      <div className="table-panel" style={{ marginTop: 16, marginLeft: 18, marginRight: 18 }}>
+        <div className="snapshot-panel-head">
+          <span className="section-toggle-label">Live Markets</span>
+          <span className="tab-count">{marketSnapshots.length}</span>
+        </div>
+        <div className="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>Market</th>
+                <th>Strike</th>
+                <th>Yes Ask</th>
+                <th>Yes Bid</th>
+                <th>No Ask</th>
+                <th>Volume</th>
+                <th>OI</th>
+                <th>TTC</th>
+                <th>Scanned</th>
+              </tr>
+            </thead>
+            <tbody>
+              {marketSnapshots.length === 0 ? (
+                <tr><td colSpan={9} className="cell-empty">No live snapshots</td></tr>
+              ) : marketSnapshots.map(s => (
+                <tr key={s.id}>
+                  <td className="cell-ticker">
+                    <a href={kalshiMarketUrl(s.ticker)} target="_blank" rel="noreferrer" style={{ color: 'inherit', textDecoration: 'none' }}>
+                      {s.ticker}
+                    </a>
+                  </td>
+                  <td className="cell-dim">{s.strike_str ?? '—'}</td>
+                  <td>{fmtCents(s.yes_ask)}</td>
+                  <td className="cell-dim">{fmtCents(s.yes_bid)}</td>
+                  <td className="cell-dim">{fmtCents(s.no_ask)}</td>
+                  <td className="cell-dim">{s.volume != null ? s.volume.toLocaleString() : '—'}</td>
+                  <td className="cell-dim">{s.open_interest != null ? s.open_interest.toLocaleString() : '—'}</td>
+                  <td className="cell-dim">{fmtDur(s.time_to_close_secs)}</td>
+                  <td className="cell-dim">{fmtTime(s.scanned_at)}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </div>
 
       {/* Active Positions */}
       <div className="table-panel" style={{ marginTop: 16, marginLeft: 18, marginRight: 18 }}>
@@ -310,7 +338,7 @@ export default function Dashboard({ orders, trades, openOrders, positions, snaps
       </div>
 
       {/* Trades */}
-      <div className="table-panel" style={{ marginTop: 16, marginLeft: 18, marginRight: 18 }}>
+      <div className="table-panel" style={{ marginTop: 16, marginLeft: 18, marginRight: 18, marginBottom: 32 }}>
         <div style={{ padding: '10px', display: 'flex', alignItems: 'center', gap: 8 }}>
           <button
             type="button"
@@ -371,61 +399,6 @@ export default function Dashboard({ orders, trades, openOrders, positions, snaps
         </div>}
       </div>
 
-      {/* Market Snapshots */}
-      <div className="table-panel" style={{ marginTop: 16, marginLeft: 18, marginRight: 18, marginBottom: 32 }}>
-        <div style={{ padding: '10px', display: 'flex', alignItems: 'center', gap: 8 }}>
-          <button
-            type="button"
-            className="section-toggle"
-            onClick={() => toggleSection('snapshots')}
-            aria-expanded={!collapsedSections.snapshots}
-          >
-            <span className="section-toggle-caret">{collapsedSections.snapshots ? '▸' : '▾'}</span>
-            <span className="section-toggle-label">Market Snapshots</span>
-          </button>
-          <button type="button" className="tab-count-button" onClick={updateSnapshotLimit} title="Click to change the market snapshot limit">
-            <span className="tab-count">LIMIT {snapshotLimit}</span>
-          </button>
-        </div>
-        {!collapsedSections.snapshots && <div className="table-wrap">
-          <table>
-            <thead>
-              <tr>
-                <th>Market</th>
-                <th>Strike</th>
-                <th>Yes Ask</th>
-                <th>Yes Bid</th>
-                <th>No Ask</th>
-                <th>Volume</th>
-                <th>OI</th>
-                <th>TTC</th>
-                <th>Scanned</th>
-              </tr>
-            </thead>
-            <tbody>
-              {visibleSnapshots.length === 0 ? (
-                <tr><td colSpan={9} className="cell-empty">No snapshots</td></tr>
-              ) : visibleSnapshots.map(s => (
-                <tr key={s.id}>
-                  <td className="cell-ticker">
-                    <a href={kalshiMarketUrl(s.ticker)} target="_blank" rel="noreferrer" style={{ color: 'inherit', textDecoration: 'none' }}>
-                      {s.ticker}
-                    </a>
-                  </td>
-                  <td className="cell-dim">{s.strike_str ?? '—'}</td>
-                  <td>{fmtCents(s.yes_ask)}</td>
-                  <td className="cell-dim">{fmtCents(s.yes_bid)}</td>
-                  <td className="cell-dim">{fmtCents(s.no_ask)}</td>
-                  <td className="cell-dim">{s.volume != null ? s.volume.toLocaleString() : '—'}</td>
-                  <td className="cell-dim">{s.open_interest != null ? s.open_interest.toLocaleString() : '—'}</td>
-                  <td className="cell-dim">{fmtDur(s.time_to_close_secs)}</td>
-                  <td className="cell-dim">{fmtTime(s.scanned_at)}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>}
-      </div>
     </div>
   )
 }
