@@ -316,7 +316,8 @@ def trades():
 
 @app.get("/api/snapshots")
 def snapshots():
-    limit = min(int(request.args.get("limit", 100)), 500)
+    limit_param = request.args.get("limit")
+    limit = int(limit_param) if limit_param else None
     ticker = (request.args.get("ticker") or "").strip().upper()
     if ticker:
         return jsonify(database.get_market_snapshots_for_ticker(ticker, limit))

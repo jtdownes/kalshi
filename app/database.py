@@ -526,34 +526,36 @@ def save_market_snapshot(ticker: str, title: str, close_time: str,
         cur.execute(query, params)
         conn.commit()
 
-def get_recent_market_snapshots(limit: int = 200) -> list[dict]:
-    query = """
+def get_recent_market_snapshots(limit: int | None = None) -> list[dict]:
+    limit_sql = f"LIMIT {int(limit)}" if limit is not None else ""
+    query = f"""
         SELECT id, ticker, title, scanned_at, close_time,
                yes_ask, no_ask, yes_bid, no_bid,
                time_to_close_secs, strike_str, volume, open_interest
         FROM market_snapshots
         ORDER BY id DESC
-        LIMIT %s
+        {limit_sql}
     """
     with _lock, _conn() as conn:
         cur = conn.cursor(cursor_factory=psycopg2.extras.DictCursor)
-        cur.execute(query, (limit,))
+        cur.execute(query)
         rows = cur.fetchall()
     return [dict(r) for r in rows]
 
-def get_market_snapshots_for_ticker(ticker: str, limit: int = 500) -> list[dict]:
-    query = """
+def get_market_snapshots_for_ticker(ticker: str, limit: int | None = None) -> list[dict]:
+    limit_sql = f"LIMIT {int(limit)}" if limit is not None else ""
+    query = f"""
         SELECT id, ticker, title, scanned_at, close_time,
                yes_ask, no_ask, yes_bid, no_bid,
                time_to_close_secs, strike_str, volume, open_interest
         FROM market_snapshots
         WHERE ticker = %s
         ORDER BY id DESC
-        LIMIT %s
+        {limit_sql}
     """
     with _lock, _conn() as conn:
         cur = conn.cursor(cursor_factory=psycopg2.extras.DictCursor)
-        cur.execute(query, (ticker, limit))
+        cur.execute(query, (ticker,))
         rows = cur.fetchall()
     return [dict(r) for r in rows]
 

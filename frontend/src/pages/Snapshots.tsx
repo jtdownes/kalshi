@@ -54,7 +54,7 @@ export default function Snapshots({ snapshots }: Props) {
     setExpandedHistory([])
     setExpandedError(null)
     setExpandedLoading(true)
-    fetch(`/api/snapshots?ticker=${encodeURIComponent(ticker)}&limit=1000`)
+    fetch(`/api/snapshots?ticker=${encodeURIComponent(ticker)}`)
       .then(r => {
         if (!r.ok) throw new Error('Failed to load snapshot history')
         return r.json()
