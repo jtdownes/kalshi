@@ -5,6 +5,7 @@ import { centsToUSD, fmtPnL, fmtTime, fmtUnixTime, fmtDur, kalshiMarketUrl } fro
 
 const DEFAULT_HISTORY_LIMIT = 10
 const HISTORY_LIMIT_STORAGE_KEY = 'kalshi-order-history-limit'
+type CollapsibleSection = 'history' | 'trades' | 'snapshots'
 
 function tickerOpenTime(ticker: string): string {
   const parts = ticker.split('-')
@@ -49,6 +50,11 @@ interface Props {
 
 export default function Dashboard({ orders, trades, openOrders, positions, snapshots, quotes, settings, profiles }: Props) {
   const navigate = useNavigate()
+  const [collapsedSections, setCollapsedSections] = useState<Record<CollapsibleSection, boolean>>({
+    history: false,
+    trades: false,
+    snapshots: false,
+  })
   const [historyLimit, setHistoryLimit] = useState(() => {
     if (typeof window === 'undefined') return DEFAULT_HISTORY_LIMIT
     const stored = window.localStorage.getItem(HISTORY_LIMIT_STORAGE_KEY)
@@ -71,6 +77,10 @@ export default function Dashboard({ orders, trades, openOrders, positions, snaps
     if (!Number.isFinite(parsed) || parsed < 1) return
 
     setHistoryLimit(Math.min(parsed, 500))
+  }
+
+  function toggleSection(section: CollapsibleSection) {
+    setCollapsedSections(prev => ({ ...prev, [section]: !prev[section] }))
   }
 
   return (
@@ -218,12 +228,20 @@ export default function Dashboard({ orders, trades, openOrders, positions, snaps
       {/* Order History */}
       <div className="table-panel" style={{ marginTop: 16, marginLeft: 18, marginRight: 18 }}>
         <div style={{ padding: '10px', display: 'flex', alignItems: 'center', gap: 8 }}>
-          <span style={{ fontWeight: 600, fontSize: 13 }}>Order History</span>
+          <button
+            type="button"
+            className="section-toggle"
+            onClick={() => toggleSection('history')}
+            aria-expanded={!collapsedSections.history}
+          >
+            <span className="section-toggle-caret">{collapsedSections.history ? '▸' : '▾'}</span>
+            <span className="section-toggle-label">Order History</span>
+          </button>
           <button type="button" className="tab-count-button" onClick={updateHistoryLimit} title="Click to change the order history limit">
             <span className="tab-count">LIMIT {historyLimit}</span>
           </button>
         </div>
-        <div className="table-wrap">
+        {!collapsedSections.history && <div className="table-wrap">
           <table>
             <thead>
               <tr>
@@ -260,16 +278,24 @@ export default function Dashboard({ orders, trades, openOrders, positions, snaps
               ))}
             </tbody>
           </table>
-        </div>
+        </div>}
       </div>
 
       {/* Trades */}
       <div className="table-panel" style={{ marginTop: 16, marginLeft: 18, marginRight: 18 }}>
         <div style={{ padding: '10px', display: 'flex', alignItems: 'center', gap: 8 }}>
-          <span style={{ fontWeight: 600, fontSize: 13 }}>Trades</span>
+          <button
+            type="button"
+            className="section-toggle"
+            onClick={() => toggleSection('trades')}
+            aria-expanded={!collapsedSections.trades}
+          >
+            <span className="section-toggle-caret">{collapsedSections.trades ? '▸' : '▾'}</span>
+            <span className="section-toggle-label">Trades</span>
+          </button>
           <span className="tab-count">{trades.length}</span>
         </div>
-        <div className="table-wrap">
+        {!collapsedSections.trades && <div className="table-wrap">
           <table>
             <thead>
               <tr>
@@ -314,16 +340,24 @@ export default function Dashboard({ orders, trades, openOrders, positions, snaps
               ))}
             </tbody>
           </table>
-        </div>
+        </div>}
       </div>
 
       {/* Market Snapshots */}
       <div className="table-panel" style={{ marginTop: 16, marginLeft: 18, marginRight: 18, marginBottom: 32 }}>
         <div style={{ padding: '10px', display: 'flex', alignItems: 'center', gap: 8 }}>
-          <span style={{ fontWeight: 600, fontSize: 13 }}>Market Snapshots</span>
+          <button
+            type="button"
+            className="section-toggle"
+            onClick={() => toggleSection('snapshots')}
+            aria-expanded={!collapsedSections.snapshots}
+          >
+            <span className="section-toggle-caret">{collapsedSections.snapshots ? '▸' : '▾'}</span>
+            <span className="section-toggle-label">Market Snapshots</span>
+          </button>
           <span className="tab-count">{snapshots.length}</span>
         </div>
-        <div className="table-wrap">
+        {!collapsedSections.snapshots && <div className="table-wrap">
           <table>
             <thead>
               <tr>
@@ -360,7 +394,7 @@ export default function Dashboard({ orders, trades, openOrders, positions, snaps
               ))}
             </tbody>
           </table>
-        </div>
+        </div>}
       </div>
     </div>
   )

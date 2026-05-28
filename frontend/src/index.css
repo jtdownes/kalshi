@@ -143,6 +143,28 @@ body {
 .tab-count-button:hover .tab-count {
   color: #cbd5e1;
 }
+.section-toggle {
+  appearance: none;
+  background: transparent;
+  border: 0;
+  color: inherit;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+}
+.section-toggle-caret {
+  color: #94a3b8;
+  font-size: 12px;
+  text-align: center;
+  width: 10px;
+}
+.section-toggle-label {
+  font-size: 13px;
+  font-weight: 600;
+}
 
 /* ── Table container ────────────────────────────────────────────────── */
 .table-panel {
