@@ -1,6 +1,10 @@
+import { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import type { Order, Trade, Position, Snapshot, Settings, Profile, Quotes } from '../App'
 import { centsToUSD, fmtPnL, fmtTime, fmtUnixTime, fmtDur, kalshiMarketUrl } from '../App'
+
+const DEFAULT_HISTORY_LIMIT = 10
+const HISTORY_LIMIT_STORAGE_KEY = 'kalshi-order-history-limit'
 
 function tickerOpenTime(ticker: string): string {
   const parts = ticker.split('-')
@@ -45,9 +49,29 @@ interface Props {
 
 export default function Dashboard({ orders, trades, openOrders, positions, snapshots, quotes, settings, profiles }: Props) {
   const navigate = useNavigate()
+  const [historyLimit, setHistoryLimit] = useState(() => {
+    if (typeof window === 'undefined') return DEFAULT_HISTORY_LIMIT
+    const stored = window.localStorage.getItem(HISTORY_LIMIT_STORAGE_KEY)
+    const parsed = Number.parseInt(stored ?? '', 10)
+    return Number.isFinite(parsed) && parsed > 0 ? parsed : DEFAULT_HISTORY_LIMIT
+  })
+
+  useEffect(() => {
+    window.localStorage.setItem(HISTORY_LIMIT_STORAGE_KEY, String(historyLimit))
+  }, [historyLimit])
+
   const activeProfile = profiles.find(p => p.id === settings?.active_profile_id)
-  const historyLimit = 10
   const history = orders.filter(o => o.status !== 'resting').slice(0, historyLimit)
+
+  function updateHistoryLimit() {
+    const nextValue = window.prompt('Set order history limit', String(historyLimit))
+    if (nextValue == null) return
+
+    const parsed = Number.parseInt(nextValue, 10)
+    if (!Number.isFinite(parsed) || parsed < 1) return
+
+    setHistoryLimit(Math.min(parsed, 500))
+  }
 
   return (
     <div>
@@ -195,7 +219,9 @@ export default function Dashboard({ orders, trades, openOrders, positions, snaps
       <div className="table-panel" style={{ marginTop: 16, marginLeft: 18, marginRight: 18 }}>
         <div style={{ padding: '10px', display: 'flex', alignItems: 'center', gap: 8 }}>
           <span style={{ fontWeight: 600, fontSize: 13 }}>Order History</span>
-          <span className="tab-count">LIMIT {historyLimit}</span>
+          <button type="button" className="tab-count-button" onClick={updateHistoryLimit} title="Click to change the order history limit">
+            <span className="tab-count">LIMIT {historyLimit}</span>
+          </button>
         </div>
         <div className="table-wrap">
           <table>
