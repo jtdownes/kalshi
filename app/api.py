@@ -26,22 +26,7 @@ app.config['SESSION_COOKIE_SAMESITE'] = 'Lax'
 app.config['SESSION_COOKIE_SECURE']   = True
 app.wsgi_app = ProxyFix(app.wsgi_app, x_for=1, x_proto=1, x_host=1, x_port=1)
 
-_PUBLIC_PREFIXES = ('/api/auth',)
 
-@app.before_request
-def require_login():
-    if any(request.path.startswith(p) for p in _PUBLIC_PREFIXES):
-        return None
-    from flask import session
-    if 'username' not in session:
-        return jsonify({'error': 'unauthenticated'}), 401
-
-@app.get('/api/auth/status')
-def auth_status():
-    from flask import session
-    if 'username' in session:
-        return jsonify({'logged_in': True, 'username': session['username']})
-    return jsonify({'logged_in': False})
 
 
 @contextmanager
