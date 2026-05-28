@@ -198,16 +198,14 @@ export default function App() {
     if (!autoRefresh) return
     const id = setInterval(async () => {
       try {
-        const [o, tr, snap, st, pr] = await Promise.all([
+        const [o, tr, st, pr] = await Promise.all([
           fetch('/api/orders?limit=200').then(r => r.json()),
           fetch('/api/trades?limit=200').then(r => r.json()).catch(() => []),
-          fetch('/api/snapshots?limit=200').then(r => r.json()),
           fetch('/api/settings').then(r => r.json()),
           fetch('/api/profiles').then(r => r.json()),
         ])
         setOrders(o)
         setTrades(tr)
-        setSnapshots(snap)
         setSettings(st)
         setProfiles(pr)
         setLastRefresh(new Date())
@@ -224,11 +222,14 @@ export default function App() {
       if (msg.type === 'init') {
         setPositions(msg.data.positions)
         setQuotes(msg.data.quotes)
+        setSnapshots(msg.data.snapshots ?? [])
         setWsConnected(msg.data.connected)
       } else if (msg.type === 'positions') {
         setPositions(msg.data)
       } else if (msg.type === 'quotes') {
         setQuotes(prev => ({ ...prev, ...msg.data }))
+      } else if (msg.type === 'snapshots') {
+        setSnapshots(msg.data)
       } else if (msg.type === 'status') {
         setWsConnected(msg.data.connected)
       }

@@ -9,11 +9,13 @@ import asyncio
 import json
 import logging
 import threading
+import time
 from queue import Empty, Queue
 
 import websockets
 
 import config
+import database
 from kalshi_client import KalshiClient
 
 log = logging.getLogger(__name__)
@@ -21,9 +23,11 @@ log = logging.getLogger(__name__)
 _lock = threading.Lock()
 _positions_cache: dict[str, dict] = {}   # ticker -> Position-shaped dict
 _quotes_cache: dict[str, dict] = {}      # ticker -> quote dict
+_snapshots_cache: list[dict] = []
 _event_queues: list[Queue] = []
 _connected = False
 _bootstrapped = False
+_started = False
 
 
 # ── Public API ────────────────────────────────────────────────────────────────
@@ -36,6 +40,11 @@ def get_positions() -> list[dict]:
 def get_quotes() -> dict[str, dict]:
     with _lock:
         return dict(_quotes_cache)
+
+
+def get_snapshots() -> list[dict]:
+    with _lock:
+        return list(_snapshots_cache)
 
 
 def is_connected() -> bool:
@@ -81,6 +90,23 @@ def _dollars_to_cents(v) -> int | None:
         return round(float(v) * 100)
     except Exception:
         return None
+
+
+def _snapshot_poll_loop() -> None:
+    last_head_id = None
+    while True:
+        try:
+            snapshots = database.get_recent_market_snapshots(limit=200)
+            head_id = snapshots[0]["id"] if snapshots else None
+            with _lock:
+                global _snapshots_cache
+                _snapshots_cache = snapshots
+            if head_id != last_head_id:
+                _broadcast("snapshots", snapshots)
+                last_head_id = head_id
+        except Exception as e:
+            log.debug("Snapshot poll failed: %s", e)
+        time.sleep(1)
 
 
 # ── Async worker ──────────────────────────────────────────────────────────────
@@ -256,9 +282,16 @@ async def _run() -> None:
 
 
 def start() -> None:
+    global _started
+    if _started:
+        return
+
     def _thread() -> None:
         asyncio.run(_run())
 
     t = threading.Thread(target=_thread, daemon=True, name="kalshi-ws")
+    s = threading.Thread(target=_snapshot_poll_loop, daemon=True, name="snapshot-poll")
     t.start()
+    s.start()
+    _started = True
     log.info("Kalshi WS worker started")

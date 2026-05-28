@@ -78,6 +78,16 @@ def scan_loop(client: KalshiClient):
         time.sleep(interval)
 
 
+def market_data_loop(client: KalshiClient):
+    log.info("Market data collector started  (interval=%ds)", config.SNAPSHOT_INTERVAL_SECONDS)
+    while True:
+        try:
+            _collect_market_snapshots(client)
+        except Exception:
+            log.exception("Unhandled error in market data collector")
+        time.sleep(config.SNAPSHOT_INTERVAL_SECONDS)
+
+
 def _place_limit_sell_exit(client: KalshiClient, entry_order: dict):
     target_cents = entry_order.get("exit_target_cents")
     if target_cents is None:
@@ -171,35 +181,69 @@ def _scan(client: KalshiClient, settings: dict):
     max_close = now_ts + settings.get("look_ahead_seconds", config.LOOK_AHEAD_SECONDS)
     series_list = settings.get("btc_series_tickers", config.BTC_SERIES_TICKERS)
     if not series_list:
-        series_list = [None]
+        series_list = config.SNAPSHOT_SERIES_TICKERS
 
-    for series in series_list:
-        active_profile_id = settings.get("active_profile_id")
-        params = {"status": "open", "max_close_ts": max_close, "limit": 200}
-        if series:
-            params["series_ticker"] = series
+    active_profile_id = settings.get("active_profile_id")
+    min_secs = settings.get("min_seconds_to_close", config.MIN_SECONDS_TO_CLOSE)
+    markets = db.get_latest_snapshots_for_series([s for s in series_list if s], max_age_seconds=15)
+
+    for market in markets:
+        ticker = market.get("ticker", "")
+        close_ts = close_ts_to_int(market.get("close_time"))
+        if not close_ts or close_ts > max_close:
+            continue
+
+        time_to_close = seconds_until(close_ts)
+        if time_to_close < min_secs:
+            continue
+
+        yes_ask = market.get("yes_ask")
+        no_ask = market.get("no_ask")
+
+        for side, price_cents in evaluate_market(market, None, settings):
+            ok, reason = can_place_order(price_cents, settings)
+            if not ok:
+                log.warning("Order skipped (%s): %s %s", reason, side, ticker)
+                continue
+            client_oid = str(uuid.uuid4())
+            try:
+                resp = client.place_order(ticker, side, price_cents, client_oid)
+                kalshi_oid = resp.get("order", {}).get("order_id")
+                log.info("ORDER PLACED  %-6s %-50s  %d\u00a2  ttc=%ds  yes_ask=%s\u00a2  no_ask=%s\u00a2  id=%s",
+                         side, ticker, price_cents, time_to_close,
+                         yes_ask, no_ask, kalshi_oid)
+                db.save_order(
+                    client_order_id=client_oid, market_ticker=ticker,
+                    side=side, entry_price_cents=price_cents,
+                    kalshi_order_id=kalshi_oid, btc_price=None,
+                    distance_to_strike=None, market_close_time=str(close_ts),
+                    time_to_close_seconds=time_to_close,
+                    profile_id=active_profile_id,
+                    exit_strategy=settings.get("exit_strategy", "hold_to_expiration"),
+                    exit_target_cents=settings.get("limit_sell_price_cents"),
+                )
+            except KalshiError as e:
+                log.error("place_order failed on %s %s: %s", side, ticker, e)
+
+
+def _collect_market_snapshots(client: KalshiClient):
+    now_ts = int(time.time())
+    max_close = now_ts + config.LOOK_AHEAD_SECONDS
+
+    for series in config.SNAPSHOT_SERIES_TICKERS:
         try:
-            data = client.get_markets(**params)
+            data = client.get_markets(status="open", max_close_ts=max_close, limit=200, series_ticker=series)
         except KalshiError as e:
-            log.error("get_markets failed: %s", e)
+            log.error("snapshot get_markets failed for %s: %s", series, e)
             continue
 
         for market in data.get("markets", []):
             ticker = market.get("ticker", "")
-            if not series and "BTC" not in ticker.upper():
-                if "bitcoin" not in market.get("title", "").lower():
-                    continue
-
-            close_ts = close_ts_to_int(
-                market.get("close_time") or market.get("expiration_time")
-            )
-            if not close_ts:
+            close_ts = close_ts_to_int(market.get("close_time") or market.get("expiration_time"))
+            if not ticker or not close_ts:
                 continue
+
             time_to_close = seconds_until(close_ts)
-            min_secs = settings.get("min_seconds_to_close", config.MIN_SECONDS_TO_CLOSE)
-            if time_to_close < min_secs:
-                continue
-
             yes_ask = dollars_to_cents(market.get("yes_ask_dollars"))
             yes_bid = dollars_to_cents(market.get("yes_bid_dollars"))
             no_ask  = dollars_to_cents(market.get("no_ask_dollars"))
@@ -214,49 +258,21 @@ def _scan(client: KalshiClient, settings: dict):
             except (TypeError, ValueError):
                 oi = None
 
-            # Floor strike = the BTC price the up/down market opened against
             strike = market.get("floor_strike")
-
             db.save_market_snapshot(
-                ticker=ticker, title=market.get("title", ""),
+                ticker=ticker,
+                title=market.get("title", ""),
                 close_time=str(close_ts),
-                yes_ask=yes_ask, yes_bid=yes_bid,
-                no_ask=no_ask,   no_bid=no_bid,
-                btc_price=None, time_to_close_secs=time_to_close,
+                yes_ask=yes_ask,
+                yes_bid=yes_bid,
+                no_ask=no_ask,
+                no_bid=no_bid,
+                btc_price=None,
+                time_to_close_secs=time_to_close,
                 strike_str=str(strike) if strike is not None else None,
-                volume=volume, open_interest=oi,
+                volume=volume,
+                open_interest=oi,
             )
-
-            # Inject normalised prices for strategy logic
-            market["yes_ask"] = yes_ask
-            market["yes_bid"] = yes_bid
-            market["no_ask"]  = no_ask
-            market["no_bid"]  = no_bid
-
-            for side, price_cents in evaluate_market(market, None, settings):
-                ok, reason = can_place_order(price_cents, settings)
-                if not ok:
-                    log.warning("Order skipped (%s): %s %s", reason, side, ticker)
-                    continue
-                client_oid = str(uuid.uuid4())
-                try:
-                    resp = client.place_order(ticker, side, price_cents, client_oid)
-                    kalshi_oid = resp.get("order", {}).get("order_id")
-                    log.info("ORDER PLACED  %-6s %-50s  %d\u00a2  ttc=%ds  yes_ask=%s\u00a2  no_ask=%s\u00a2  id=%s",
-                             side, ticker, price_cents, time_to_close,
-                             yes_ask, no_ask, kalshi_oid)
-                    db.save_order(
-                        client_order_id=client_oid, market_ticker=ticker,
-                        side=side, entry_price_cents=price_cents,
-                        kalshi_order_id=kalshi_oid, btc_price=None,
-                        distance_to_strike=None, market_close_time=str(close_ts),
-                        time_to_close_seconds=time_to_close,
-                        profile_id=active_profile_id,
-                        exit_strategy=settings.get("exit_strategy", "hold_to_expiration"),
-                        exit_target_cents=settings.get("limit_sell_price_cents"),
-                    )
-                except KalshiError as e:
-                    log.error("place_order failed on %s %s: %s", side, ticker, e)
 
 
 def order_monitor_loop(client: KalshiClient):
@@ -297,11 +313,7 @@ def _sync_order_statuses(client: KalshiClient):
             remote_status = remote.get("status", "").lower()
             fill_count = fp_to_float(remote.get("fill_count_fp"))
             if oid in filled_ids or fill_count > 0 or remote_status in ("executed", "filled"):
-                db.update_order(oid, status="filled",
-                                filled_at=datetime.utcnow().isoformat())
-                log.info("FILLED   %-6s %-50s  %d\u00a2",
-                         order["side"], order["market_ticker"],
-                         order["entry_price_cents"])
+                _handle_filled_order(client, order)
             elif remote_status in ("canceled", "cancelled", "expired"):
                 db.update_order(oid, status="canceled")
                 log.info("CANCELED %-6s %-50s",
@@ -422,6 +434,7 @@ def main():
              config.MAX_DAILY_SPEND_CENTS / 100)
     log.info("Max open orders: %d", config.MAX_OPEN_ORDERS)
     log.info("BTC series     : %s", config.BTC_SERIES_TICKERS or "auto-detect")
+    log.info("Snapshot series: %s", config.SNAPSHOT_SERIES_TICKERS or "none")
     log.info("=" * 60)
 
     db.init_db()
@@ -435,9 +448,11 @@ def main():
         log.critical("Cannot connect to Kalshi API: %s", e)
         raise SystemExit(1)
 
+    market_data = threading.Thread(target=market_data_loop, args=(client,), daemon=True, name="market-data")
     scanner = threading.Thread(target=scan_loop, args=(client,), daemon=True, name="scanner")
     monitor = threading.Thread(target=order_monitor_loop, args=(client,), daemon=True, name="monitor")
     ws_fills = threading.Thread(target=ws_fills_thread, args=(client,), daemon=True, name="ws-fills")
+    market_data.start()
     scanner.start()
     monitor.start()
     ws_fills.start()

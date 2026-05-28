@@ -525,6 +525,44 @@ def save_market_snapshot(ticker: str, title: str, close_time: str,
         cur.execute(query, params)
         conn.commit()
 
+def get_recent_market_snapshots(limit: int = 200) -> list[dict]:
+    query = """
+        SELECT id, ticker, title, scanned_at, close_time,
+               yes_ask, no_ask, yes_bid, no_bid,
+               time_to_close_secs, strike_str, volume, open_interest
+        FROM market_snapshots
+        ORDER BY id DESC
+        LIMIT %s
+    """
+    with _lock, _conn() as conn:
+        cur = conn.cursor(cursor_factory=psycopg2.extras.DictCursor)
+        cur.execute(query, (limit,))
+        rows = cur.fetchall()
+    return [dict(r) for r in rows]
+
+def get_latest_snapshots_for_series(series_tickers: list[str], max_age_seconds: int = 15) -> list[dict]:
+    if not series_tickers:
+        return []
+
+    where = " OR ".join("ticker LIKE %s" for _ in series_tickers)
+    params = [f"{series}-%" for series in series_tickers]
+    params.append(str(max_age_seconds))
+    query = f"""
+        SELECT DISTINCT ON (ticker)
+               id, ticker, title, scanned_at, close_time,
+               yes_ask, no_ask, yes_bid, no_bid,
+               time_to_close_secs, strike_str, volume, open_interest
+        FROM market_snapshots
+        WHERE ({where})
+          AND scanned_at::timestamp >= ((CURRENT_TIMESTAMP AT TIME ZONE 'UTC') - (%s || ' seconds')::interval)
+        ORDER BY ticker, scanned_at DESC
+    """
+    with _lock, _conn() as conn:
+        cur = conn.cursor(cursor_factory=psycopg2.extras.DictCursor)
+        cur.execute(query, params)
+        rows = cur.fetchall()
+    return [dict(r) for r in rows]
+
 def log_btc_price(price: float):
     now = datetime.utcnow().isoformat()
     query = "INSERT INTO btc_prices (recorded_at, price) VALUES (%s, %s)"

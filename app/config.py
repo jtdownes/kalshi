@@ -23,6 +23,10 @@ LIMIT_SELL_PRICE_CENTS = os.environ.get("LIMIT_SELL_PRICE_CENTS")
 _series_raw = os.environ.get("BTC_SERIES_TICKERS", "")
 BTC_SERIES_TICKERS = [s.strip() for s in _series_raw.split(",") if s.strip()]
 
+_snapshot_series_raw = os.environ.get("SNAPSHOT_SERIES_TICKERS", "KXBTC15M")
+SNAPSHOT_SERIES_TICKERS = [s.strip() for s in _snapshot_series_raw.split(",") if s.strip()]
+SNAPSHOT_INTERVAL_SECONDS = int(os.environ.get("SNAPSHOT_INTERVAL_SECONDS", "1"))
+
 # ── Timing ────────────────────────────────────────────────────────────────────
 LOOK_AHEAD_SECONDS = int(os.environ.get("LOOK_AHEAD_SECONDS", str(20 * 60)))
 MIN_SECONDS_TO_CLOSE = int(os.environ.get("MIN_SECONDS_TO_CLOSE", "60"))

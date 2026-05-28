@@ -101,6 +101,7 @@ def events():
                 "data": {
                     "positions":  ws_worker.get_positions(),
                     "quotes":     ws_worker.get_quotes(),
+                    "snapshots":  ws_worker.get_snapshots(),
                     "connected":  ws_worker.is_connected(),
                 },
             }
@@ -316,15 +317,7 @@ def trades():
 @app.get("/api/snapshots")
 def snapshots():
     limit = min(int(request.args.get("limit", 100)), 500)
-    with _conn() as c:
-        c.execute("""
-            SELECT id, ticker, title, scanned_at, close_time,
-                   yes_ask, no_ask, yes_bid, no_bid,
-                   time_to_close_secs, strike_str, volume, open_interest
-            FROM market_snapshots ORDER BY id DESC LIMIT %s
-        """, (limit,))
-        rows = c.fetchall()
-    return jsonify([dict(r) for r in rows])
+    return jsonify(database.get_recent_market_snapshots(limit))
 
 
 @app.get("/api/profiles")

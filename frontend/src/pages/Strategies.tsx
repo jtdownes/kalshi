@@ -2,6 +2,10 @@ import { useState } from 'react'
 import type { Settings, Profile } from '../App'
 import { centsToUSD, fmtTime, fmtTickers } from '../App'
 
+const SUPPORTED_STRATEGY_MARKETS = [
+  { value: 'KXBTC15M', label: 'Bitcoin 15 Minute' },
+] as const
+
 interface StrategyDraft {
   name: string
   min_entry_cents: number
@@ -23,6 +27,11 @@ function formatExitTarget(limitSellPriceCents: number | null | undefined): strin
   return limitSellPriceCents == null ? '—' : `${limitSellPriceCents}¢`
 }
 
+function normalizeStrategyMarkets(raw: string[]): string[] {
+  const selected = raw.find(Boolean)
+  return selected ? [selected] : [SUPPORTED_STRATEGY_MARKETS[0].value]
+}
+
 function profileToDraft(profile: Profile): StrategyDraft {
   return {
     name: profile.name,
@@ -32,7 +41,7 @@ function profileToDraft(profile: Profile): StrategyDraft {
     max_open_orders: profile.max_open_orders,
     max_daily_spend_cents: profile.max_daily_spend_cents,
     scan_interval_seconds: profile.scan_interval_seconds,
-    btc_series_tickers: profile.btc_series_tickers.split(',').map(t => t.trim()).filter(Boolean),
+    btc_series_tickers: normalizeStrategyMarkets(profile.btc_series_tickers.split(',').map(t => t.trim()).filter(Boolean)),
     exit_strategy: profile.exit_strategy,
     limit_sell_price_cents: profile.limit_sell_price_cents,
   }
@@ -47,7 +56,7 @@ function settingsToDraft(settings: Settings, name = ''): StrategyDraft {
     max_open_orders: settings.max_open_orders,
     max_daily_spend_cents: settings.max_daily_spend_cents,
     scan_interval_seconds: settings.scan_interval_seconds,
-    btc_series_tickers: settings.btc_series_tickers,
+    btc_series_tickers: normalizeStrategyMarkets(settings.btc_series_tickers),
     exit_strategy: settings.exit_strategy,
     limit_sell_price_cents: settings.limit_sell_price_cents,
   }
@@ -266,12 +275,16 @@ export default function Strategies({ settings, profiles, refresh }: Props) {
                 onChange={e => updateDraft({ scan_interval_seconds: parseInt(e.target.value) || 0 })} />
             </label>
             <label className="field field-wide">
-              <span>BTC Series Tickers</span>
-              <input
-                type="text"
-                value={strategyEditor.draft.btc_series_tickers.join(', ')}
-                onChange={e => updateDraft({ btc_series_tickers: e.target.value.split(',').map(s => s.trim()).filter(Boolean) })}
-              />
+              <span>Strategy Market</span>
+              <select
+                value={strategyEditor.draft.btc_series_tickers[0] ?? SUPPORTED_STRATEGY_MARKETS[0].value}
+                onChange={e => updateDraft({ btc_series_tickers: [e.target.value] })}
+              >
+                {SUPPORTED_STRATEGY_MARKETS.map(option => (
+                  <option key={option.value} value={option.value}>{option.label}</option>
+                ))}
+              </select>
+              <small className="field-help">Strategies now bind to a supported market feed instead of free-typing a series ticker.</small>
             </label>
             <label className="field field-wide">
               <span>Exit Strategy</span>
