@@ -5,6 +5,8 @@ import { centsToUSD, fmtPnL, fmtTime, fmtUnixTime, fmtDur, kalshiMarketUrl } fro
 
 const DEFAULT_HISTORY_LIMIT = 10
 const HISTORY_LIMIT_STORAGE_KEY = 'kalshi-order-history-limit'
+const DEFAULT_SNAPSHOT_LIMIT = 10
+const SNAPSHOT_LIMIT_STORAGE_KEY = 'kalshi-snapshot-limit'
 type CollapsibleSection = 'history' | 'trades' | 'snapshots'
 
 function tickerOpenTime(ticker: string): string {
@@ -61,13 +63,24 @@ export default function Dashboard({ orders, trades, openOrders, positions, snaps
     const parsed = Number.parseInt(stored ?? '', 10)
     return Number.isFinite(parsed) && parsed > 0 ? parsed : DEFAULT_HISTORY_LIMIT
   })
+  const [snapshotLimit, setSnapshotLimit] = useState(() => {
+    if (typeof window === 'undefined') return DEFAULT_SNAPSHOT_LIMIT
+    const stored = window.localStorage.getItem(SNAPSHOT_LIMIT_STORAGE_KEY)
+    const parsed = Number.parseInt(stored ?? '', 10)
+    return Number.isFinite(parsed) && parsed > 0 ? parsed : DEFAULT_SNAPSHOT_LIMIT
+  })
 
   useEffect(() => {
     window.localStorage.setItem(HISTORY_LIMIT_STORAGE_KEY, String(historyLimit))
   }, [historyLimit])
 
+  useEffect(() => {
+    window.localStorage.setItem(SNAPSHOT_LIMIT_STORAGE_KEY, String(snapshotLimit))
+  }, [snapshotLimit])
+
   const activeProfile = profiles.find(p => p.id === settings?.active_profile_id)
   const history = orders.filter(o => o.status !== 'resting').slice(0, historyLimit)
+  const visibleSnapshots = snapshots.slice(0, snapshotLimit)
 
   function updateHistoryLimit() {
     const nextValue = window.prompt('Set order history limit', String(historyLimit))
@@ -77,6 +90,16 @@ export default function Dashboard({ orders, trades, openOrders, positions, snaps
     if (!Number.isFinite(parsed) || parsed < 1) return
 
     setHistoryLimit(Math.min(parsed, 500))
+  }
+
+  function updateSnapshotLimit() {
+    const nextValue = window.prompt('Set market snapshot limit', String(snapshotLimit))
+    if (nextValue == null) return
+
+    const parsed = Number.parseInt(nextValue, 10)
+    if (!Number.isFinite(parsed) || parsed < 1) return
+
+    setSnapshotLimit(Math.min(parsed, 500))
   }
 
   function toggleSection(section: CollapsibleSection) {
@@ -355,7 +378,9 @@ export default function Dashboard({ orders, trades, openOrders, positions, snaps
             <span className="section-toggle-caret">{collapsedSections.snapshots ? '▸' : '▾'}</span>
             <span className="section-toggle-label">Market Snapshots</span>
           </button>
-          <span className="tab-count">{snapshots.length}</span>
+          <button type="button" className="tab-count-button" onClick={updateSnapshotLimit} title="Click to change the market snapshot limit">
+            <span className="tab-count">LIMIT {snapshotLimit}</span>
+          </button>
         </div>
         {!collapsedSections.snapshots && <div className="table-wrap">
           <table>
@@ -373,9 +398,9 @@ export default function Dashboard({ orders, trades, openOrders, positions, snaps
               </tr>
             </thead>
             <tbody>
-              {snapshots.length === 0 ? (
+              {visibleSnapshots.length === 0 ? (
                 <tr><td colSpan={9} className="cell-empty">No snapshots</td></tr>
-              ) : snapshots.map(s => (
+              ) : visibleSnapshots.map(s => (
                 <tr key={s.id}>
                   <td className="cell-ticker">
                     <a href={kalshiMarketUrl(s.ticker)} target="_blank" rel="noreferrer" style={{ color: 'inherit', textDecoration: 'none' }}>
