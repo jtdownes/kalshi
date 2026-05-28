@@ -36,6 +36,7 @@ export interface Trade {
   order_count: number
   placed_at: string
   filled_at: string | null
+  market_close_time: string | null
   entry_price_cents: number | null
   net_profit_cents: number | null
   status: string
@@ -110,6 +111,14 @@ export function fmtTime(iso: string | null | undefined): string {
   if (!iso) return '—'
   const d = new Date(iso.endsWith('Z') ? iso : iso + 'Z')
   return d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })
+}
+
+export function fmtUnixTime(raw: string | null | undefined): string {
+  if (!raw) return '—'
+  const ts = parseInt(raw, 10)
+  if (isNaN(ts)) return fmtTime(raw)
+  const d = new Date(ts * 1000)
+  return d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
 }
 
 export function fmtDur(secs: number | null | undefined): string {

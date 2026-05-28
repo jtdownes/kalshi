@@ -1,6 +1,19 @@
 import { useNavigate } from 'react-router-dom'
 import type { Order, Trade, Position, Snapshot, Settings, Profile, Quotes } from '../App'
-import { centsToUSD, fmtPnL, fmtTime, fmtDur, kalshiMarketUrl } from '../App'
+import { centsToUSD, fmtPnL, fmtTime, fmtUnixTime, fmtDur, kalshiMarketUrl } from '../App'
+
+function tickerOpenTime(ticker: string): string {
+  const parts = ticker.split('-')
+  if (parts.length < 2) return '—'
+  const seg = parts[1]           // e.g. "26MAY271830"
+  const hhmm = seg.slice(-4)     // "1830"
+  if (!/^\d{4}$/.test(hhmm)) return '—'
+  const h = parseInt(hhmm.slice(0, 2), 10)
+  const m = hhmm.slice(2)
+  const ampm = h >= 12 ? 'PM' : 'AM'
+  const h12 = h % 12 || 12
+  return `${h12}:${m} ${ampm}`
+}
 
 function StatusBadge({ status, outcome }: { status: string; outcome: string | null }) {
   if (status === 'filled' && outcome === 'win') {
@@ -242,11 +255,13 @@ export default function Dashboard({ orders, trades, openOrders, positions, snaps
                 <th>P&amp;L</th>
                 <th>Placed</th>
                 <th>Filled</th>
+                <th>Open</th>
+                <th>Close</th>
               </tr>
             </thead>
             <tbody>
               {trades.length === 0 ? (
-                <tr><td colSpan={9} className="cell-empty">No trades yet</td></tr>
+                <tr><td colSpan={11} className="cell-empty">No trades yet</td></tr>
               ) : trades.map(t => (
                 <tr key={t.market_ticker}>
                   <td className="cell-ticker">
@@ -266,6 +281,8 @@ export default function Dashboard({ orders, trades, openOrders, positions, snaps
                   </td>
                   <td className="cell-dim">{fmtTime(t.placed_at)}</td>
                   <td className="cell-dim">{fmtTime(t.filled_at)}</td>
+                  <td className="cell-dim">{tickerOpenTime(t.market_ticker)}</td>
+                  <td className="cell-dim">{fmtUnixTime(t.market_close_time)}</td>
                 </tr>
               ))}
             </tbody>

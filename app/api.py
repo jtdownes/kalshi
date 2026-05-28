@@ -272,6 +272,7 @@ def trades():
                 COUNT(*)                                                             AS order_count,
                 MIN(o.placed_at)                                                     AS placed_at,
                 MIN(CASE WHEN o.status = 'filled' THEN o.filled_at END)              AS filled_at,
+                MIN(o.market_close_time)                                              AS market_close_time,
                 ROUND(AVG(CASE WHEN o.status = 'filled' THEN o.entry_price_cents END))::int
                                                                                      AS entry_price_cents,
                 SUM(o.net_profit_cents)                                              AS net_profit_cents,
