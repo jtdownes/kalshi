@@ -117,7 +117,6 @@ export default function Strategies({ settings, profiles, refresh }: Props) {
             <div className="strategy-primary-actions">
               <button
                 className="btn btn-active"
-            <div><span>Exit</span><strong>{formatExitStrategy(settings.exit_strategy)}</strong></div>
                 onClick={() => setStrategyEditor({ mode: 'new', draft: settingsToDraft(settings) })}
               >
                 New Strategy
@@ -137,6 +136,7 @@ export default function Strategies({ settings, profiles, refresh }: Props) {
             <div><span>Daily Limit</span><strong>{centsToUSD(settings.max_daily_spend_cents)}</strong></div>
             <div><span>Max Orders</span><strong>{settings.max_open_orders}</strong></div>
             <div><span>Mode</span><strong>{settings.proactive_mode ? 'Proactive' : 'Reactive'}</strong></div>
+            <div><span>Exit</span><strong>{formatExitStrategy(settings.exit_strategy)}</strong></div>
           </div>
         </section>
       )}
