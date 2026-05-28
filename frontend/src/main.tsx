@@ -7,18 +7,23 @@ import App from './App'
 function Root() {
   const [authChecked, setAuthChecked] = useState(false)
 
+  function redirectToLogin() {
+    const returnTo = encodeURIComponent(window.location.href)
+    window.location.href = `https://jtdownes.com/login?returnTo=${returnTo}`
+  }
+
   useEffect(() => {
     fetch('/api/auth/status')
       .then(r => r.json())
       .then((data: { logged_in: boolean }) => {
         if (!data.logged_in) {
-          window.location.href = 'https://jtdownes.com'
+          redirectToLogin()
         } else {
           setAuthChecked(true)
         }
       })
       .catch(() => {
-        window.location.href = 'https://jtdownes.com'
+        redirectToLogin()
       })
   }, [])
 
