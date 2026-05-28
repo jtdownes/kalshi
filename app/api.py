@@ -251,7 +251,7 @@ def trades():
         SELECT
             g.*,
             (
-                SELECT MAX(s.yes_bid)
+                SELECT MAX(CASE WHEN g.filled_side = 'yes' THEN s.yes_bid ELSE s.no_bid END)
                 FROM market_snapshots s
                 WHERE s.ticker = g.market_ticker
                   AND g.filled_at IS NOT NULL
@@ -263,7 +263,8 @@ def trades():
                 WHERE s.ticker = g.market_ticker
                   AND g.filled_at IS NOT NULL
                   AND s.scanned_at >= g.filled_at
-                ORDER BY s.yes_bid DESC
+                ORDER BY (CASE WHEN g.filled_side = 'yes' THEN s.yes_bid ELSE s.no_bid END) DESC NULLS LAST,
+                         s.scanned_at ASC
                 LIMIT 1
             ) AS peak_time
         FROM (
@@ -272,6 +273,8 @@ def trades():
                 COUNT(*)                                                             AS order_count,
                 MIN(o.placed_at)                                                     AS placed_at,
                 MIN(CASE WHEN o.status = 'filled' THEN o.filled_at END)              AS filled_at,
+                (ARRAY_AGG(o.side ORDER BY o.filled_at ASC NULLS LAST)
+                    FILTER (WHERE o.status = 'filled'))[1]                           AS filled_side,
                 MIN(o.market_close_time)                                              AS market_close_time,
                 ROUND(AVG(CASE WHEN o.status = 'filled' THEN o.entry_price_cents END))::int
                                                                                      AS entry_price_cents,
