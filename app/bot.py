@@ -54,6 +54,8 @@ def close_ts_to_int(raw) -> int | None:
     if isinstance(raw, (int, float)):
         return int(raw)
     if isinstance(raw, str):
+        if raw.isdigit():
+            return int(raw)
         try:
             dt = datetime.fromisoformat(raw.replace("Z", "+00:00"))
             return int(dt.timestamp())
