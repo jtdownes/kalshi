@@ -46,7 +46,8 @@ interface Props {
 export default function Dashboard({ orders, trades, openOrders, positions, snapshots, quotes, settings, profiles }: Props) {
   const navigate = useNavigate()
   const activeProfile = profiles.find(p => p.id === settings?.active_profile_id)
-  const history = orders.filter(o => o.status !== 'resting')
+  const historyLimit = 10
+  const history = orders.filter(o => o.status !== 'resting').slice(0, historyLimit)
 
   return (
     <div>
@@ -194,7 +195,7 @@ export default function Dashboard({ orders, trades, openOrders, positions, snaps
       <div className="table-panel" style={{ marginTop: 16, marginLeft: 18, marginRight: 18 }}>
         <div style={{ padding: '10px', display: 'flex', alignItems: 'center', gap: 8 }}>
           <span style={{ fontWeight: 600, fontSize: 13 }}>Order History</span>
-          <span className="tab-count">{history.length}</span>
+          <span className="tab-count">LIMIT {historyLimit}</span>
         </div>
         <div className="table-wrap">
           <table>
