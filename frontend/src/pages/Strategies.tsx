@@ -51,9 +51,14 @@ export default function Strategies({ settings, profiles, refresh }: Props) {
   const [activating,  setActivating]  = useState(false)
 
   const activeProfile = profiles.find(p => p.id === settings?.active_profile_id)
+  const editingProfileId = strategyEditor?.mode === 'edit' ? strategyEditor.profileId ?? null : null
+  const isEditingActive = editingProfileId != null && settings?.active_profile_id === editingProfileId
 
   const updateDraft = (patch: Partial<StrategyDraft>) =>
     setStrategyEditor(e => e ? { ...e, draft: { ...e.draft, ...patch } } : e)
+
+  const openEditor = (profile: Profile) =>
+    setStrategyEditor({ mode: 'edit', profileId: profile.id, draft: profileToDraft(profile) })
 
   const saveStrategy = async (ev: React.FormEvent) => {
     ev.preventDefault()
@@ -83,7 +88,6 @@ export default function Strategies({ settings, profiles, refresh }: Props) {
     try {
       const resp = await fetch(`/api/profiles/${profileId}/activate`, { method: 'POST' })
       if (!resp.ok) throw new Error('Failed to activate strategy')
-      setStrategyEditor(null)
       await refresh()
     } catch (err: any) {
       alert(err.message)
@@ -135,7 +139,19 @@ export default function Strategies({ settings, profiles, refresh }: Props) {
         ) : profiles.map(p => {
           const isActive = settings?.active_profile_id === p.id
           return (
-            <article key={p.id} className={`strategy-card${isActive ? ' is-active' : ''}`}>
+            <article
+              key={p.id}
+              className={`strategy-card${isActive ? ' is-active' : ''}`}
+              role="button"
+              tabIndex={0}
+              onClick={() => openEditor(p)}
+              onKeyDown={e => {
+                if (e.key === 'Enter' || e.key === ' ') {
+                  e.preventDefault()
+                  openEditor(p)
+                }
+              }}
+            >
               <div className="strategy-card-head">
                 <div>
                   <div className="strategy-name">{p.name}</div>
@@ -150,21 +166,6 @@ export default function Strategies({ settings, profiles, refresh }: Props) {
                 <div><span>Runs</span><strong>{(p.order_count ?? 0).toLocaleString()}</strong></div>
               </div>
               <div className="strategy-tickers">{fmtTickers(p.btc_series_tickers)}</div>
-              <div className="strategy-card-actions">
-                <button
-                  className="btn"
-                  onClick={() => setStrategyEditor({ mode: 'edit', profileId: p.id, draft: profileToDraft(p) })}
-                >
-                  Edit
-                </button>
-                <button
-                  className={`btn strategy-activate${isActive ? ' is-current' : ' btn-active'}`}
-                  disabled={isActive || activating}
-                  onClick={() => activateProfile(p.id)}
-                >
-                  {isActive ? 'Active' : activating ? 'Activating…' : 'Activate'}
-                </button>
-              </div>
             </article>
           )
         })}
@@ -181,6 +182,33 @@ export default function Strategies({ settings, profiles, refresh }: Props) {
           </div>
 
           <form onSubmit={saveStrategy} className="strategy-form">
+            {strategyEditor.mode === 'edit' && strategyEditor.profileId != null && (
+              <div className="field-wide">
+                <button
+                  type="button"
+                  className={`strategy-status-toggle${isEditingActive ? ' is-active' : ''}`}
+                  aria-pressed={isEditingActive}
+                  disabled={activating}
+                  onClick={() => {
+                    if (!isEditingActive) activateProfile(strategyEditor.profileId!)
+                  }}
+                >
+                  <span className="strategy-status-copy">
+                    <strong>{isEditingActive ? 'Active Strategy' : 'Inactive Strategy'}</strong>
+                    <small>
+                      {isEditingActive
+                        ? 'This strategy is currently live.'
+                        : activating
+                          ? 'Activating strategy...'
+                          : 'Click to make this strategy live.'}
+                    </small>
+                  </span>
+                  <span className="strategy-status-switch" aria-hidden="true">
+                    <span className="strategy-status-knob" />
+                  </span>
+                </button>
+              </div>
+            )}
             <label className="field field-wide">
               <span>Strategy Name</span>
               <input
