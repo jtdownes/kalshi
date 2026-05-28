@@ -328,13 +328,20 @@ def snapshot_tickers():
     """Return one summary row per distinct ticker in market_snapshots, ordered by most recent scan."""
     with _conn() as c:
         c.execute("""
-            SELECT DISTINCT ON (ticker)
-                   ticker, title, strike_str,
+            SELECT ticker, title, strike_str,
                    yes_ask, yes_bid, no_ask,
                    volume, open_interest, time_to_close_secs,
                    scanned_at
-            FROM market_snapshots
-            ORDER BY ticker, id DESC
+            FROM (
+                SELECT DISTINCT ON (ticker)
+                       ticker, title, strike_str,
+                       yes_ask, yes_bid, no_ask,
+                       volume, open_interest, time_to_close_secs,
+                       scanned_at
+                FROM market_snapshots
+                ORDER BY ticker, id DESC
+            ) latest
+            ORDER BY scanned_at DESC
         """)
         rows = c.fetchall()
     return jsonify([dict(r) for r in rows])
