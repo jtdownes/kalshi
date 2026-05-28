@@ -273,8 +273,8 @@ export default function App() {
             <NavLink to="/strategies" className={({ isActive }) => isActive ? 'nav-link nav-link-active' : 'nav-link'}>
               Strategies
             </NavLink>
-            <NavLink to="/snapshots" className={({ isActive }) => isActive ? 'nav-link nav-link-active' : 'nav-link'}>
-              Snapshots
+            <NavLink to="/markets" className={({ isActive }) => isActive ? 'nav-link nav-link-active' : 'nav-link'}>
+              Markets
             </NavLink>
           </nav>
         </div>
@@ -328,7 +328,7 @@ export default function App() {
           }
         />
         <Route
-          path="/snapshots"
+          path="/markets"
           element={<Snapshots snapshots={snapshots} />}
         />
       </Routes>

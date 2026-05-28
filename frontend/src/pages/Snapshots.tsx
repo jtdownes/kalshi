@@ -2,8 +2,6 @@ import { useEffect, useMemo, useState } from 'react'
 import type { Snapshot } from '../App'
 import { fmtCents, fmtDur, fmtTime, fmtUnixTime, kalshiMarketUrl } from '../App'
 
-const DEFAULT_LIVE_LIMIT = 10
-const LIVE_LIMIT_STORAGE_KEY = 'kalshi-snapshots-live-limit'
 const DEFAULT_HISTORY_LIMIT = 200
 const HISTORY_LIMIT_STORAGE_KEY = 'kalshi-snapshots-history-limit'
 
@@ -25,12 +23,6 @@ interface Props {
 }
 
 export default function Snapshots({ snapshots }: Props) {
-  const [liveLimit, setLiveLimit] = useState(() => {
-    if (typeof window === 'undefined') return DEFAULT_LIVE_LIMIT
-    const stored = window.localStorage.getItem(LIVE_LIMIT_STORAGE_KEY)
-    const parsed = Number.parseInt(stored ?? '', 10)
-    return Number.isFinite(parsed) && parsed > 0 ? parsed : DEFAULT_LIVE_LIMIT
-  })
   const [historyLimit, setHistoryLimit] = useState(() => {
     if (typeof window === 'undefined') return DEFAULT_HISTORY_LIMIT
     const stored = window.localStorage.getItem(HISTORY_LIMIT_STORAGE_KEY)
@@ -42,10 +34,6 @@ export default function Snapshots({ snapshots }: Props) {
   const [expandedHistory, setExpandedHistory] = useState<Snapshot[]>([])
   const [expandedLoading, setExpandedLoading] = useState(false)
   const [expandedError, setExpandedError] = useState<string | null>(null)
-
-  useEffect(() => {
-    window.localStorage.setItem(LIVE_LIMIT_STORAGE_KEY, String(liveLimit))
-  }, [liveLimit])
 
   useEffect(() => {
     window.localStorage.setItem(HISTORY_LIMIT_STORAGE_KEY, String(historyLimit))
@@ -66,16 +54,6 @@ export default function Snapshots({ snapshots }: Props) {
     }
     return Array.from(latestByTicker.values())
   }, [snapshots])
-
-  const visibleLiveSnapshots = useMemo(() => marketSnapshots.slice(0, liveLimit), [liveLimit, marketSnapshots])
-
-  function updateLiveLimit() {
-    const nextValue = window.prompt('Set live snapshot limit', String(liveLimit))
-    if (nextValue == null) return
-    const parsed = Number.parseInt(nextValue, 10)
-    if (!Number.isFinite(parsed) || parsed < 1) return
-    setLiveLimit(Math.min(parsed, 500))
-  }
 
   function updateHistoryLimit() {
     const nextValue = window.prompt('Set historical snapshot limit', String(historyLimit))
@@ -115,13 +93,7 @@ export default function Snapshots({ snapshots }: Props) {
     <div className="snapshots-view">
       <section className="table-panel">
         <div className="snapshot-panel-head">
-          <div>
-            <span className="section-toggle-label">Live Markets</span>
-            <span className="snapshot-panel-subtitle">One current row per market.</span>
-          </div>
-          <button type="button" className="tab-count-button" onClick={updateLiveLimit} title="Click to change the live snapshot limit">
-            <span className="tab-count">LIMIT {liveLimit}</span>
-          </button>
+          <span className="section-toggle-label">Live Markets</span>
         </div>
         <div className="table-wrap">
           <table>
@@ -139,9 +111,9 @@ export default function Snapshots({ snapshots }: Props) {
               </tr>
             </thead>
             <tbody>
-              {visibleLiveSnapshots.length === 0 ? (
+              {marketSnapshots.length === 0 ? (
                 <tr><td colSpan={9} className="cell-empty">No live snapshots</td></tr>
-              ) : visibleLiveSnapshots.map(snapshot => (
+              ) : marketSnapshots.map(snapshot => (
                 <tr key={snapshot.id}>
                   <td className="cell-ticker">
                     <a href={kalshiMarketUrl(snapshot.ticker)} target="_blank" rel="noreferrer" style={{ color: 'inherit', textDecoration: 'none' }}>
