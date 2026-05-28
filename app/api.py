@@ -9,6 +9,7 @@ import psycopg2
 import psycopg2.extras
 from datetime import date
 import json
+from werkzeug.middleware.proxy_fix import ProxyFix
 
 import config
 import database
@@ -23,6 +24,7 @@ app.secret_key = config.SECRET_KEY
 app.config['SESSION_COOKIE_DOMAIN']   = '.jtdownes.com'
 app.config['SESSION_COOKIE_SAMESITE'] = 'Lax'
 app.config['SESSION_COOKIE_SECURE']   = True
+app.wsgi_app = ProxyFix(app.wsgi_app, x_for=1, x_proto=1, x_host=1, x_port=1)
 
 _PUBLIC_PREFIXES = ('/api/auth',)
 

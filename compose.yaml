@@ -4,6 +4,8 @@ services:
     container_name: kalshi-bot
     restart: unless-stopped
     env_file: .env
+    networks:
+      - downes-capital-network
     extra_hosts:
       - "host.docker.internal:host-gateway"
     volumes:
@@ -21,6 +23,8 @@ services:
     restart: unless-stopped
     env_file: .env
     command: python -u /app/api.py
+    networks:
+      - downes-capital-network
     volumes:
       - ./app:/app
       - ./data:/data
@@ -44,6 +48,8 @@ services:
     environment:
       - CHOKIDAR_USEPOLLING=true
       - WATCHPACK_POLLING=true
+    networks:
+      - downes-capital-network
     depends_on:
       - kalshi-api
     logging:
@@ -54,3 +60,7 @@ services:
 
 volumes:
   kalshi_node_modules:
+
+networks:
+  downes-capital-network:
+    external: true
