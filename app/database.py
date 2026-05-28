@@ -541,6 +541,22 @@ def get_recent_market_snapshots(limit: int = 200) -> list[dict]:
         rows = cur.fetchall()
     return [dict(r) for r in rows]
 
+def get_market_snapshots_for_ticker(ticker: str, limit: int = 500) -> list[dict]:
+    query = """
+        SELECT id, ticker, title, scanned_at, close_time,
+               yes_ask, no_ask, yes_bid, no_bid,
+               time_to_close_secs, strike_str, volume, open_interest
+        FROM market_snapshots
+        WHERE ticker = %s
+        ORDER BY id DESC
+        LIMIT %s
+    """
+    with _lock, _conn() as conn:
+        cur = conn.cursor(cursor_factory=psycopg2.extras.DictCursor)
+        cur.execute(query, (ticker, limit))
+        rows = cur.fetchall()
+    return [dict(r) for r in rows]
+
 def get_latest_snapshots_for_series(series_tickers: list[str], max_age_seconds: int = 15) -> list[dict]:
     if not series_tickers:
         return []

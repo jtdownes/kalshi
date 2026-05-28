@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback } from 'react'
 import { Routes, Route, NavLink } from 'react-router-dom'
 import Dashboard from './pages/Dashboard'
 import Strategies from './pages/Strategies'
+import Snapshots from './pages/Snapshots'
 
 // ── Types ────────────────────────────────────────────────────────────────────────────────
 export interface Position {
@@ -113,7 +114,7 @@ export function fmtPnL(c: number | null | undefined): string {
 
 export function fmtCents(c: number | null | undefined): string {
   if (c == null) return '—'
-  return Math.abs(c) < 1 || !Number.isInteger(c) ? `${c.toFixed(1)}¢` : `${c}¢`
+  return c < 10 ? `${c.toFixed(1)}¢` : `${c}¢`
 }
 
 export function fmtTime(iso: string | null | undefined): string {
@@ -271,6 +272,9 @@ export default function App() {
             <NavLink to="/strategies" className={({ isActive }) => isActive ? 'nav-link nav-link-active' : 'nav-link'}>
               Strategies
             </NavLink>
+            <NavLink to="/snapshots" className={({ isActive }) => isActive ? 'nav-link nav-link-active' : 'nav-link'}>
+              Snapshots
+            </NavLink>
           </nav>
         </div>
         <div className="header-right">
@@ -321,6 +325,10 @@ export default function App() {
               refresh={refresh}
             />
           }
+        />
+        <Route
+          path="/snapshots"
+          element={<Snapshots snapshots={snapshots} />}
         />
       </Routes>
     </div>

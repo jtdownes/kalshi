@@ -223,6 +223,40 @@ tbody tr:hover { background: rgba(255,255,255,0.025); }
   padding: 18px;
 }
 
+.snapshots-view {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+  padding: 18px;
+}
+
+.snapshot-panel-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px;
+}
+
+.snapshot-panel-subtitle {
+  display: block;
+  margin-top: 4px;
+  color: #64748b;
+  font-size: 12px;
+}
+
+.snapshot-row-active {
+  background: rgba(96,165,250,0.08);
+}
+
+.snapshot-market-row {
+  cursor: pointer;
+}
+
+.table-wrap tbody tr.snapshot-row-active:hover {
+  background: rgba(96,165,250,0.14);
+}
+
 .strategy-active-panel {
   display: grid;
   grid-template-columns: minmax(260px, 1.2fr) minmax(360px, 1fr);
