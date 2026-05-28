@@ -1,0 +1,149 @@
+/* ===== Kalshi Auth Styles — matches jtdownes.com ===== */
+
+.auth-wrapper {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 100vh;
+  background: #0f172a;
+}
+
+.auth-container {
+  width: min(440px, calc(100% - 32px));
+  background: #ffffff;
+  border: 1px solid rgba(148, 163, 184, 0.35);
+  border-radius: 16px;
+  box-shadow: 0 20px 60px rgba(15, 23, 42, 0.4);
+  padding: 28px 26px 24px;
+  margin: 32px auto;
+  color: #111827;
+}
+
+.auth-header {
+  text-align: center;
+  margin-bottom: 24px;
+}
+
+.auth-header h1 {
+  font-weight: 800;
+  font-size: 26px;
+  color: #111827;
+  letter-spacing: 0;
+  margin: 0 0 6px;
+}
+
+.auth-header p {
+  font-size: 14px;
+  color: #64748b;
+  margin: 0;
+}
+
+.auth-form {
+  display: flex;
+  flex-direction: column;
+}
+
+.auth-container .form-group {
+  margin-bottom: 16px;
+  padding-bottom: 0;
+}
+
+.auth-container .form-group label {
+  display: block;
+  padding: 0;
+  margin: 0 0 7px;
+  text-align: left;
+  font-size: 13px;
+  font-weight: 700;
+  color: #334155;
+}
+
+.auth-container .form-group input {
+  width: 100%;
+  min-height: 46px;
+  padding: 0 14px;
+  border: 1px solid #cbd5e1;
+  border-radius: 10px;
+  font-size: 16px;
+  box-sizing: border-box;
+  background-color: #f8fafc;
+  color: #111827;
+  transition: border-color 160ms ease, box-shadow 160ms ease, background-color 160ms ease;
+}
+
+.auth-container .form-group input:focus {
+  outline: none;
+  border-color: #2563eb;
+  background-color: #ffffff;
+  box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.12);
+}
+
+.auth-container .form-group input.input-error {
+  border-color: #dc2626;
+  box-shadow: 0 0 0 3px rgba(220, 38, 38, 0.1);
+}
+
+.flashed-message {
+  color: #dc2626;
+  text-align: left;
+  margin-top: 6px;
+  font-size: 13px;
+  min-height: 18px;
+}
+
+.general-error {
+  text-align: center;
+  margin: 4px 0 10px;
+  padding: 10px 12px;
+  border: 1px solid rgba(220, 38, 38, 0.28);
+  border-radius: 10px;
+  background: rgba(254, 226, 226, 0.7);
+  font-size: 13px;
+  color: #b91c1c;
+}
+
+.forgot-password {
+  text-align: right;
+  margin: -4px 0 14px;
+}
+
+.forgot-password a {
+  color: #2563eb;
+  text-decoration: none;
+  font-size: 14px;
+  font-weight: 700;
+}
+
+.forgot-password a:hover {
+  color: #1d4ed8;
+  text-decoration: underline;
+}
+
+.btn-auth {
+  width: 100%;
+  min-height: 46px;
+  padding: 0 16px;
+  border: none;
+  border-radius: 10px;
+  cursor: pointer;
+  font-size: 16px;
+  font-weight: 800;
+  margin-top: 4px;
+  transition: background-color 160ms ease, transform 160ms ease, box-shadow 160ms ease, opacity 160ms ease;
+}
+
+.btn-auth:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+.btn-login {
+  background-color: #111827;
+  color: white;
+}
+
+.btn-login:hover:not(:disabled) {
+  background-color: #1f2937;
+  transform: translateY(-1px);
+  box-shadow: 0 12px 24px rgba(15, 23, 42, 0.16);
+}

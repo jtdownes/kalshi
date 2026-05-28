@@ -4,9 +4,10 @@ Kalshi Dashboard API — reads from Postgres, serves JSON for the React frontend
 
 from contextlib import contextmanager
 from concurrent.futures import ThreadPoolExecutor
-from flask import Flask, Response, jsonify, request, stream_with_context
+from flask import Flask, Response, jsonify, request, session, stream_with_context
 import psycopg2
 import psycopg2.extras
+import bcrypt
 from datetime import date
 import json
 from werkzeug.middleware.proxy_fix import ProxyFix
@@ -26,11 +27,101 @@ app.config['SESSION_COOKIE_SAMESITE'] = 'Lax'
 app.config['SESSION_COOKIE_SECURE']   = True
 app.wsgi_app = ProxyFix(app.wsgi_app, x_for=1, x_proto=1, x_host=1, x_port=1)
 
-
-
+# ── Auth helpers ──────────────────────────────────────────────────────────────
 
 @contextmanager
-def _conn():
+def _users_conn():
+    conn = psycopg2.connect(config.USERS_DB_URL)
+    try:
+        with conn.cursor(cursor_factory=psycopg2.extras.DictCursor) as cur:
+            yield cur
+    finally:
+        conn.close()
+
+def _get_user_key_by_email(email: str):
+    with _users_conn() as cur:
+        cur.execute("SELECT user_key FROM users.profiles WHERE email = %s", (email,))
+        row = cur.fetchone()
+        return row['user_key'] if row else None
+
+def _get_user_key_by_username(username: str):
+    with _users_conn() as cur:
+        cur.execute("SELECT user_key FROM users.profiles WHERE username = %s LIMIT 1", (username,))
+        row = cur.fetchone()
+        return row['user_key'] if row else None
+
+def _get_password_hash(user_key) -> str | None:
+    with _users_conn() as cur:
+        cur.execute(
+            "SELECT password_hash FROM users.credentials WHERE user_key = %s AND is_active = TRUE LIMIT 1",
+            (user_key,)
+        )
+        row = cur.fetchone()
+        return row['password_hash'] if row else None
+
+def _get_login_info(user_key):
+    with _users_conn() as cur:
+        cur.execute(
+            """SELECT p.user_key, p.username, p.email, p.first_name, p.last_name
+               FROM users.profiles p
+               JOIN users.credentials c ON p.user_key = c.user_key
+               WHERE p.user_key = %s AND c.is_active = TRUE""",
+            (user_key,)
+        )
+        return cur.fetchone()
+
+# ── Auth guard ────────────────────────────────────────────────────────────────
+
+@app.before_request
+def require_login():
+    if request.path.startswith('/api/auth'):
+        return None
+    if not session.get('username'):
+        return jsonify({'error': 'unauthenticated'}), 401
+
+# ── Auth endpoints ────────────────────────────────────────────────────────────
+
+@app.post('/api/auth/login')
+def auth_login():
+    data = request.get_json() or {}
+    email    = data.get('email')
+    username = data.get('username')
+    password = data.get('password', '')
+
+    if email:
+        user_key = _get_user_key_by_email(email)
+        not_found_status = 'incorrect_email'
+    elif username:
+        user_key = _get_user_key_by_username(username)
+        not_found_status = 'incorrect_username'
+    else:
+        return jsonify({'status': 'error', 'message': 'Username or email required.'}), 400
+
+    if not user_key:
+        return jsonify({'status': not_found_status, 'message': 'Account not found.'}), 401
+
+    pw_hash = _get_password_hash(user_key)
+    if not pw_hash or not bcrypt.checkpw(password.encode(), pw_hash.encode()):
+        return jsonify({'status': 'incorrect_password', 'message': 'Incorrect password.'}), 401
+
+    user = _get_login_info(user_key)
+    if not user:
+        return jsonify({'status': 'error', 'message': 'Login error.'}), 500
+
+    session['username'] = user['username']
+    session['user_key'] = user['user_key']
+    return jsonify({'status': 'success', 'username': user['username']}), 200
+
+@app.get('/api/auth/logout')
+def auth_logout():
+    session.clear()
+    return jsonify({'status': 'success'}), 200
+
+@app.get('/api/auth/status')
+def auth_status():
+    if session.get('username'):
+        return jsonify({'logged_in': True, 'username': session['username']})
+    return jsonify({'logged_in': False})
     conn = psycopg2.connect(config.DB_URL)
     try:
         with conn.cursor(cursor_factory=psycopg2.extras.DictCursor) as cur:

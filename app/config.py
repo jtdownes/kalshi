@@ -10,8 +10,10 @@ KALSHI_KEY_ID          = os.environ["KALSHI_KEY_ID"]
 KALSHI_PRIVATE_KEY_PATH = os.environ.get("KALSHI_PRIVATE_KEY_PATH", "/data/kalshi_private_key.pem")
 
 # ── Storage ───────────────────────────────────────────────────────────────────
-DB_TYPE = os.environ.get("DB_TYPE", "postgres")
-DB_URL  = os.environ.get("DB_URL", "")
+DB_TYPE     = os.environ.get("DB_TYPE", "postgres")
+DB_URL      = os.environ.get("DB_URL", "")
+# jtdownes shared users DB — for login auth
+USERS_DB_URL = os.environ.get("USERS_DB_URL", "")
 
 # ── Strategy ──────────────────────────────────────────────────────────────────
 MIN_ENTRY_CENTS = int(os.environ.get("MIN_ENTRY_CENTS", "1"))
