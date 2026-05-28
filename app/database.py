@@ -46,8 +46,16 @@ def init_db():
                 max_open_orders         INTEGER NOT NULL,
                 max_daily_spend_cents   INTEGER NOT NULL,
                 scan_interval_seconds   INTEGER NOT NULL,
-                btc_series_tickers      TEXT NOT NULL
+                btc_series_tickers      TEXT NOT NULL,
+                exit_strategy           TEXT NOT NULL DEFAULT 'hold_to_expiration'
             );
+
+            DO $$
+            BEGIN
+                IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='profiles' AND column_name='exit_strategy') THEN
+                    ALTER TABLE profiles ADD COLUMN exit_strategy TEXT NOT NULL DEFAULT 'hold_to_expiration';
+                END IF;
+            END $$;
 
             CREATE TABLE IF NOT EXISTS orders (
                 id                              SERIAL PRIMARY KEY,
@@ -113,6 +121,7 @@ def init_db():
                 max_daily_spend_cents  INTEGER NOT NULL,
                 scan_interval_seconds  INTEGER NOT NULL,
                 btc_series_tickers     TEXT NOT NULL,
+                exit_strategy          TEXT NOT NULL DEFAULT 'hold_to_expiration',
                 active_profile_id      INTEGER
             );
 
@@ -121,6 +130,13 @@ def init_db():
             BEGIN 
                 IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='settings' AND column_name='active_profile_id') THEN
                     ALTER TABLE settings ADD COLUMN active_profile_id INTEGER;
+                END IF;
+            END $$;
+
+            DO $$
+            BEGIN
+                IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='settings' AND column_name='exit_strategy') THEN
+                    ALTER TABLE settings ADD COLUMN exit_strategy TEXT NOT NULL DEFAULT 'hold_to_expiration';
                 END IF;
             END $$;
 
@@ -144,23 +160,24 @@ def init_db():
                 INSERT INTO profiles (
                     name, created_at, min_entry_cents, max_entry_cents, proactive_mode,
                     max_open_orders, max_daily_spend_cents, scan_interval_seconds,
-                    btc_series_tickers
-                ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s) RETURNING id
+                    btc_series_tickers, exit_strategy
+                ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s) RETURNING id
             """, ("Default", now, config.MIN_ENTRY_CENTS, config.MAX_ENTRY_CENTS, config.PROACTIVE_MODE,
                    config.MAX_OPEN_ORDERS, config.MAX_DAILY_SPEND_CENTS, 
-                   config.SCAN_INTERVAL_SECONDS, ",".join(config.BTC_SERIES_TICKERS)))
+                   config.SCAN_INTERVAL_SECONDS, ",".join(config.BTC_SERIES_TICKERS),
+                   'hold_to_expiration'))
             default_profile_id = cur.fetchone()[0]
 
             cur.execute("""
                 INSERT INTO settings (
                     id, min_entry_cents, max_entry_cents, proactive_mode, 
                     max_open_orders, max_daily_spend_cents, scan_interval_seconds, 
-                    btc_series_tickers, active_profile_id
-                ) VALUES (1, %s, %s, %s, %s, %s, %s, %s, %s)
+                    btc_series_tickers, exit_strategy, active_profile_id
+                ) VALUES (1, %s, %s, %s, %s, %s, %s, %s, %s, %s)
             """, (
                 config.MIN_ENTRY_CENTS, config.MAX_ENTRY_CENTS, config.PROACTIVE_MODE,
                 config.MAX_OPEN_ORDERS, config.MAX_DAILY_SPEND_CENTS, 
-                config.SCAN_INTERVAL_SECONDS, ",".join(config.BTC_SERIES_TICKERS),
+                config.SCAN_INTERVAL_SECONDS, ",".join(config.BTC_SERIES_TICKERS), 'hold_to_expiration',
                 default_profile_id
             ))
             
@@ -176,15 +193,15 @@ def init_db():
                 profile_row = cur.fetchone()
                 if not profile_row:
                     now = datetime.utcnow().isoformat()
-                    cur.execute("SELECT min_entry_cents, max_entry_cents, proactive_mode, max_open_orders, max_daily_spend_cents, scan_interval_seconds, btc_series_tickers FROM settings WHERE id = 1")
+                    cur.execute("SELECT min_entry_cents, max_entry_cents, proactive_mode, max_open_orders, max_daily_spend_cents, scan_interval_seconds, btc_series_tickers, exit_strategy FROM settings WHERE id = 1")
                     s = cur.fetchone()
                     cur.execute("""
                         INSERT INTO profiles (
                             name, created_at, min_entry_cents, max_entry_cents, proactive_mode,
                             max_open_orders, max_daily_spend_cents, scan_interval_seconds,
-                            btc_series_tickers
-                        ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s) RETURNING id
-                    """, ("Default", now, s[0], s[1], s[2], s[3], s[4], s[5], s[6]))
+                            btc_series_tickers, exit_strategy
+                        ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s) RETURNING id
+                    """, ("Default", now, s[0], s[1], s[2], s[3], s[4], s[5], s[6], s[7]))
                     pid = cur.fetchone()[0]
                 else:
                     pid = profile_row[0]
@@ -215,15 +232,16 @@ def create_profile(settings_dict, name=None):
         INSERT INTO profiles (
             name, created_at, min_entry_cents, max_entry_cents, proactive_mode,
             max_open_orders, max_daily_spend_cents, scan_interval_seconds,
-            btc_series_tickers
-        ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s) RETURNING id
+            btc_series_tickers, exit_strategy
+        ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s) RETURNING id
     """
     params = (
         name, datetime.utcnow().isoformat(),
         settings_dict['min_entry_cents'], settings_dict['max_entry_cents'],
         settings_dict['proactive_mode'], settings_dict['max_open_orders'],
         settings_dict['max_daily_spend_cents'], settings_dict['scan_interval_seconds'],
-        btc_tickers
+        btc_tickers,
+        settings_dict.get('exit_strategy', 'hold_to_expiration')
     )
     with _lock, _conn() as conn:
         cur = conn.cursor()
@@ -236,7 +254,7 @@ def update_profile(profile_id: int, settings_dict: dict):
     allowed_keys = [
         'name', 'min_entry_cents', 'max_entry_cents', 'proactive_mode',
         'max_open_orders', 'max_daily_spend_cents', 'scan_interval_seconds',
-        'btc_series_tickers'
+        'btc_series_tickers', 'exit_strategy'
     ]
     to_update = {k: v for k, v in settings_dict.items() if k in allowed_keys}
     if not to_update:
@@ -266,7 +284,8 @@ def update_profile(profile_id: int, settings_dict: dict):
                     max_open_orders       = p.max_open_orders,
                     max_daily_spend_cents = p.max_daily_spend_cents,
                     scan_interval_seconds = p.scan_interval_seconds,
-                    btc_series_tickers    = p.btc_series_tickers
+                    btc_series_tickers    = p.btc_series_tickers,
+                    exit_strategy         = p.exit_strategy
                 FROM profiles p
                 WHERE settings.id = 1 AND p.id = %s
             """, (profile_id,))
@@ -413,7 +432,7 @@ def update_settings(settings: dict):
     allowed_keys = [
         'min_entry_cents', 'max_entry_cents', 'proactive_mode', 
         'max_open_orders', 'max_daily_spend_cents', 'scan_interval_seconds',
-        'btc_series_tickers', 'active_profile_id'
+        'btc_series_tickers', 'exit_strategy', 'active_profile_id'
     ]
     to_update = {k: v for k, v in settings.items() if k in allowed_keys}
     if not to_update:
@@ -423,7 +442,7 @@ def update_settings(settings: dict):
     critical_keys = [
         'min_entry_cents', 'max_entry_cents', 'proactive_mode', 
         'max_open_orders', 'max_daily_spend_cents', 'scan_interval_seconds',
-        'btc_series_tickers'
+        'btc_series_tickers', 'exit_strategy'
     ]
     
     for k in critical_keys:
@@ -469,6 +488,7 @@ def activate_profile(profile_id: int):
                 max_daily_spend_cents = %s,
                 scan_interval_seconds = %s,
                 btc_series_tickers    = %s,
+                exit_strategy         = %s,
                 active_profile_id     = %s
             WHERE id = 1
         """, (
@@ -479,6 +499,7 @@ def activate_profile(profile_id: int):
             p['max_daily_spend_cents'],
             p['scan_interval_seconds'],
             p['btc_series_tickers'],
+            p['exit_strategy'],
             profile_id,
         ))
         conn.commit()

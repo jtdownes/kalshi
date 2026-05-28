@@ -11,6 +11,11 @@ interface StrategyDraft {
   max_daily_spend_cents: number
   scan_interval_seconds: number
   btc_series_tickers: string[]
+  exit_strategy: 'hold_to_expiration' | 'limit_sell'
+}
+
+function formatExitStrategy(exitStrategy: StrategyDraft['exit_strategy'] | Profile['exit_strategy'] | Settings['exit_strategy']): string {
+  return exitStrategy === 'limit_sell' ? 'Limit Sell' : 'Hold to Expiration'
 }
 
 function profileToDraft(profile: Profile): StrategyDraft {
@@ -23,6 +28,7 @@ function profileToDraft(profile: Profile): StrategyDraft {
     max_daily_spend_cents: profile.max_daily_spend_cents,
     scan_interval_seconds: profile.scan_interval_seconds,
     btc_series_tickers: profile.btc_series_tickers.split(',').map(t => t.trim()).filter(Boolean),
+    exit_strategy: profile.exit_strategy,
   }
 }
 
@@ -36,6 +42,7 @@ function settingsToDraft(settings: Settings, name = ''): StrategyDraft {
     max_daily_spend_cents: settings.max_daily_spend_cents,
     scan_interval_seconds: settings.scan_interval_seconds,
     btc_series_tickers: settings.btc_series_tickers,
+    exit_strategy: settings.exit_strategy,
   }
 }
 
@@ -110,6 +117,7 @@ export default function Strategies({ settings, profiles, refresh }: Props) {
             <div className="strategy-primary-actions">
               <button
                 className="btn btn-active"
+            <div><span>Exit</span><strong>{formatExitStrategy(settings.exit_strategy)}</strong></div>
                 onClick={() => setStrategyEditor({ mode: 'new', draft: settingsToDraft(settings) })}
               >
                 New Strategy
@@ -164,6 +172,7 @@ export default function Strategies({ settings, profiles, refresh }: Props) {
                 <div><span>Limit</span><strong>{centsToUSD(p.max_daily_spend_cents)}</strong></div>
                 <div><span>Orders</span><strong>{p.max_open_orders}</strong></div>
                 <div><span>Runs</span><strong>{(p.order_count ?? 0).toLocaleString()}</strong></div>
+                <div><span>Exit</span><strong>{formatExitStrategy(p.exit_strategy)}</strong></div>
               </div>
               <div className="strategy-tickers">{fmtTickers(p.btc_series_tickers)}</div>
             </article>
@@ -250,6 +259,16 @@ export default function Strategies({ settings, profiles, refresh }: Props) {
                 value={strategyEditor.draft.btc_series_tickers.join(', ')}
                 onChange={e => updateDraft({ btc_series_tickers: e.target.value.split(',').map(s => s.trim()).filter(Boolean) })}
               />
+            </label>
+            <label className="field field-wide">
+              <span>Exit Strategy</span>
+              <select
+                value={strategyEditor.draft.exit_strategy}
+                onChange={e => updateDraft({ exit_strategy: e.target.value as StrategyDraft['exit_strategy'] })}
+              >
+                <option value="hold_to_expiration">Hold to Expiration</option>
+              </select>
+              <small className="field-help">Existing strategies default to hold-to-expiration. Limit sell exits will be added next.</small>
             </label>
             <label className="strategy-toggle field-wide">
               <input
