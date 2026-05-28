@@ -83,11 +83,11 @@ def _broadcast(event_type: str, data) -> None:
             pass
 
 
-def _dollars_to_cents(v) -> int | None:
+def _dollars_to_cents(v) -> float | None:
     if v is None:
         return None
     try:
-        return round(float(v) * 100)
+        return round(float(v) * 100, 1)
     except Exception:
         return None
 

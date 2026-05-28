@@ -29,12 +29,12 @@ logging.basicConfig(
 log = logging.getLogger("bot")
 
 
-def dollars_to_cents(v) -> int | None:
-    """Kalshi returns prices as strings like '0.3000' (USD). Convert to int cents."""
+def dollars_to_cents(v) -> float | None:
+    """Kalshi returns prices as strings like '0.3000' (USD). Convert to cents with 0.1c precision."""
     if v is None or v == "":
         return None
     try:
-        return round(float(v) * 100)
+        return round(float(v) * 100, 1)
     except (TypeError, ValueError):
         return None
 

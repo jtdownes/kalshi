@@ -111,6 +111,11 @@ export function fmtPnL(c: number | null | undefined): string {
   return `${sign}${c}¢`
 }
 
+export function fmtCents(c: number | null | undefined): string {
+  if (c == null) return '—'
+  return Math.abs(c) < 1 || !Number.isInteger(c) ? `${c.toFixed(1)}¢` : `${c}¢`
+}
+
 export function fmtTime(iso: string | null | undefined): string {
   if (!iso) return '—'
   const d = new Date(iso.endsWith('Z') ? iso : iso + 'Z')

@@ -31,11 +31,11 @@ def _conn():
         conn.close()
 
 
-def _dollars_to_cents(v) -> int | None:
+def _dollars_to_cents(v) -> float | None:
     if v is None or v == "":
         return None
     try:
-        return round(float(v) * 100)
+        return round(float(v) * 100, 1)
     except (ValueError, TypeError):
         return None
 

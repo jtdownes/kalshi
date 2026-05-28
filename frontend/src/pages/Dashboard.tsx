@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import type { Order, Trade, Position, Snapshot, Settings, Profile, Quotes } from '../App'
-import { centsToUSD, fmtPnL, fmtTime, fmtUnixTime, fmtDur, kalshiMarketUrl } from '../App'
+import { centsToUSD, fmtCents, fmtPnL, fmtTime, fmtUnixTime, fmtDur, kalshiMarketUrl } from '../App'
 
 const DEFAULT_HISTORY_LIMIT = 10
 const HISTORY_LIMIT_STORAGE_KEY = 'kalshi-order-history-limit'
@@ -182,7 +182,7 @@ export default function Dashboard({ orders, trades, openOrders, positions, snaps
                     <td>{absContracts}</td>
                     <td className="cell-dim">{fillPrice != null ? `${fillPrice.toFixed(1)}¢` : '—'}</td>
                     <td className="cell-dim">${p.total_traded_dollars}</td>
-                    <td className="cell-dim">{ask != null ? `${ask}¢` : '—'}</td>
+                    <td className="cell-dim">{fmtCents(ask)}</td>
                     <td className="cell-dim">{q?.open_interest != null ? q.open_interest.toLocaleString() : '—'}</td>
                     <td className={pnl > 0 ? 'cell-profit' : pnl < 0 ? 'cell-loss' : 'cell-dim'}>
                       {pnl > 0 ? '+' : ''}${p.realized_pnl_dollars}
@@ -235,7 +235,7 @@ export default function Dashboard({ orders, trades, openOrders, positions, snaps
                     </td>
                     <td><span className={`badge ${o.side === 'yes' ? 'side-yes' : 'side-no'}`}>{o.side.toUpperCase()}</span></td>
                     <td>{o.entry_price_cents}¢</td>
-                    <td className="cell-dim">{ask != null ? `${ask}¢` : '—'}</td>
+                    <td className="cell-dim">{fmtCents(ask)}</td>
                     <td className="cell-dim">{q?.open_interest != null ? q.open_interest.toLocaleString() : '—'}</td>
                     <td><StatusBadge status={o.status} outcome={o.outcome} /></td>
                     <td className="cell-dim">{fmtTime(o.placed_at)}</td>
@@ -348,7 +348,7 @@ export default function Dashboard({ orders, trades, openOrders, positions, snaps
                   <td className="cell-dim">{t.order_count}</td>
                   <td className="cell-dim">{t.entry_price_cents != null ? `${t.entry_price_cents}¢` : '—'}</td>
                   <td className={t.peak_price_cents != null && t.entry_price_cents != null && t.peak_price_cents > t.entry_price_cents ? 'cell-profit' : 'cell-dim'}>
-                    {t.peak_price_cents != null ? `${t.peak_price_cents}¢` : '—'}
+                    {fmtCents(t.peak_price_cents)}
                   </td>
                   <td className="cell-dim">{fmtTime(t.peak_time)}</td>
                   <td><StatusBadge status={t.status} outcome={t.outcome} /></td>
@@ -408,9 +408,9 @@ export default function Dashboard({ orders, trades, openOrders, positions, snaps
                     </a>
                   </td>
                   <td className="cell-dim">{s.strike_str ?? '—'}</td>
-                  <td>{s.yes_ask != null ? `${s.yes_ask}¢` : '—'}</td>
-                  <td className="cell-dim">{s.yes_bid != null ? `${s.yes_bid}¢` : '—'}</td>
-                  <td className="cell-dim">{s.no_ask != null ? `${s.no_ask}¢` : '—'}</td>
+                  <td>{fmtCents(s.yes_ask)}</td>
+                  <td className="cell-dim">{fmtCents(s.yes_bid)}</td>
+                  <td className="cell-dim">{fmtCents(s.no_ask)}</td>
                   <td className="cell-dim">{s.volume != null ? s.volume.toLocaleString() : '—'}</td>
                   <td className="cell-dim">{s.open_interest != null ? s.open_interest.toLocaleString() : '—'}</td>
                   <td className="cell-dim">{fmtDur(s.time_to_close_secs)}</td>

@@ -167,10 +167,10 @@ def init_db():
                 title                TEXT,
                 scanned_at           TEXT NOT NULL,
                 close_time           TEXT,
-                yes_ask              INTEGER,
-                yes_bid              INTEGER,
-                no_ask               INTEGER,
-                no_bid               INTEGER,
+                yes_ask              REAL,
+                yes_bid              REAL,
+                no_ask               REAL,
+                no_bid               REAL,
                 btc_price            REAL,
                 time_to_close_secs   INTEGER,
                 strike_str           TEXT,
@@ -505,7 +505,8 @@ def close_entry_order_with_exit(parent_kalshi_order_id: str, close_price_cents: 
     )
 
 def save_market_snapshot(ticker: str, title: str, close_time: str,
-                         yes_ask: int, yes_bid: int, no_ask: int, no_bid: int,
+                         yes_ask: float | None, yes_bid: float | None,
+                         no_ask: float | None, no_bid: float | None,
                          btc_price: float, time_to_close_secs: int,
                          strike_str: str = None, volume: int = None,
                          open_interest: int = None):
