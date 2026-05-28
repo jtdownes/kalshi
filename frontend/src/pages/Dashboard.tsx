@@ -126,6 +126,7 @@ export default function Dashboard({ orders, trades, openOrders, positions, snaps
               <tr>
                 <th>Market</th>
                 <th>Strike</th>
+                <th>Live Price</th>
                 <th>Yes Ask</th>
                 <th>Yes Bid</th>
                 <th>No Ask</th>
@@ -137,7 +138,7 @@ export default function Dashboard({ orders, trades, openOrders, positions, snaps
             </thead>
             <tbody>
               {marketSnapshots.length === 0 ? (
-                <tr><td colSpan={9} className="cell-empty">No live snapshots</td></tr>
+                <tr><td colSpan={10} className="cell-empty">No live snapshots</td></tr>
               ) : marketSnapshots.map(s => (
                 <tr key={s.id}>
                   <td className="cell-ticker">
@@ -146,6 +147,7 @@ export default function Dashboard({ orders, trades, openOrders, positions, snaps
                     </a>
                   </td>
                   <td className="cell-dim">{s.strike_str ?? '—'}</td>
+                  <td className="cell-dim">{s.btc_price != null ? `$${s.btc_price.toLocaleString()}` : '—'}</td>
                   <td>{fmtCents(s.yes_ask)}</td>
                   <td className="cell-dim">{fmtCents(s.yes_bid)}</td>
                   <td className="cell-dim">{fmtCents(s.no_ask)}</td>

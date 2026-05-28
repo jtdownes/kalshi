@@ -13,6 +13,7 @@ import json
 import logging
 import time
 import threading
+import urllib.request
 import uuid
 from datetime import datetime, timezone
 
@@ -27,6 +28,21 @@ logging.basicConfig(
     datefmt="%Y-%m-%dT%H:%M:%S",
 )
 log = logging.getLogger("bot")
+
+
+def fetch_btc_price() -> float | None:
+    """Fetch current BTC/USD spot price from Coinbase public API. Returns None on failure."""
+    try:
+        req = urllib.request.Request(
+            "https://api.coinbase.com/v2/prices/BTC-USD/spot",
+            headers={"User-Agent": "kalshi-bot/1.0"},
+        )
+        with urllib.request.urlopen(req, timeout=5) as resp:
+            data = json.loads(resp.read().decode())
+        return float(data["data"]["amount"])
+    except Exception as e:
+        log.warning("fetch_btc_price failed: %s", e)
+        return None
 
 
 def dollars_to_cents(v) -> float | None:
@@ -231,6 +247,7 @@ def _scan(client: KalshiClient, settings: dict):
 def _collect_market_snapshots(client: KalshiClient):
     now_ts = int(time.time())
     max_close = now_ts + config.LOOK_AHEAD_SECONDS
+    btc_price = fetch_btc_price()
 
     for series in config.SNAPSHOT_SERIES_TICKERS:
         try:
@@ -269,7 +286,7 @@ def _collect_market_snapshots(client: KalshiClient):
                 yes_bid=yes_bid,
                 no_ask=no_ask,
                 no_bid=no_bid,
-                btc_price=None,
+                btc_price=btc_price,
                 time_to_close_secs=time_to_close,
                 strike_str=str(strike) if strike is not None else None,
                 volume=volume,

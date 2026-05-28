@@ -81,6 +81,7 @@ export default function Snapshots({ snapshots }: Props) {
               <tr>
                 <th>Market</th>
                 <th>Strike</th>
+                <th>Live Price</th>
                 <th>Yes Ask</th>
                 <th>Yes Bid</th>
                 <th>No Ask</th>
@@ -92,7 +93,7 @@ export default function Snapshots({ snapshots }: Props) {
             </thead>
             <tbody>
               {marketSnapshots.length === 0 ? (
-                <tr><td colSpan={9} className="cell-empty">No live snapshots</td></tr>
+                <tr><td colSpan={10} className="cell-empty">No live snapshots</td></tr>
               ) : marketSnapshots.map(snapshot => (
                 <tr key={snapshot.id}>
                   <td className="cell-ticker">
@@ -101,6 +102,7 @@ export default function Snapshots({ snapshots }: Props) {
                     </a>
                   </td>
                   <td className="cell-dim">{snapshot.strike_str ?? '—'}</td>
+                  <td className="cell-dim">{snapshot.btc_price != null ? `$${snapshot.btc_price.toLocaleString()}` : '—'}</td>
                   <td>{fmtCents(snapshot.yes_ask)}</td>
                   <td className="cell-dim">{fmtCents(snapshot.yes_bid)}</td>
                   <td className="cell-dim">{fmtCents(snapshot.no_ask)}</td>

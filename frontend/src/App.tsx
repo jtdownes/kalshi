@@ -59,6 +59,7 @@ export interface Snapshot {
   no_bid: number | null
   time_to_close_secs: number | null
   strike_str: string | null
+  btc_price: number | null
   volume: number | null
   open_interest: number | null
 }
