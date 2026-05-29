@@ -10,6 +10,9 @@ import psycopg2.extras
 import bcrypt
 from datetime import date
 import json
+import time
+from collections import defaultdict
+from threading import Lock
 from werkzeug.middleware.proxy_fix import ProxyFix
 
 import config
@@ -22,16 +25,57 @@ ws_worker.start()
 
 app = Flask(__name__)
 app.secret_key = config.SECRET_KEY
-app.config['SESSION_COOKIE_DOMAIN']   = '.jtdownes.com'
-app.config['SESSION_COOKIE_SAMESITE'] = 'Lax'
-app.config['SESSION_COOKIE_SECURE']   = True
+app.config['SESSION_COOKIE_DOMAIN']    = '.jtdownes.com'
+app.config['SESSION_COOKIE_SAMESITE']  = 'Lax'
+app.config['SESSION_COOKIE_SECURE']    = True
+app.config['SESSION_COOKIE_HTTPONLY']  = True
+app.config['PERMANENT_SESSION_LIFETIME'] = 43200  # 12 hours
 app.wsgi_app = ProxyFix(app.wsgi_app, x_for=1, x_proto=1, x_host=1, x_port=1)
+
+# ── Brute-force rate limiter ──────────────────────────────────────────────────
+# Tracks failed attempts per IP. After _MAX_ATTEMPTS failures within _WINDOW
+# seconds, the IP is locked out for _LOCKOUT seconds.
+_MAX_ATTEMPTS = 10
+_WINDOW       = 300   # 5 minutes
+_LOCKOUT      = 900   # 15 minutes
+_attempts: dict[str, list[float]] = defaultdict(list)
+_attempts_lock = Lock()
+
+_DUMMY_HASH = bcrypt.hashpw(b'dummy', bcrypt.gensalt())
+
+def _get_client_ip() -> str:
+    return request.headers.get('X-Forwarded-For', request.remote_addr or '').split(',')[0].strip()
+
+def _check_rate_limit(ip: str) -> bool:
+    """Return True if the IP is currently locked out."""
+    now = time.time()
+    with _attempts_lock:
+        _attempts[ip] = [t for t in _attempts[ip] if now - t < _WINDOW]
+        return len(_attempts[ip]) >= _MAX_ATTEMPTS
+
+def _record_failure(ip: str):
+    now = time.time()
+    with _attempts_lock:
+        _attempts[ip].append(now)
+
+def _clear_attempts(ip: str):
+    with _attempts_lock:
+        _attempts.pop(ip, None)
 
 # ── Auth helpers ──────────────────────────────────────────────────────────────
 
 @contextmanager
 def _users_conn():
     conn = psycopg2.connect(config.USERS_DB_URL)
+    try:
+        with conn.cursor(cursor_factory=psycopg2.extras.DictCursor) as cur:
+            yield cur
+    finally:
+        conn.close()
+
+@contextmanager
+def _conn():
+    conn = psycopg2.connect(config.DB_URL)
     try:
         with conn.cursor(cursor_factory=psycopg2.extras.DictCursor) as cur:
             yield cur
@@ -83,31 +127,45 @@ def require_login():
 
 @app.post('/api/auth/login')
 def auth_login():
+    ip = _get_client_ip()
+
+    if _check_rate_limit(ip):
+        # Still run a dummy bcrypt check so timing is indistinguishable from a real attempt
+        bcrypt.checkpw(b'x', _DUMMY_HASH)
+        return jsonify({'status': 'error', 'message': 'Too many attempts. Try again in 15 minutes.'}), 429
+
     data = request.get_json() or {}
     email    = data.get('email')
     username = data.get('username')
     password = data.get('password', '')
 
+    if not password or (not email and not username):
+        return jsonify({'status': 'error', 'message': 'Username or email and password required.'}), 400
+
     if email:
         user_key = _get_user_key_by_email(email)
         not_found_status = 'incorrect_email'
-    elif username:
+    else:
         user_key = _get_user_key_by_username(username)
         not_found_status = 'incorrect_username'
-    else:
-        return jsonify({'status': 'error', 'message': 'Username or email required.'}), 400
 
     if not user_key:
-        return jsonify({'status': not_found_status, 'message': 'Account not found.'}), 401
+        # Run dummy bcrypt so missing-user responses take the same time as wrong-password
+        bcrypt.checkpw(password.encode(), _DUMMY_HASH)
+        _record_failure(ip)
+        return jsonify({'status': not_found_status, 'message': 'Invalid credentials.'}), 401
 
     pw_hash = _get_password_hash(user_key)
     if not pw_hash or not bcrypt.checkpw(password.encode(), pw_hash.encode()):
-        return jsonify({'status': 'incorrect_password', 'message': 'Incorrect password.'}), 401
+        _record_failure(ip)
+        return jsonify({'status': 'incorrect_password', 'message': 'Invalid credentials.'}), 401
 
     user = _get_login_info(user_key)
     if not user:
         return jsonify({'status': 'error', 'message': 'Login error.'}), 500
 
+    _clear_attempts(ip)
+    session.permanent = True
     session['username'] = user['username']
     session['user_key'] = user['user_key']
     return jsonify({'status': 'success', 'username': user['username']}), 200
@@ -122,12 +180,6 @@ def auth_status():
     if session.get('username'):
         return jsonify({'logged_in': True, 'username': session['username']})
     return jsonify({'logged_in': False})
-    conn = psycopg2.connect(config.DB_URL)
-    try:
-        with conn.cursor(cursor_factory=psycopg2.extras.DictCursor) as cur:
-            yield cur
-    finally:
-        conn.close()
 
 
 def _dollars_to_cents(v) -> float | None:
