@@ -46,9 +46,10 @@ interface Props {
   quotes: Quotes
   settings: Settings | null
   profiles: Profile[]
+  balance: number | null
 }
 
-export default function Dashboard({ orders, trades, openOrders, positions, snapshots, quotes, settings, profiles }: Props) {
+export default function Dashboard({ orders, trades, openOrders, positions, snapshots, quotes, settings, profiles, balance }: Props) {
   const navigate = useNavigate()
   const [collapsedSections, setCollapsedSections] = useState<Record<CollapsibleSection, boolean>>({
     history: false,
@@ -90,9 +91,67 @@ export default function Dashboard({ orders, trades, openOrders, positions, snaps
 
   return (
     <div>
+      {/* Portfolio Summary */}
+      {(() => {
+        const posArr = Array.isArray(positions) ? positions as Position[] : []
+        const totalExposure = posArr.reduce((sum, p) => sum + parseFloat(p.market_exposure_dollars || '0'), 0)
+        const totalRealizedPnL = posArr.reduce((sum, p) => sum + parseFloat(p.realized_pnl_dollars || '0'), 0)
+        const totalUnrealizedPnL = posArr.reduce((sum, p) => {
+          const contracts = Math.abs(parseFloat(p.position_fp))
+          const side = parseFloat(p.position_fp) >= 0 ? 'yes' : 'no'
+          const q = quotes[p.ticker]
+          const bid = q ? (side === 'yes' ? q.yes_bid : q.no_bid) : null
+          const exposure = parseFloat(p.market_exposure_dollars || '0')
+          if (bid != null && contracts > 0) return sum + ((bid / 100) * contracts - exposure)
+          return sum
+        }, 0)
+        return (
+          <div style={{
+            display: 'flex', gap: 12, margin: '16px 18px 0',
+            background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.08)',
+            borderRadius: 12, padding: '14px 20px', flexWrap: 'wrap',
+          }}>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 3, minWidth: 140 }}>
+              <span style={{ fontSize: 11, fontWeight: 600, color: '#64748b', textTransform: 'uppercase', letterSpacing: '0.06em' }}>Portfolio Balance</span>
+              <span style={{ fontSize: 22, fontWeight: 800, color: '#f1f5f9' }}>
+                {balance != null ? `$${((balance / 100) + totalExposure + totalUnrealizedPnL).toFixed(2)}` : '—'}
+              </span>
+            </div>
+            <div style={{ width: 1, background: 'rgba(255,255,255,0.08)', margin: '0 4px', alignSelf: 'stretch' }} />
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 3, minWidth: 120 }}>
+              <span style={{ fontSize: 11, fontWeight: 600, color: '#64748b', textTransform: 'uppercase', letterSpacing: '0.06em' }}>Cash Balance</span>
+              <span style={{ fontSize: 22, fontWeight: 800, color: '#f1f5f9' }}>
+                {balance != null ? `$${(balance / 100).toFixed(2)}` : '—'}
+              </span>
+            </div>
+            <div style={{ width: 1, background: 'rgba(255,255,255,0.08)', margin: '0 4px', alignSelf: 'stretch' }} />
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 3, minWidth: 120 }}>
+              <span style={{ fontSize: 11, fontWeight: 600, color: '#64748b', textTransform: 'uppercase', letterSpacing: '0.06em' }}>Open Positions</span>
+              <span style={{ fontSize: 22, fontWeight: 800, color: '#f1f5f9' }}>
+                {posArr.length > 0 ? `$${totalExposure.toFixed(2)}` : '—'}
+              </span>
+            </div>
+            <div style={{ width: 1, background: 'rgba(255,255,255,0.08)', margin: '0 4px', alignSelf: 'stretch' }} />
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 3, minWidth: 120 }}>
+              <span style={{ fontSize: 11, fontWeight: 600, color: '#64748b', textTransform: 'uppercase', letterSpacing: '0.06em' }}>Unrealized P&L</span>
+              <span style={{ fontSize: 22, fontWeight: 800, color: totalUnrealizedPnL > 0 ? '#00d4a0' : totalUnrealizedPnL < 0 ? '#ff4444' : '#f1f5f9' }}>
+                {posArr.length > 0 ? `${totalUnrealizedPnL >= 0 ? '+' : ''}$${totalUnrealizedPnL.toFixed(2)}` : '—'}
+              </span>
+            </div>
+            <div style={{ width: 1, background: 'rgba(255,255,255,0.08)', margin: '0 4px', alignSelf: 'stretch' }} />
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 3, minWidth: 120 }}>
+              <span style={{ fontSize: 11, fontWeight: 600, color: '#64748b', textTransform: 'uppercase', letterSpacing: '0.06em' }}>Realized P&L</span>
+              <span style={{ fontSize: 22, fontWeight: 800, color: totalRealizedPnL > 0 ? '#00d4a0' : totalRealizedPnL < 0 ? '#ff4444' : '#f1f5f9' }}>
+                {posArr.length > 0 ? `${totalRealizedPnL >= 0 ? '+' : ''}$${totalRealizedPnL.toFixed(2)}` : '—'}
+              </span>
+            </div>
+          </div>
+        )
+      })()}
+
       {/* Active Strategy Widget */}
       {settings && (
-        <section className="strategy-active-panel" style={{ margin: '0 18px' }}>
+        <section className="strategy-active-panel" style={{ margin: '16px 18px 0' }}>
           <div className="strategy-active-main">
             <div className="stat-label">Active Strategy</div>
             <h2>{activeProfile?.name || settings.name || 'Current settings'}</h2>

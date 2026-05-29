@@ -191,6 +191,15 @@ def _dollars_to_cents(v) -> float | None:
         return None
 
 
+@app.get("/api/balance")
+def balance():
+    try:
+        data = KalshiClient().get_balance()
+        return jsonify(data)
+    except Exception as e:
+        return jsonify({"error": str(e)}), 502
+
+
 @app.get("/api/quotes")
 def quotes():
     tickers_param = request.args.get("tickers", "")

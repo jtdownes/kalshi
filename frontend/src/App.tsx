@@ -164,6 +164,7 @@ export default function App() {
   const [quotes,      setQuotes]      = useState<Quotes>({})
   const [settings,    setSettings]    = useState<Settings | null>(null)
   const [profiles,    setProfiles]    = useState<Profile[]>([])
+  const [balance,     setBalance]     = useState<number | null>(null)
   const [autoRefresh, setAutoRefresh] = useState(true)
   const [lastRefresh, setLastRefresh] = useState<Date | null>(null)
   const [loading,     setLoading]     = useState(false)
@@ -175,13 +176,14 @@ export default function App() {
     setLoading(true)
     setError(null)
     try {
-      const [o, tr, pos, snap, st, pr] = await Promise.all([
+      const [o, tr, pos, snap, st, pr, bal] = await Promise.all([
         fetch('/api/orders?limit=200').then(r => { if (!r.ok) throw new Error('orders'); return r.json() }),
         fetch('/api/trades?limit=200').then(r => r.json()).catch(() => []),
         fetch('/api/positions').then(r => r.json()).catch(() => []),
         fetch('/api/snapshots?limit=200').then(r => r.json()).catch(() => []),
         fetch('/api/settings').then(r => { if (!r.ok) throw new Error('settings'); return r.json() }),
         fetch('/api/profiles').then(r => { if (!r.ok) throw new Error('profiles'); return r.json() }),
+        fetch('/api/balance').then(r => r.json()).catch(() => null),
       ])
       setOrders(o)
       setTrades(tr)
@@ -189,6 +191,7 @@ export default function App() {
       setSnapshots(snap)
       setSettings(st)
       setProfiles(pr)
+      if (bal && !bal.error) setBalance(bal.balance ?? null)
       setLastRefresh(new Date())
     } catch {
       setError('API unavailable — bot may be starting up')
@@ -315,6 +318,7 @@ export default function App() {
               quotes={quotes}
               settings={settings}
               profiles={profiles}
+              balance={balance}
             />
           }
         />
