@@ -130,10 +130,6 @@ export default function Strategies({ settings, profiles, refresh }: Props) {
           <div className="strategy-active-main">
             <div className="stat-label">Active Strategy</div>
             <h2>{activeProfile?.name || settings.name || 'Current settings'}</h2>
-            <p>
-              This is the live bot configuration. Create a new strategy from it, edit saved strategies,
-              or activate an older strategy from the cards below.
-            </p>
             <div className="strategy-primary-actions">
               <button
                 className="btn btn-active"
@@ -151,13 +147,13 @@ export default function Strategies({ settings, profiles, refresh }: Props) {
               )}
             </div>
           </div>
-          <div className="strategy-metrics">
-            <div><span>Max Bid</span><strong>{settings.max_entry_cents}¢</strong></div>
-            <div><span>Daily Limit</span><strong>{centsToUSD(settings.max_daily_spend_cents)}</strong></div>
-            <div><span>Max Orders</span><strong>{settings.max_open_orders}</strong></div>
-            <div><span>Mode</span><strong>{settings.proactive_mode ? 'Proactive' : 'Reactive'}</strong></div>
-            <div><span>Exit</span><strong>{formatExitStrategy(settings.exit_strategy)}</strong></div>
-            <div><span>Exit Target</span><strong>{formatExitTarget(settings.limit_sell_price_cents)}</strong></div>
+          <div className="strategy-metrics-wrap">
+            <div className="strategy-metrics strategy-metrics-compact">
+              <div><span>Max Bid</span><strong>{settings.max_entry_cents}¢</strong></div>
+              <div><span>Daily Limit</span><strong>{centsToUSD(settings.max_daily_spend_cents)}</strong></div>
+              <div><span>Mode</span><strong>{settings.proactive_mode ? 'Proactive' : 'Reactive'}</strong></div>
+              <div><span>Exit</span><strong>{formatExitStrategy(settings.exit_strategy)}</strong></div>
+            </div>
           </div>
         </section>
       )}
@@ -182,21 +178,55 @@ export default function Strategies({ settings, profiles, refresh }: Props) {
               }}
             >
               <div className="strategy-card-head">
-                <div>
+                <div className="strategy-title-block">
                   <div className="strategy-name">{p.name}</div>
                   <div className="strategy-created">Created {fmtTime(p.created_at)}</div>
                 </div>
-                {isActive && <span className="badge badge-live">ACTIVE</span>}
+                <div className="strategy-card-head-right">
+                  {isActive && <span className="badge badge-live">ACTIVE</span>}
+                  <span className="strategy-chip strategy-chip-dim">{fmtTickers(p.btc_series_tickers)}</span>
+                </div>
               </div>
-              <div className="strategy-card-stats">
-                <div><span>Max Bid</span><strong>{p.max_entry_cents}¢</strong></div>
-                <div><span>Limit</span><strong>{centsToUSD(p.max_daily_spend_cents)}</strong></div>
-                <div><span>Orders</span><strong>{p.max_open_orders}</strong></div>
-                <div><span>Runs</span><strong>{(p.order_count ?? 0).toLocaleString()}</strong></div>
-                <div><span>Exit</span><strong>{formatExitStrategy(p.exit_strategy)}</strong></div>
-                <div><span>Exit Target</span><strong>{formatExitTarget(p.limit_sell_price_cents)}</strong></div>
+
+              <div className="strategy-ticket-band">
+                <div className="strategy-ticket-metric">
+                  <span>Daily Spend Ceiling</span>
+                  <strong>{centsToUSD(p.max_daily_spend_cents)}</strong>
+                </div>
+                <div className="strategy-ticket-metric">
+                  <span>Max Entry</span>
+                  <strong>{p.max_entry_cents}¢</strong>
+                </div>
+                <div className="strategy-ticket-metric">
+                  <span>Historical Runs</span>
+                  <strong>{(p.order_count ?? 0).toLocaleString()}</strong>
+                </div>
               </div>
-              <div className="strategy-tickers">{fmtTickers(p.btc_series_tickers)}</div>
+
+              <div className="strategy-ticket-grid">
+                <div className="strategy-ticket-kv">
+                  <span>Entry Range</span>
+                  <strong>{p.min_entry_cents}¢ to {p.max_entry_cents}¢</strong>
+                </div>
+                <div className="strategy-ticket-kv">
+                  <span>Open Order Cap</span>
+                  <strong>{p.max_open_orders}</strong>
+                </div>
+                <div className="strategy-ticket-kv">
+                  <span>Scan Interval</span>
+                  <strong>{p.scan_interval_seconds}s</strong>
+                </div>
+                <div className="strategy-ticket-kv">
+                  <span>Mode</span>
+                  <strong>{p.proactive_mode ? 'Proactive' : 'Reactive'}</strong>
+                </div>
+              </div>
+
+              <div className="strategy-card-foot">
+                <span className="strategy-chip">{formatExitStrategy(p.exit_strategy)}</span>
+                {p.limit_sell_price_cents != null && <span className="strategy-chip">Target {formatExitTarget(p.limit_sell_price_cents)}</span>}
+                <span className="strategy-chip strategy-chip-dim">Tap to edit strategy</span>
+              </div>
             </article>
           )
         })}

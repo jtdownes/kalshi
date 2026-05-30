@@ -221,8 +221,8 @@ tbody tr:hover { background: rgba(255,255,255,0.025); }
 .strategies-view {
   display: flex;
   flex-direction: column;
-  gap: 18px;
-  padding: 18px;
+  gap: 12px;
+  padding: 14px;
 }
 
 .snapshots-view {
@@ -300,20 +300,20 @@ tbody tr:hover { background: rgba(255,255,255,0.025); }
 .strategy-active-panel {
   display: grid;
   grid-template-columns: minmax(260px, 1.2fr) minmax(360px, 1fr);
-  gap: 20px;
-  padding: 22px;
-  border: 1px solid rgba(0,212,160,0.18);
+  gap: 14px;
+  padding: 14px;
+  border: 1px solid rgba(0,212,160,0.2);
   border-radius: 10px;
   background:
-    linear-gradient(135deg, rgba(0,212,160,0.12), transparent 44%),
-    #11111a;
+    radial-gradient(circle at 16% 20%, rgba(0,212,160,0.14), transparent 36%),
+    linear-gradient(160deg, rgba(15,20,33,0.9) 0%, rgba(10,12,20,0.96) 100%);
 }
 
 .strategy-active-main h2,
 .strategy-section-head h3 {
-  font-size: 22px;
+  font-size: 20px;
   line-height: 1.1;
-  margin-bottom: 8px;
+  margin-bottom: 4px;
 }
 
 .strategy-active-main p,
@@ -327,12 +327,20 @@ tbody tr:hover { background: rgba(255,255,255,0.025); }
 .strategy-primary-actions {
   display: flex;
   flex-wrap: wrap;
-  gap: 10px;
-  margin-top: 18px;
+  gap: 8px;
+  margin-top: 8px;
 }
 
 .strategy-primary-actions .btn {
-  padding: 9px 14px;
+  padding: 8px 12px;
+}
+
+.strategy-metrics-wrap {
+  padding: 0;
+}
+
+.strategy-metrics-compact {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
 }
 
 .strategy-metrics,
@@ -345,10 +353,10 @@ tbody tr:hover { background: rgba(255,255,255,0.025); }
 .strategy-metrics div,
 .strategy-card-stats div {
   min-width: 0;
-  padding: 12px;
+  padding: 9px 10px;
   border: 1px solid #242435;
   border-radius: 8px;
-  background: rgba(13,13,20,0.62);
+  background: rgba(13,13,20,0.6);
 }
 
 .strategy-metrics span,
@@ -369,7 +377,7 @@ tbody tr:hover { background: rgba(255,255,255,0.025); }
 
 .strategies-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(270px, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
   gap: 12px;
 }
 
@@ -383,15 +391,20 @@ tbody tr:hover { background: rgba(255,255,255,0.025); }
 .strategy-card {
   display: flex;
   flex-direction: column;
-  gap: 14px;
-  padding: 16px;
+  gap: 12px;
+  padding: 14px;
   cursor: pointer;
   transition: border-color 0.15s ease, box-shadow 0.15s ease, transform 0.15s ease;
+  border-left: 4px solid transparent;
+  background:
+    linear-gradient(180deg, rgba(255,255,255,0.02), rgba(255,255,255,0.01)),
+    #0f111a;
 }
 
 .strategy-card:hover {
-  border-color: #2d2d3e;
-  transform: translateY(-1px);
+  border-color: #384055;
+  transform: translateY(-2px);
+  box-shadow: 0 10px 26px rgba(0,0,0,0.28);
 }
 
 .strategy-card:focus-visible {
@@ -400,8 +413,11 @@ tbody tr:hover { background: rgba(255,255,255,0.025); }
 }
 
 .strategy-card.is-active {
-  border-color: rgba(0,212,160,0.45);
-  box-shadow: inset 0 0 0 1px rgba(0,212,160,0.08);
+  border-color: rgba(0,212,160,0.5);
+  border-left-color: #00d4a0;
+  box-shadow:
+    inset 0 0 0 1px rgba(0,212,160,0.1),
+    0 10px 28px rgba(0,212,160,0.08);
 }
 
 .strategy-card-head,
@@ -411,6 +427,23 @@ tbody tr:hover { background: rgba(255,255,255,0.025); }
   align-items: flex-start;
   justify-content: space-between;
   gap: 16px;
+}
+
+.strategy-card-head {
+  align-items: center;
+  padding-bottom: 10px;
+  border-bottom: 1px solid #1f2637;
+}
+
+.strategy-title-block {
+  min-width: 0;
+}
+
+.strategy-card-head-right {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
 }
 
 .strategy-name {
@@ -423,13 +456,90 @@ tbody tr:hover { background: rgba(255,255,255,0.025); }
 .strategy-tickers,
 .strategy-form-actions span {
   color: #64748b;
-  font-size: 12px;
+  font-size: 11px;
 }
 
-.strategy-tickers {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+.strategy-ticket-band {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.strategy-ticket-metric {
+  min-width: 0;
+  padding: 10px 10px 9px;
+  border: 1px solid #253046;
+  border-radius: 8px;
+  background: rgba(9,13,24,0.88);
+}
+
+.strategy-ticket-metric span {
+  display: block;
+  margin-bottom: 4px;
+  color: #8aa0bf;
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.55px;
+}
+
+.strategy-ticket-metric strong {
+  display: block;
+  color: #e2e8f0;
+  font-size: 16px;
+  font-variant-numeric: tabular-nums;
+}
+
+.strategy-ticket-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.strategy-ticket-kv {
+  min-width: 0;
+  padding: 9px 10px;
+  border-radius: 8px;
+  background: rgba(255,255,255,0.025);
+}
+
+.strategy-ticket-kv span {
+  display: block;
+  margin-bottom: 3px;
+  color: #7f94b1;
+  font-size: 10px;
+  letter-spacing: 0.5px;
+  text-transform: uppercase;
+}
+
+.strategy-ticket-kv strong {
+  color: #d9e3f2;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.strategy-card-foot {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 7px;
+  padding-top: 4px;
+}
+
+.strategy-chip {
+  display: inline-flex;
+  align-items: center;
+  min-height: 24px;
+  padding: 0 9px;
+  border-radius: 999px;
+  border: 1px solid #2a3448;
+  color: #9eb0c8;
+  background: rgba(39,52,75,0.28);
+  font-size: 11px;
+}
+
+.strategy-chip-dim {
+  border-style: dashed;
+  color: #7c8da6;
+  background: rgba(255,255,255,0.02);
 }
 
 .badge-live {
@@ -623,6 +733,18 @@ tbody tr:hover { background: rgba(255,255,255,0.025); }
 @media (max-width: 900px) {
   .strategy-active-panel,
   .strategy-form {
+    grid-template-columns: 1fr;
+  }
+
+  .strategy-metrics-compact {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .strategies-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .strategy-ticket-band {
     grid-template-columns: 1fr;
   }
 
