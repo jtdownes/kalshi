@@ -2,12 +2,12 @@ CREATE TABLE IF NOT EXISTS profiles (
     id                      SERIAL PRIMARY KEY,
     name                    TEXT NOT NULL,
     created_at              TEXT NOT NULL,
+    is_active               BOOLEAN NOT NULL DEFAULT FALSE,
     min_entry_cents         INTEGER NOT NULL,
     max_entry_cents         INTEGER NOT NULL,
     proactive_mode          BOOLEAN NOT NULL,
     max_open_orders         INTEGER NOT NULL,
     max_daily_spend_cents   INTEGER NOT NULL,
-    scan_interval_seconds   INTEGER NOT NULL,
     btc_series_tickers      TEXT NOT NULL,
     exit_strategy           TEXT NOT NULL DEFAULT 'hold_to_expiration',
     limit_sell_price_cents  INTEGER
@@ -24,6 +24,22 @@ DO $$
 BEGIN
     IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='profiles' AND column_name='limit_sell_price_cents') THEN
         ALTER TABLE profiles ADD COLUMN limit_sell_price_cents INTEGER;
+    END IF;
+END $$;
+
+DO $$
+BEGIN
+    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='profiles' AND column_name='is_active') THEN
+        ALTER TABLE profiles ADD COLUMN is_active BOOLEAN NOT NULL DEFAULT FALSE;
+        UPDATE profiles SET is_active = TRUE
+        WHERE id = (SELECT active_profile_id FROM settings WHERE id = 1 LIMIT 1);
+    END IF;
+END $$;
+
+DO $$
+BEGIN
+    IF EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='profiles' AND column_name='scan_interval_seconds') THEN
+        ALTER TABLE profiles DROP COLUMN scan_interval_seconds;
     END IF;
 END $$;
 
@@ -147,12 +163,18 @@ CREATE TABLE IF NOT EXISTS settings (
     proactive_mode         BOOLEAN NOT NULL,
     max_open_orders        INTEGER NOT NULL,
     max_daily_spend_cents  INTEGER NOT NULL,
-    scan_interval_seconds  INTEGER NOT NULL,
     btc_series_tickers     TEXT NOT NULL,
     exit_strategy          TEXT NOT NULL DEFAULT 'hold_to_expiration',
     limit_sell_price_cents INTEGER,
     active_profile_id      INTEGER
 );
+
+DO $$
+BEGIN
+    IF EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='settings' AND column_name='scan_interval_seconds') THEN
+        ALTER TABLE settings DROP COLUMN scan_interval_seconds;
+    END IF;
+END $$;
 
 -- Add active_profile_id to settings if it doesn't exist
 DO $$ 
