@@ -13,7 +13,6 @@ interface StrategyDraft {
   proactive_mode: boolean
   max_open_orders: number
   max_daily_spend_cents: number
-  scan_interval_seconds: number
   btc_series_tickers: string[]
   exit_strategy: 'hold_to_expiration' | 'limit_sell'
   limit_sell_price_cents: number | null
@@ -40,7 +39,6 @@ function profileToDraft(profile: Profile): StrategyDraft {
     proactive_mode: profile.proactive_mode,
     max_open_orders: profile.max_open_orders,
     max_daily_spend_cents: profile.max_daily_spend_cents,
-    scan_interval_seconds: profile.scan_interval_seconds,
     btc_series_tickers: normalizeStrategyMarkets(profile.btc_series_tickers.split(',').map(t => t.trim()).filter(Boolean)),
     exit_strategy: profile.exit_strategy,
     limit_sell_price_cents: profile.limit_sell_price_cents,
@@ -55,7 +53,6 @@ function settingsToDraft(settings: Settings, name = ''): StrategyDraft {
     proactive_mode: settings.proactive_mode,
     max_open_orders: settings.max_open_orders,
     max_daily_spend_cents: settings.max_daily_spend_cents,
-    scan_interval_seconds: settings.scan_interval_seconds,
     btc_series_tickers: normalizeStrategyMarkets(settings.btc_series_tickers),
     exit_strategy: settings.exit_strategy,
     limit_sell_price_cents: settings.limit_sell_price_cents,
@@ -75,7 +72,7 @@ export default function Strategies({ settings, profiles, refresh }: Props) {
 
   const activeProfile = profiles.find(p => p.id === settings?.active_profile_id)
   const editingProfileId = strategyEditor?.mode === 'edit' ? strategyEditor.profileId ?? null : null
-  const isEditingActive = editingProfileId != null && settings?.active_profile_id === editingProfileId
+  const isEditingActive = editingProfileId != null && (profiles.find(p => p.id === editingProfileId)?.is_active ?? false)
 
   const updateDraft = (patch: Partial<StrategyDraft>) =>
     setStrategyEditor(e => e ? { ...e, draft: { ...e.draft, ...patch } } : e)
@@ -123,6 +120,19 @@ export default function Strategies({ settings, profiles, refresh }: Props) {
     }
   }
 
+  const deactivateProfile = async (profileId: number) => {
+    setActivating(true)
+    try {
+      const resp = await fetch(`/api/profiles/${profileId}/deactivate`, { method: 'POST' })
+      if (!resp.ok) throw new Error('Failed to deactivate strategy')
+      await refresh()
+    } catch (err: any) {
+      alert(err.message)
+    } finally {
+      setActivating(false)
+    }
+  }
+
   return (
     <div className="strategies-view">
       {settings && (
@@ -162,7 +172,7 @@ export default function Strategies({ settings, profiles, refresh }: Props) {
         {profiles.length === 0 ? (
           <div className="strategy-empty">No strategies yet</div>
         ) : profiles.map(p => {
-          const isActive = settings?.active_profile_id === p.id
+          const isActive = p.is_active
           return (
             <article
               key={p.id}
@@ -213,10 +223,6 @@ export default function Strategies({ settings, profiles, refresh }: Props) {
                   <strong>{p.max_open_orders}</strong>
                 </div>
                 <div className="strategy-ticket-kv">
-                  <span>Scan Interval</span>
-                  <strong>{p.scan_interval_seconds}s</strong>
-                </div>
-                <div className="strategy-ticket-kv">
                   <span>Mode</span>
                   <strong>{p.proactive_mode ? 'Proactive' : 'Reactive'}</strong>
                 </div>
@@ -251,16 +257,20 @@ export default function Strategies({ settings, profiles, refresh }: Props) {
                   aria-pressed={isEditingActive}
                   disabled={activating}
                   onClick={() => {
-                    if (!isEditingActive) activateProfile(strategyEditor.profileId!)
+                    if (isEditingActive) {
+                      deactivateProfile(strategyEditor.profileId!)
+                    } else {
+                      activateProfile(strategyEditor.profileId!)
+                    }
                   }}
                 >
                   <span className="strategy-status-copy">
                     <strong>{isEditingActive ? 'Active Strategy' : 'Inactive Strategy'}</strong>
                     <small>
                       {isEditingActive
-                        ? 'This strategy is currently live.'
+                        ? 'Running live. Click to deactivate.'
                         : activating
-                          ? 'Activating strategy...'
+                          ? 'Updating...'
                           : 'Click to make this strategy live.'}
                     </small>
                   </span>

@@ -71,7 +71,6 @@ export interface Settings {
   proactive_mode: boolean
   max_open_orders: number
   max_daily_spend_cents: number
-  scan_interval_seconds: number
   btc_series_tickers: string[]
   exit_strategy: 'hold_to_expiration' | 'limit_sell'
   limit_sell_price_cents: number | null
@@ -83,12 +82,12 @@ export interface Profile {
   id: number
   name: string
   created_at: string
+  is_active: boolean
   min_entry_cents: number
   max_entry_cents: number
   proactive_mode: boolean
   max_open_orders: number
   max_daily_spend_cents: number
-  scan_interval_seconds: number
   btc_series_tickers: string
   exit_strategy: 'hold_to_expiration' | 'limit_sell'
   limit_sell_price_cents: number | null
@@ -171,7 +170,7 @@ export default function App() {
   const [loading,     setLoading]     = useState(false)
   const [error,       setError]       = useState<string | null>(null)
   const [wsConnected, setWsConnected] = useState(false)
-  const dashboardRefreshMs = Math.max(1000, (settings?.scan_interval_seconds ?? 1) * 1000)
+  const dashboardRefreshMs = 1000
 
   const refresh = useCallback(async () => {
     setLoading(true)
