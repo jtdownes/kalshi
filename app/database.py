@@ -2,6 +2,7 @@
 PostgreSQL persistence for the Kalshi bot.
 """
 
+import os
 import psycopg2
 import psycopg2.extras
 import threading
@@ -9,6 +10,8 @@ import logging
 from datetime import datetime, date
 
 import config
+
+SQL_QUERIES_PATH = "/data/queries"
 
 log = logging.getLogger(__name__)
 _lock = threading.Lock()
@@ -32,264 +35,66 @@ def _execute(conn, query, params=None):
     cur.execute(query, params)
     return cur
 
-def init_db():
+def execute_sql_file(file_name, params=None):
+    """Execute a SQL file from SQL_QUERIES_PATH. file_name is relative to that directory."""
+    sql_file_path = os.path.join(SQL_QUERIES_PATH, file_name)
+    with open(sql_file_path, "r") as f:
+        query = f.read()
     with _lock, _conn() as conn:
         cur = conn.cursor()
-        cur.execute("""
-            CREATE TABLE IF NOT EXISTS profiles (
-                id                      SERIAL PRIMARY KEY,
-                name                    TEXT NOT NULL,
-                created_at              TEXT NOT NULL,
-                min_entry_cents         INTEGER NOT NULL,
-                max_entry_cents         INTEGER NOT NULL,
-                proactive_mode          BOOLEAN NOT NULL,
-                max_open_orders         INTEGER NOT NULL,
-                max_daily_spend_cents   INTEGER NOT NULL,
-                scan_interval_seconds   INTEGER NOT NULL,
-                btc_series_tickers      TEXT NOT NULL,
-                exit_strategy           TEXT NOT NULL DEFAULT 'hold_to_expiration',
-                limit_sell_price_cents  INTEGER
-            );
-
-            DO $$
-            BEGIN
-                IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='profiles' AND column_name='exit_strategy') THEN
-                    ALTER TABLE profiles ADD COLUMN exit_strategy TEXT NOT NULL DEFAULT 'hold_to_expiration';
-                END IF;
-            END $$;
-
-            DO $$
-            BEGIN
-                IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='profiles' AND column_name='limit_sell_price_cents') THEN
-                    ALTER TABLE profiles ADD COLUMN limit_sell_price_cents INTEGER;
-                END IF;
-            END $$;
-
-            CREATE TABLE IF NOT EXISTS orders (
-                id                              SERIAL PRIMARY KEY,
-                kalshi_order_id                 TEXT UNIQUE,
-                client_order_id                 TEXT UNIQUE NOT NULL,
-                market_ticker                   TEXT NOT NULL,
-                side                            TEXT NOT NULL,
-                order_role                      TEXT NOT NULL DEFAULT 'entry',
-                parent_kalshi_order_id          TEXT,
-                exit_order_kalshi_id            TEXT,
-                entry_price_cents               INTEGER NOT NULL,
-                count                           INTEGER NOT NULL DEFAULT 1,
-                status                          TEXT NOT NULL DEFAULT 'resting',
-                placed_at                       TEXT NOT NULL,
-                filled_at                       TEXT,
-                btc_price_at_placement          REAL,
-                btc_price_at_fill               REAL,
-                distance_to_strike_at_placement REAL,
-                market_close_time               TEXT,
-                time_to_close_at_placement      INTEGER,
-                exit_strategy                   TEXT NOT NULL DEFAULT 'hold_to_expiration',
-                exit_target_cents               INTEGER,
-                closed_at                       TEXT,
-                close_reason                    TEXT,
-                close_price_cents               INTEGER,
-                outcome                         TEXT,
-                payout_cents                    INTEGER,
-                fee_cents                       INTEGER,
-                net_profit_cents                INTEGER,
-                notes                           TEXT,
-                profile_id                      INTEGER
-            );
-
-            -- Add profile_id to orders if it doesn't exist
-            DO $$ 
-            BEGIN 
-                IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='orders' AND column_name='profile_id') THEN
-                    ALTER TABLE orders ADD COLUMN profile_id INTEGER;
-                END IF;
-            END $$;
-
-            DO $$
-            BEGIN
-                IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='orders' AND column_name='order_role') THEN
-                    ALTER TABLE orders ADD COLUMN order_role TEXT NOT NULL DEFAULT 'entry';
-                END IF;
-            END $$;
-
-            DO $$
-            BEGIN
-                IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='orders' AND column_name='parent_kalshi_order_id') THEN
-                    ALTER TABLE orders ADD COLUMN parent_kalshi_order_id TEXT;
-                END IF;
-            END $$;
-
-            DO $$
-            BEGIN
-                IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='orders' AND column_name='exit_order_kalshi_id') THEN
-                    ALTER TABLE orders ADD COLUMN exit_order_kalshi_id TEXT;
-                END IF;
-            END $$;
-
-            DO $$
-            BEGIN
-                IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='orders' AND column_name='exit_strategy') THEN
-                    ALTER TABLE orders ADD COLUMN exit_strategy TEXT NOT NULL DEFAULT 'hold_to_expiration';
-                END IF;
-            END $$;
-
-            DO $$
-            BEGIN
-                IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='orders' AND column_name='exit_target_cents') THEN
-                    ALTER TABLE orders ADD COLUMN exit_target_cents INTEGER;
-                END IF;
-            END $$;
-
-            DO $$
-            BEGIN
-                IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='orders' AND column_name='closed_at') THEN
-                    ALTER TABLE orders ADD COLUMN closed_at TEXT;
-                END IF;
-            END $$;
-
-            DO $$
-            BEGIN
-                IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='orders' AND column_name='close_reason') THEN
-                    ALTER TABLE orders ADD COLUMN close_reason TEXT;
-                END IF;
-            END $$;
-
-            DO $$
-            BEGIN
-                IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='orders' AND column_name='close_price_cents') THEN
-                    ALTER TABLE orders ADD COLUMN close_price_cents INTEGER;
-                END IF;
-            END $$;
-
-            CREATE TABLE IF NOT EXISTS market_snapshots (
-                id                   SERIAL PRIMARY KEY,
-                ticker               TEXT NOT NULL,
-                title                TEXT,
-                scanned_at           TEXT NOT NULL,
-                close_time           TEXT,
-                yes_ask              REAL,
-                yes_bid              REAL,
-                no_ask               REAL,
-                no_bid               REAL,
-                btc_price            REAL,
-                time_to_close_secs   INTEGER,
-                strike_str           TEXT,
-                volume               INTEGER,
-                open_interest        INTEGER
-            );
-
-            CREATE TABLE IF NOT EXISTS btc_prices (
-                id          SERIAL PRIMARY KEY,
-                recorded_at TEXT NOT NULL,
-                price       REAL NOT NULL
-            );
-
-            CREATE TABLE IF NOT EXISTS settings (
-                id                     INTEGER PRIMARY KEY CHECK (id = 1),
-                min_entry_cents        INTEGER NOT NULL,
-                max_entry_cents        INTEGER NOT NULL,
-                proactive_mode         BOOLEAN NOT NULL,
-                max_open_orders        INTEGER NOT NULL,
-                max_daily_spend_cents  INTEGER NOT NULL,
-                scan_interval_seconds  INTEGER NOT NULL,
-                btc_series_tickers     TEXT NOT NULL,
-                exit_strategy          TEXT NOT NULL DEFAULT 'hold_to_expiration',
-                limit_sell_price_cents INTEGER,
-                active_profile_id      INTEGER
-            );
-
-            -- Add active_profile_id to settings if it doesn't exist
-            DO $$ 
-            BEGIN 
-                IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='settings' AND column_name='active_profile_id') THEN
-                    ALTER TABLE settings ADD COLUMN active_profile_id INTEGER;
-                END IF;
-            END $$;
-
-            DO $$
-            BEGIN
-                IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='settings' AND column_name='exit_strategy') THEN
-                    ALTER TABLE settings ADD COLUMN exit_strategy TEXT NOT NULL DEFAULT 'hold_to_expiration';
-                END IF;
-            END $$;
-
-            DO $$
-            BEGIN
-                IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='settings' AND column_name='limit_sell_price_cents') THEN
-                    ALTER TABLE settings ADD COLUMN limit_sell_price_cents INTEGER;
-                END IF;
-            END $$;
-
-            CREATE INDEX IF NOT EXISTS idx_orders_ticker  ON orders(market_ticker);
-            CREATE INDEX IF NOT EXISTS idx_orders_status  ON orders(status);
-            CREATE INDEX IF NOT EXISTS idx_snaps_ticker   ON market_snapshots(ticker);
-            CREATE INDEX IF NOT EXISTS idx_btc_time       ON btc_prices(recorded_at);
-        """)
-        
-        # Sync sequences in case rows were manually inserted
-        cur.execute("SELECT setval(pg_get_serial_sequence('orders', 'id'), coalesce(max(id), 1), max(id) IS NOT null) FROM orders")
-        cur.execute("SELECT setval(pg_get_serial_sequence('market_snapshots', 'id'), coalesce(max(id), 1), max(id) IS NOT null) FROM market_snapshots")
-        cur.execute("SELECT setval(pg_get_serial_sequence('btc_prices', 'id'), coalesce(max(id), 1), max(id) IS NOT null) FROM btc_prices")
-        
-        # Initial settings if empty
-        cur.execute("SELECT COUNT(*) FROM settings")
-        if cur.fetchone()[0] == 0:
-            # Create default profile
-            now = datetime.utcnow().isoformat()
-            cur.execute("""
-                INSERT INTO profiles (
-                    name, created_at, min_entry_cents, max_entry_cents, proactive_mode,
-                    max_open_orders, max_daily_spend_cents, scan_interval_seconds,
-                    btc_series_tickers, exit_strategy, limit_sell_price_cents
-                ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s) RETURNING id
-            """, ("Default", now, config.MIN_ENTRY_CENTS, config.MAX_ENTRY_CENTS, config.PROACTIVE_MODE,
-                   config.MAX_OPEN_ORDERS, config.MAX_DAILY_SPEND_CENTS, 
-                   config.SCAN_INTERVAL_SECONDS, ",".join(config.BTC_SERIES_TICKERS),
-                   'hold_to_expiration', None))
-            default_profile_id = cur.fetchone()[0]
-
-            cur.execute("""
-                INSERT INTO settings (
-                    id, min_entry_cents, max_entry_cents, proactive_mode, 
-                    max_open_orders, max_daily_spend_cents, scan_interval_seconds, 
-                    btc_series_tickers, exit_strategy, limit_sell_price_cents, active_profile_id
-                ) VALUES (1, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
-            """, (
-                config.MIN_ENTRY_CENTS, config.MAX_ENTRY_CENTS, config.PROACTIVE_MODE,
-                config.MAX_OPEN_ORDERS, config.MAX_DAILY_SPEND_CENTS, 
-                config.SCAN_INTERVAL_SECONDS, ",".join(config.BTC_SERIES_TICKERS), 'hold_to_expiration', None,
-                default_profile_id
-            ))
-            
-            # Link existing orders if any
-            cur.execute("UPDATE orders SET profile_id = %s WHERE profile_id IS NULL", (default_profile_id,))
-        else:
-            # Migration: Ensure at least one profile exists and is linked if active_profile_id is NULL
-            cur.execute("SELECT active_profile_id FROM settings WHERE id = 1")
-            row = cur.fetchone()
-            if row and row[0] is None:
-                # Check if any profile exists
-                cur.execute("SELECT id FROM profiles LIMIT 1")
-                profile_row = cur.fetchone()
-                if not profile_row:
-                    now = datetime.utcnow().isoformat()
-                    cur.execute("SELECT min_entry_cents, max_entry_cents, proactive_mode, max_open_orders, max_daily_spend_cents, scan_interval_seconds, btc_series_tickers, exit_strategy, limit_sell_price_cents FROM settings WHERE id = 1")
-                    s = cur.fetchone()
-                    cur.execute("""
-                        INSERT INTO profiles (
-                            name, created_at, min_entry_cents, max_entry_cents, proactive_mode,
-                            max_open_orders, max_daily_spend_cents, scan_interval_seconds,
-                            btc_series_tickers, exit_strategy, limit_sell_price_cents
-                        ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s) RETURNING id
-                    """, ("Default", now, s[0], s[1], s[2], s[3], s[4], s[5], s[6], s[7], s[8]))
-                    pid = cur.fetchone()[0]
-                else:
-                    pid = profile_row[0]
-                
-                cur.execute("UPDATE settings SET active_profile_id = %s WHERE id = 1", (pid,))
-                cur.execute("UPDATE orders SET profile_id = %s WHERE profile_id IS NULL", (pid,))
-        
+        cur.execute(query, params) if params else cur.execute(query)
         conn.commit()
+        if cur.description:
+            return [dict(r) for r in cur.fetchall()]
+        return cur.rowcount
+
+
+def init_db():
+    execute_sql_file("0_initialization.sql")
+    execute_sql_file("1_sync_sequences.sql")
+
+    count_rows = execute_sql_file("2_check_settings_count.sql")
+    settings_count = count_rows[0]['count'] if count_rows else 0
+
+    if settings_count == 0:
+        now = datetime.utcnow().isoformat()
+        profile_rows = execute_sql_file("3_seed_default_profile.sql", (
+            "Default", now, config.MIN_ENTRY_CENTS, config.MAX_ENTRY_CENTS, config.PROACTIVE_MODE,
+            config.MAX_OPEN_ORDERS, config.MAX_DAILY_SPEND_CENTS,
+            config.SCAN_INTERVAL_SECONDS, ",".join(config.BTC_SERIES_TICKERS),
+            'hold_to_expiration', None,
+        ))
+        default_profile_id = profile_rows[0]['id']
+
+        execute_sql_file("4_seed_default_settings.sql", (
+            config.MIN_ENTRY_CENTS, config.MAX_ENTRY_CENTS, config.PROACTIVE_MODE,
+            config.MAX_OPEN_ORDERS, config.MAX_DAILY_SPEND_CENTS,
+            config.SCAN_INTERVAL_SECONDS, ",".join(config.BTC_SERIES_TICKERS),
+            'hold_to_expiration', None, default_profile_id,
+        ))
+        execute_sql_file("5_link_orphan_orders.sql", (default_profile_id,))
+    else:
+        active_rows = execute_sql_file("6_get_active_profile_id.sql")
+        active_profile_id = active_rows[0]['active_profile_id'] if active_rows else None
+
+        if active_profile_id is None:
+            profile_rows = execute_sql_file("7_get_first_profile.sql")
+            if not profile_rows:
+                now = datetime.utcnow().isoformat()
+                settings_rows = execute_sql_file("8_get_settings_for_migration.sql")
+                s = settings_rows[0]
+                new_profile_rows = execute_sql_file("3_seed_default_profile.sql", (
+                    "Default", now, s['min_entry_cents'], s['max_entry_cents'], s['proactive_mode'],
+                    s['max_open_orders'], s['max_daily_spend_cents'], s['scan_interval_seconds'],
+                    s['btc_series_tickers'], s['exit_strategy'], s['limit_sell_price_cents'],
+                ))
+                pid = new_profile_rows[0]['id']
+            else:
+                pid = profile_rows[0]['id']
+
+            execute_sql_file("9_set_active_profile.sql", (pid,))
+            execute_sql_file("5_link_orphan_orders.sql", (pid,))
+
     log.info("Database ready: %s (postgres)", config.DB_URL)
 
 def get_active_profile_id() -> int:
@@ -581,14 +386,6 @@ def get_latest_snapshots_for_series(series_tickers: list[str], max_age_seconds: 
         cur.execute(query, params)
         rows = cur.fetchall()
     return [dict(r) for r in rows]
-
-def log_btc_price(price: float):
-    now = datetime.utcnow().isoformat()
-    query = "INSERT INTO btc_prices (recorded_at, price) VALUES (%s, %s)"
-    with _lock, _conn() as conn:
-        cur = conn.cursor()
-        cur.execute(query, (now, price))
-        conn.commit()
 
 def get_settings() -> dict:
     query = "SELECT * FROM settings WHERE id = 1"
