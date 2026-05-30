@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import type { Order, Trade, Position, Snapshot, Settings, Profile, Quotes } from '../App'
+import PriceActionChart from '../components/PriceActionChart'
 import { centsToUSD, fmtCents, fmtPnL, fmtTime, fmtUnixTime, fmtDur, kalshiMarketUrl } from '../App'
 
 const DEFAULT_HISTORY_LIMIT = 10
@@ -65,6 +66,9 @@ export default function Dashboard({ orders, trades, openOrders, positions, snaps
     window.localStorage.setItem(HISTORY_LIMIT_STORAGE_KEY, String(historyLimit))
   }, [historyLimit])
 
+  const [selectedTicker, setSelectedTicker] = useState<string | null>(null)
+  const [pinnedTicker, setPinnedTicker] = useState<string | null>(null)
+
   const activeProfile = profiles.find(p => p.id === settings?.active_profile_id)
   const history = orders.filter(o => o.status !== 'resting').slice(0, historyLimit)
   const marketSnapshots = useMemo(() => {
@@ -74,6 +78,12 @@ export default function Dashboard({ orders, trades, openOrders, positions, snaps
     }
     return Array.from(latestByTicker.values())
   }, [snapshots])
+
+  // Auto-select the most-recently-scanned ticker unless the user has pinned one
+  const mostRecentTicker = snapshots.length > 0 ? snapshots[0].ticker : null
+  useEffect(() => {
+    if (!pinnedTicker && mostRecentTicker) setSelectedTicker(mostRecentTicker)
+  }, [mostRecentTicker, pinnedTicker])
 
   function updateHistoryLimit() {
     const nextValue = window.prompt('Set order history limit', String(historyLimit))
@@ -199,11 +209,23 @@ export default function Dashboard({ orders, trades, openOrders, positions, snaps
               {marketSnapshots.length === 0 ? (
                 <tr><td colSpan={10} className="cell-empty">No live snapshots</td></tr>
               ) : marketSnapshots.map(s => (
-                <tr key={s.id}>
-                  <td className="cell-ticker">
-                    <a href={kalshiMarketUrl(s.ticker)} target="_blank" rel="noreferrer" style={{ color: 'inherit', textDecoration: 'none' }}>
+                <tr
+                  key={s.id}
+                  onClick={() => { setPinnedTicker(s.ticker); setSelectedTicker(s.ticker) }}
+                  style={{ cursor: 'pointer', background: selectedTicker === s.ticker ? 'rgba(0,212,160,0.07)' : undefined }}
+                >
+                  <td className="cell-ticker" style={{ color: selectedTicker === s.ticker ? '#00d4a0' : undefined }}>
+                    <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5 }}>
                       {s.ticker}
-                    </a>
+                      <a
+                        href={kalshiMarketUrl(s.ticker)}
+                        target="_blank"
+                        rel="noreferrer"
+                        onClick={e => e.stopPropagation()}
+                        style={{ color: '#64748b', lineHeight: 1, textDecoration: 'none', fontSize: 11 }}
+                        title="Open on Kalshi"
+                      >↗</a>
+                    </span>
                   </td>
                   <td className="cell-dim">{s.strike_str ?? '—'}</td>
                   <td className="cell-dim">{s.btc_price != null ? `$${s.btc_price.toLocaleString()}` : '—'}</td>
@@ -220,6 +242,13 @@ export default function Dashboard({ orders, trades, openOrders, positions, snaps
           </table>
         </div>
       </div>
+
+      {/* Market Chart */}
+      {selectedTicker && (
+        <div style={{ marginTop: 8, marginLeft: 18, marginRight: 18 }}>
+          <PriceActionChart ticker={selectedTicker} globalSnapshots={snapshots} />
+        </div>
+      )}
 
       {/* Active Positions */}
       <div className="table-panel" style={{ marginTop: 16, marginLeft: 18, marginRight: 18 }}>
