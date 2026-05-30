@@ -3,6 +3,7 @@ import { Routes, Route, NavLink } from 'react-router-dom'
 import Dashboard from './pages/Dashboard'
 import Strategies from './pages/Strategies'
 import Snapshots from './pages/Snapshots'
+import Backtest from './pages/Backtest'
 
 // ── Types ────────────────────────────────────────────────────────────────────────────────
 export interface Position {
@@ -280,6 +281,9 @@ export default function App() {
             <NavLink to="/markets" className={({ isActive }) => isActive ? 'nav-link nav-link-active' : 'nav-link'}>
               Markets
             </NavLink>
+            <NavLink to="/backtest" className={({ isActive }) => isActive ? 'nav-link nav-link-active' : 'nav-link'}>
+              Backtest
+            </NavLink>
           </nav>
         </div>
         <div className="header-right">
@@ -336,6 +340,7 @@ export default function App() {
           path="/markets"
           element={<Snapshots snapshots={snapshots} />}
         />
+        <Route path="/backtest" element={<Backtest />} />
       </Routes>
     </div>
   )
