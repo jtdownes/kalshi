@@ -1,6 +1,8 @@
 # Credentials and live data — never commit these
 .env
-data/
+data/*
+!data/queries/
+!data/queries/**
 
 # Editor
 .vscode/
