@@ -688,6 +688,15 @@ def activate_profile(profile_id: int):
     return jsonify({"status": "success", "active_profile_id": profile_id})
 
 
+@app.post("/api/profiles/<int:profile_id>/deactivate")
+def deactivate_profile(profile_id: int):
+    try:
+        database.deactivate_profile(profile_id)
+    except ValueError as e:
+        return jsonify({"error": str(e)}), 404
+    return jsonify({"status": "success"})
+
+
 @app.get("/api/snapshots/series")
 def snapshot_series():
     ticker = request.args.get("ticker", "").strip().upper()

@@ -11,7 +11,7 @@ import database as db
 log = logging.getLogger(__name__)
 
 
-def evaluate_market(market: dict, btc_price: float | None, settings: dict | None = None) -> list[tuple[str, int]]:
+def evaluate_market(market: dict, btc_price: float | None, settings: dict | None = None, profile_id: int | None = None) -> list[tuple[str, int]]:
     """
     Returns a list of (side, price_cents) pairs to place as limit buy orders.
     Empty list = do nothing.
@@ -36,18 +36,18 @@ def evaluate_market(market: dict, btc_price: float | None, settings: dict | None
 
     if proactive_mode:
         for side in ("yes", "no"):
-            if not db.has_open_order(ticker, side):
+            if not db.has_open_order(ticker, side, profile_id=profile_id):
                 orders.append((side, max_entry_cents))
     else:
         yes_ask = market.get("yes_ask")
         no_ask  = market.get("no_ask")
         if (yes_ask is not None
                 and min_entry_cents <= yes_ask <= max_entry_cents
-                and not db.has_open_order(ticker, "yes")):
+                and not db.has_open_order(ticker, "yes", profile_id=profile_id)):
             orders.append(("yes", yes_ask))
         if (no_ask is not None
                 and min_entry_cents <= no_ask <= max_entry_cents
-                and not db.has_open_order(ticker, "no")):
+                and not db.has_open_order(ticker, "no", profile_id=profile_id)):
             orders.append(("no", no_ask))
 
     if orders:
@@ -58,19 +58,19 @@ def evaluate_market(market: dict, btc_price: float | None, settings: dict | None
     return orders
 
 
-def can_place_order(price_cents: int, settings: dict | None = None) -> tuple[bool, str]:
-    """Check global safety limits before placing any single order."""
+def can_place_order(price_cents: int, settings: dict | None = None, profile_id: int | None = None) -> tuple[bool, str]:
+    """Check per-profile safety limits before placing any single order."""
     if settings is None:
         settings = {}
         
     max_open_orders = settings.get("max_open_orders", config.MAX_OPEN_ORDERS)
     max_daily_spend = settings.get("max_daily_spend_cents", config.MAX_DAILY_SPEND_CENTS)
 
-    resting = db.count_resting_orders()
+    resting = db.count_resting_orders(profile_id=profile_id)
     if resting >= max_open_orders:
         return False, f"max open orders reached ({resting}/{max_open_orders})"
 
-    spent = db.get_today_spend_cents()
+    spent = db.get_today_spend_cents(profile_id=profile_id)
     if spent + price_cents > max_daily_spend:
         return False, (f"daily spend limit reached "
                        f"({spent}+{price_cents} > {max_daily_spend}¢)")

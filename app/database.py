@@ -61,7 +61,7 @@ def init_db():
         profile_rows = execute_sql_file("3_seed_default_profile.sql", (
             "Default", now, config.MIN_ENTRY_CENTS, config.MAX_ENTRY_CENTS, config.PROACTIVE_MODE,
             config.MAX_OPEN_ORDERS, config.MAX_DAILY_SPEND_CENTS,
-            config.SCAN_INTERVAL_SECONDS, ",".join(config.BTC_SERIES_TICKERS),
+            ",".join(config.BTC_SERIES_TICKERS),
             'hold_to_expiration', None,
         ))
         default_profile_id = profile_rows[0]['id']
@@ -69,7 +69,7 @@ def init_db():
         execute_sql_file("4_seed_default_settings.sql", (
             config.MIN_ENTRY_CENTS, config.MAX_ENTRY_CENTS, config.PROACTIVE_MODE,
             config.MAX_OPEN_ORDERS, config.MAX_DAILY_SPEND_CENTS,
-            config.SCAN_INTERVAL_SECONDS, ",".join(config.BTC_SERIES_TICKERS),
+            ",".join(config.BTC_SERIES_TICKERS),
             'hold_to_expiration', None, default_profile_id,
         ))
         execute_sql_file("5_link_orphan_orders.sql", (default_profile_id,))
@@ -85,7 +85,7 @@ def init_db():
                 s = settings_rows[0]
                 new_profile_rows = execute_sql_file("3_seed_default_profile.sql", (
                     "Default", now, s['min_entry_cents'], s['max_entry_cents'], s['proactive_mode'],
-                    s['max_open_orders'], s['max_daily_spend_cents'], s['scan_interval_seconds'],
+                    s['max_open_orders'], s['max_daily_spend_cents'],
                     s['btc_series_tickers'], s['exit_strategy'], s['limit_sell_price_cents'],
                 ))
                 pid = new_profile_rows[0]['id']
@@ -116,15 +116,15 @@ def create_profile(settings_dict, name=None):
     query = """
         INSERT INTO profiles (
             name, created_at, min_entry_cents, max_entry_cents, proactive_mode,
-            max_open_orders, max_daily_spend_cents, scan_interval_seconds,
+            max_open_orders, max_daily_spend_cents,
             btc_series_tickers, exit_strategy, limit_sell_price_cents
-        ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s) RETURNING id
+        ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s) RETURNING id
     """
     params = (
         name, datetime.utcnow().isoformat(),
         settings_dict['min_entry_cents'], settings_dict['max_entry_cents'],
         settings_dict['proactive_mode'], settings_dict['max_open_orders'],
-        settings_dict['max_daily_spend_cents'], settings_dict['scan_interval_seconds'],
+        settings_dict['max_daily_spend_cents'],
         btc_tickers,
         settings_dict.get('exit_strategy', 'hold_to_expiration'),
         settings_dict.get('limit_sell_price_cents')
@@ -139,7 +139,7 @@ def create_profile(settings_dict, name=None):
 def update_profile(profile_id: int, settings_dict: dict):
     allowed_keys = [
         'name', 'min_entry_cents', 'max_entry_cents', 'proactive_mode',
-        'max_open_orders', 'max_daily_spend_cents', 'scan_interval_seconds',
+        'max_open_orders', 'max_daily_spend_cents',
         'btc_series_tickers', 'exit_strategy', 'limit_sell_price_cents'
     ]
     to_update = {k: v for k, v in settings_dict.items() if k in allowed_keys}
@@ -164,14 +164,13 @@ def update_profile(profile_id: int, settings_dict: dict):
         if row and row[0] == profile_id:
             cur.execute("""
                 UPDATE settings SET
-                    min_entry_cents       = p.min_entry_cents,
-                    max_entry_cents       = p.max_entry_cents,
-                    proactive_mode        = p.proactive_mode,
-                    max_open_orders       = p.max_open_orders,
-                    max_daily_spend_cents = p.max_daily_spend_cents,
-                    scan_interval_seconds = p.scan_interval_seconds,
-                    btc_series_tickers    = p.btc_series_tickers,
-                    exit_strategy         = p.exit_strategy,
+                    min_entry_cents        = p.min_entry_cents,
+                    max_entry_cents        = p.max_entry_cents,
+                    proactive_mode         = p.proactive_mode,
+                    max_open_orders        = p.max_open_orders,
+                    max_daily_spend_cents  = p.max_daily_spend_cents,
+                    btc_series_tickers     = p.btc_series_tickers,
+                    exit_strategy          = p.exit_strategy,
                     limit_sell_price_cents = p.limit_sell_price_cents
                 FROM profiles p
                 WHERE settings.id = 1 AND p.id = %s
@@ -218,32 +217,55 @@ def update_order(kalshi_order_id: str, **fields):
         cur.execute(query, vals)
         conn.commit()
 
-def has_open_order(market_ticker: str, side: str) -> bool:
-    query = "SELECT 1 FROM orders WHERE market_ticker = %s AND side = %s AND order_role = 'entry' AND status IN ('resting', 'pending', 'filled')"
+def has_open_order(market_ticker: str, side: str, profile_id: int | None = None) -> bool:
+    if profile_id is not None:
+        query = "SELECT 1 FROM orders WHERE market_ticker = %s AND side = %s AND profile_id = %s AND order_role = 'entry' AND status IN ('resting', 'pending', 'filled')"
+        params = (market_ticker, side, profile_id)
+    else:
+        query = "SELECT 1 FROM orders WHERE market_ticker = %s AND side = %s AND order_role = 'entry' AND status IN ('resting', 'pending', 'filled')"
+        params = (market_ticker, side)
     with _lock, _conn() as conn:
         cur = conn.cursor()
-        cur.execute(query, (market_ticker, side))
+        cur.execute(query, params)
         row = cur.fetchone()
     return row is not None
 
-def get_today_spend_cents() -> int:
+def get_today_spend_cents(profile_id: int | None = None) -> int:
     today = date.today().isoformat()
-    query = """
-        SELECT COALESCE(SUM(entry_price_cents * count), 0)
-        FROM orders
-        WHERE order_role = 'entry' AND status IN ('resting', 'filled') AND placed_at::date = %s
-    """
+    if profile_id is not None:
+        query = """
+            SELECT COALESCE(SUM(entry_price_cents * count), 0)
+            FROM orders
+            WHERE profile_id = %s AND order_role = 'entry'
+              AND status IN ('resting', 'filled') AND placed_at::date = %s
+        """
+        params = (profile_id, today)
+    else:
+        query = """
+            SELECT COALESCE(SUM(entry_price_cents * count), 0)
+            FROM orders
+            WHERE order_role = 'entry' AND status IN ('resting', 'filled') AND placed_at::date = %s
+        """
+        params = (today,)
     with _lock, _conn() as conn:
         cur = conn.cursor()
-        cur.execute(query, (today,))
+        cur.execute(query, params)
         row = cur.fetchone()
     return row[0] if row else 0
 
-def count_resting_orders() -> int:
-    query = "SELECT COUNT(*) FROM orders WHERE order_role = 'entry' AND status = 'resting'"
+def count_resting_orders(profile_id: int | None = None) -> int:
+    if profile_id is not None:
+        query = "SELECT COUNT(*) FROM orders WHERE profile_id = %s AND order_role = 'entry' AND status = 'resting'"
+        params = (profile_id,)
+    else:
+        query = "SELECT COUNT(*) FROM orders WHERE order_role = 'entry' AND status = 'resting'"
+        params = None
     with _lock, _conn() as conn:
         cur = conn.cursor()
-        cur.execute(query)
+        if params:
+            cur.execute(query, params)
+        else:
+            cur.execute(query)
         row = cur.fetchone()
     return row[0] if row else 0
 
@@ -414,7 +436,7 @@ def update_settings(settings: dict):
     # Filter settings to only valid columns
     allowed_keys = [
         'min_entry_cents', 'max_entry_cents', 'proactive_mode', 
-        'max_open_orders', 'max_daily_spend_cents', 'scan_interval_seconds',
+        'max_open_orders', 'max_daily_spend_cents',
         'btc_series_tickers', 'exit_strategy', 'limit_sell_price_cents', 'active_profile_id'
     ]
     to_update = {k: v for k, v in settings.items() if k in allowed_keys}
@@ -424,7 +446,7 @@ def update_settings(settings: dict):
     critical_changed = False
     critical_keys = [
         'min_entry_cents', 'max_entry_cents', 'proactive_mode', 
-        'max_open_orders', 'max_daily_spend_cents', 'scan_interval_seconds',
+        'max_open_orders', 'max_daily_spend_cents',
         'btc_series_tickers', 'exit_strategy', 'limit_sell_price_cents'
     ]
     
@@ -454,7 +476,7 @@ def update_settings(settings: dict):
         conn.commit()
 
 def activate_profile(profile_id: int):
-    """Copy a profile's params into settings and mark it active."""
+    """Mark a profile as active (does not deactivate others) and update settings pointer."""
     with _lock, _conn() as conn:
         cur = conn.cursor(cursor_factory=psycopg2.extras.DictCursor)
         cur.execute("SELECT * FROM profiles WHERE id = %s", (profile_id,))
@@ -462,18 +484,18 @@ def activate_profile(profile_id: int):
         if not row:
             raise ValueError(f"Profile {profile_id} not found")
         p = dict(row)
+        cur.execute("UPDATE profiles SET is_active = TRUE WHERE id = %s", (profile_id,))
         cur.execute("""
             UPDATE settings SET
-                min_entry_cents       = %s,
-                max_entry_cents       = %s,
-                proactive_mode        = %s,
-                max_open_orders       = %s,
-                max_daily_spend_cents = %s,
-                scan_interval_seconds = %s,
-                btc_series_tickers    = %s,
-                exit_strategy         = %s,
+                min_entry_cents        = %s,
+                max_entry_cents        = %s,
+                proactive_mode         = %s,
+                max_open_orders        = %s,
+                max_daily_spend_cents  = %s,
+                btc_series_tickers     = %s,
+                exit_strategy          = %s,
                 limit_sell_price_cents = %s,
-                active_profile_id     = %s
+                active_profile_id      = %s
             WHERE id = 1
         """, (
             p['min_entry_cents'],
@@ -481,10 +503,52 @@ def activate_profile(profile_id: int):
             p['proactive_mode'],
             p['max_open_orders'],
             p['max_daily_spend_cents'],
-            p['scan_interval_seconds'],
             p['btc_series_tickers'],
             p['exit_strategy'],
             p['limit_sell_price_cents'],
             profile_id,
         ))
         conn.commit()
+
+def deactivate_profile(profile_id: int):
+    """Set is_active = FALSE on a profile. Updates settings.active_profile_id if needed."""
+    with _lock, _conn() as conn:
+        cur = conn.cursor()
+        cur.execute("SELECT id FROM profiles WHERE id = %s", (profile_id,))
+        if not cur.fetchone():
+            raise ValueError(f"Profile {profile_id} not found")
+        cur.execute("UPDATE profiles SET is_active = FALSE WHERE id = %s", (profile_id,))
+        cur.execute("SELECT active_profile_id FROM settings WHERE id = 1")
+        row = cur.fetchone()
+        if row and row[0] == profile_id:
+            cur.execute(
+                "SELECT id FROM profiles WHERE is_active = TRUE AND id != %s ORDER BY id LIMIT 1",
+                (profile_id,)
+            )
+            next_row = cur.fetchone()
+            next_id = next_row[0] if next_row else None
+            cur.execute("UPDATE settings SET active_profile_id = %s WHERE id = 1", (next_id,))
+        conn.commit()
+
+def get_active_profiles() -> list[dict]:
+    """Return all profiles where is_active = TRUE, with btc_series_tickers as a list."""
+    query = """
+        SELECT id, name, created_at, is_active,
+               min_entry_cents, max_entry_cents, proactive_mode,
+               max_open_orders, max_daily_spend_cents,
+               btc_series_tickers, exit_strategy, limit_sell_price_cents
+        FROM profiles
+        WHERE is_active = TRUE
+        ORDER BY id
+    """
+    with _lock, _conn() as conn:
+        cur = conn.cursor(cursor_factory=psycopg2.extras.DictCursor)
+        cur.execute(query)
+        rows = cur.fetchall()
+    result = []
+    for r in rows:
+        d = dict(r)
+        if 'btc_series_tickers' in d:
+            d['btc_series_tickers'] = [s.strip() for s in d['btc_series_tickers'].split(',') if s.strip()]
+        result.append(d)
+    return result

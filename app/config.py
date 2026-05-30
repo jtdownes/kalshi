@@ -36,7 +36,6 @@ SNAPSHOT_INTERVAL_SECONDS = int(os.environ.get("SNAPSHOT_INTERVAL_SECONDS", "1")
 LOOK_AHEAD_SECONDS = int(os.environ.get("LOOK_AHEAD_SECONDS", str(20 * 60)))
 MIN_SECONDS_TO_CLOSE = int(os.environ.get("MIN_SECONDS_TO_CLOSE", "60"))
 
-SCAN_INTERVAL_SECONDS        = int(os.environ.get("SCAN_INTERVAL_SECONDS", "30"))
 ORDER_CHECK_INTERVAL_SECONDS = int(os.environ.get("ORDER_CHECK_INTERVAL_SECONDS", "15"))
 
 def get_all_settings():
@@ -52,7 +51,6 @@ def get_all_settings():
         "proactive_mode":         db_settings.get("proactive_mode", PROACTIVE_MODE),
         "max_open_orders":        db_settings.get("max_open_orders", MAX_OPEN_ORDERS),
         "max_daily_spend_cents":  db_settings.get("max_daily_spend_cents", MAX_DAILY_SPEND_CENTS),
-        "scan_interval_seconds":  db_settings.get("scan_interval_seconds", SCAN_INTERVAL_SECONDS),
         "btc_series_tickers":     db_settings.get("btc_series_tickers", BTC_SERIES_TICKERS),
         "exit_strategy":          db_settings.get("exit_strategy", "hold_to_expiration"),
         "limit_sell_price_cents": db_settings.get(
