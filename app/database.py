@@ -41,7 +41,7 @@ def execute_sql_file(file_name, params=None):
     with open(sql_file_path, "r") as f:
         query = f.read()
     with _lock, _conn() as conn:
-        cur = conn.cursor()
+        cur = conn.cursor(cursor_factory=psycopg2.extras.DictCursor)
         cur.execute(query, params) if params else cur.execute(query)
         conn.commit()
         if cur.description:

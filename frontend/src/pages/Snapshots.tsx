@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import type { Snapshot } from '../App'
 import { fmtCents, fmtDur, fmtTime, fmtUnixTime, kalshiMarketUrl } from '../App'
+import PriceActionChart from '../components/PriceActionChart'
 
 
 interface TickerSummary {
@@ -22,6 +23,7 @@ interface Props {
 
 export default function Snapshots({ snapshots }: Props) {
   const [allTickers, setAllTickers] = useState<TickerSummary[]>([])
+  const [selectedTicker, setSelectedTicker] = useState<string | null>(null)
   const [expandedTicker, setExpandedTicker] = useState<string | null>(null)
   const [expandedHistory, setExpandedHistory] = useState<Snapshot[]>([])
   const [expandedLoading, setExpandedLoading] = useState(false)
@@ -44,6 +46,7 @@ export default function Snapshots({ snapshots }: Props) {
   }, [snapshots])
 
   function toggleExpanded(ticker: string) {
+    setSelectedTicker(ticker)
     if (expandedTicker === ticker) {
       setExpandedTicker(null)
       setExpandedHistory([])
@@ -95,7 +98,12 @@ export default function Snapshots({ snapshots }: Props) {
               {marketSnapshots.length === 0 ? (
                 <tr><td colSpan={10} className="cell-empty">No live snapshots</td></tr>
               ) : marketSnapshots.map(snapshot => (
-                <tr key={snapshot.id}>
+                <tr 
+                  key={snapshot.id} 
+                  onClick={() => setSelectedTicker(snapshot.ticker)}
+                  className={selectedTicker === snapshot.ticker ? 'snapshot-row-active' : ''}
+                  style={{ cursor: 'pointer' }}
+                >
                   <td className="cell-ticker">
                     <a href={kalshiMarketUrl(snapshot.ticker)} target="_blank" rel="noreferrer" style={{ color: 'inherit', textDecoration: 'none' }}>
                       {snapshot.ticker}
@@ -116,6 +124,12 @@ export default function Snapshots({ snapshots }: Props) {
           </table>
         </div>
       </section>
+
+      {selectedTicker && (
+        <section className="chart-panel">
+          <PriceActionChart ticker={selectedTicker} globalSnapshots={snapshots} />
+        </section>
+      )}
 
       <section className="table-panel">
         <div className="snapshot-panel-head">

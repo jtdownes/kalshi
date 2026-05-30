@@ -688,5 +688,32 @@ def activate_profile(profile_id: int):
     return jsonify({"status": "success", "active_profile_id": profile_id})
 
 
+@app.get("/api/snapshots/series")
+def snapshot_series():
+    ticker = request.args.get("ticker", "").strip().upper()
+    try:
+        limit = min(int(request.args.get("limit", 300)), 1000)
+    except ValueError:
+        limit = 300
+
+    if not ticker:
+        return jsonify({"error": "ticker required"}), 400
+
+    # We want them ascending for the chart
+    with _conn() as c:
+        c.execute("""
+            SELECT scanned_at, yes_bid, no_bid
+            FROM market_snapshots
+            WHERE ticker = %s
+            ORDER BY id DESC
+            LIMIT %s
+        """, (ticker, limit))
+        rows = c.fetchall()
+
+    # Reverse to get chronological order
+    data = [dict(r) for r in reversed(rows)]
+    return jsonify(data)
+
+
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=8820, debug=False)
