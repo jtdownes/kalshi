@@ -564,6 +564,109 @@ tbody tr:hover { background: rgba(255,255,255,0.025); }
   padding: 22px;
 }
 
+.strategy-detail-panel {
+  padding: 22px;
+  border: 1px solid #242435;
+  border-radius: 10px;
+  background: #11111a;
+}
+
+.strategy-detail-actions {
+  display: flex;
+  gap: 8px;
+  flex-shrink: 0;
+}
+
+.strategy-card.is-selected {
+  border-color: #4a5568;
+  box-shadow: 0 0 0 2px rgba(100,116,139,0.3);
+}
+
+.strategy-trades-empty {
+  padding: 24px;
+  color: #64748b;
+  text-align: center;
+  font-size: 13px;
+}
+
+.strategy-trades-table-wrap {
+  overflow-x: auto;
+  border-radius: 8px;
+  border: 1px solid #1f2637;
+}
+
+.strategy-trades-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+}
+
+.strategy-trades-table th {
+  padding: 8px 12px;
+  text-align: left;
+  background: rgba(255,255,255,0.03);
+  color: #64748b;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.6px;
+  text-transform: uppercase;
+  border-bottom: 1px solid #1f2637;
+}
+
+.strategy-trades-table td {
+  padding: 10px 12px;
+  border-bottom: 1px solid #111827;
+  color: #cbd5e1;
+  vertical-align: middle;
+}
+
+.strategy-trades-table tbody tr:last-child td { border-bottom: none; }
+
+.strategy-trades-table tbody tr:hover td {
+  background: rgba(255,255,255,0.025);
+}
+
+.trade-ticker {
+  font-family: monospace;
+  font-size: 12px;
+  color: #94a3b8;
+}
+
+.trade-status {
+  display: inline-flex;
+  align-items: center;
+  min-height: 20px;
+  padding: 2px 8px;
+  border-radius: 999px;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.4px;
+  text-transform: uppercase;
+}
+
+.trade-status-filled   { color: #00d4a0; background: rgba(0,212,160,0.12); }
+.trade-status-resting  { color: #60a5fa; background: rgba(96,165,250,0.12); }
+.trade-status-canceled { color: #64748b; background: rgba(100,116,139,0.12); }
+
+.outcome-chip {
+  display: inline-flex;
+  align-items: center;
+  min-height: 20px;
+  padding: 2px 8px;
+  border-radius: 999px;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.4px;
+  text-transform: uppercase;
+}
+
+.outcome-win  { color: #00d4a0; background: rgba(0,212,160,0.12); }
+.outcome-loss { color: #ff4444; background: rgba(255,68,68,0.12); }
+.outcome-none { color: #64748b; background: transparent; }
+
+.pnl-pos { color: #00d4a0; }
+.pnl-neg { color: #ff4444; }
+
 .strategy-section-head {
   align-items: flex-start;
   margin-bottom: 18px;
