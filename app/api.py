@@ -634,7 +634,9 @@ def get_profiles():
                    COUNT(DISTINCT o.market_ticker)                                                           AS order_count,
                    COUNT(DISTINCT o.market_ticker) FILTER (WHERE o.net_profit_cents > 0)               AS win_count,
                    COUNT(DISTINCT o.market_ticker) FILTER (WHERE o.net_profit_cents IS NOT NULL
-                                                               AND o.net_profit_cents <= 0)            AS loss_count
+                                                               AND o.net_profit_cents <= 0)            AS loss_count,
+                   COALESCE(SUM(o.entry_price_cents * o.count) FILTER (WHERE o.status = 'filled'), 0) AS total_spend_cents,
+                   COALESCE(SUM(o.net_profit_cents) FILTER (WHERE o.net_profit_cents IS NOT NULL), 0) AS total_profit_cents
             FROM profiles p
                  LEFT JOIN orders o ON o.profile_id = p.id AND o.order_role = 'entry'
             GROUP BY p.id

@@ -94,6 +94,8 @@ export interface Profile {
   order_count: number
   win_count: number
   loss_count: number
+  total_spend_cents: number
+  total_profit_cents: number
 }
 
 export type Quotes = Record<string, {

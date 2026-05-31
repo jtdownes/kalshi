@@ -258,6 +258,16 @@ export default function Strategies({ settings, profiles, refresh }: Props) {
                     </div>
                   )
                 })()}
+                <div className="strategy-ticket-metric">
+                  <span>Total Spent</span>
+                  <strong>{centsToUSD(p.total_spend_cents ?? 0)}</strong>
+                </div>
+                <div className="strategy-ticket-metric">
+                  <span>Total P&amp;L</span>
+                  <strong style={{ color: (p.total_profit_cents ?? 0) > 0 ? '#00d4a0' : (p.total_profit_cents ?? 0) < 0 ? '#ff4444' : undefined }}>
+                    {(p.total_profit_cents ?? 0) >= 0 ? '+' : ''}{centsToUSD(p.total_profit_cents ?? 0)}
+                  </strong>
+                </div>
               </div>
 
               <div className="strategy-card-foot">
