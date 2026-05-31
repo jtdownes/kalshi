@@ -246,7 +246,7 @@ export default function Dashboard({ orders, trades, openOrders, positions, snaps
       {/* Market Chart */}
       {selectedTicker && (
         <div style={{ marginTop: 8, marginLeft: 18, marginRight: 18 }}>
-          <PriceActionChart ticker={selectedTicker} globalSnapshots={snapshots} />
+          <PriceActionChart ticker={selectedTicker} globalSnapshots={snapshots} openOrders={openOrders} historyOrders={orders} />
         </div>
       )}
 
