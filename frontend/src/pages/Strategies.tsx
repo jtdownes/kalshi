@@ -211,21 +211,21 @@ export default function Strategies({ settings, profiles, refresh }: Props) {
                   <span>Historical Runs</span>
                   <strong>{(p.order_count ?? 0).toLocaleString()}</strong>
                 </div>
-              </div>
-
-              <div className="strategy-ticket-grid">
-                <div className="strategy-ticket-kv">
-                  <span>Entry Range</span>
-                  <strong>{p.min_entry_cents}¢ to {p.max_entry_cents}¢</strong>
-                </div>
-                <div className="strategy-ticket-kv">
-                  <span>Open Order Cap</span>
-                  <strong>{p.max_open_orders}</strong>
-                </div>
-                <div className="strategy-ticket-kv">
-                  <span>Mode</span>
-                  <strong>{p.proactive_mode ? 'Proactive' : 'Reactive'}</strong>
-                </div>
+                {(() => {
+                  const wins = p.win_count ?? 0
+                  const losses = p.loss_count ?? 0
+                  const resolved = wins + losses
+                  const rate = resolved > 0 ? Math.round((wins / resolved) * 100) : null
+                  return (
+                    <div className="strategy-ticket-metric">
+                      <span>Win Rate</span>
+                      <strong style={{ color: rate == null ? undefined : rate >= 50 ? '#00d4a0' : '#ff4444' }}>
+                        {rate == null ? '—' : `${rate}%`}
+                        {resolved > 0 && <span style={{ fontWeight: 400, fontSize: 11, color: '#64748b', marginLeft: 5 }}>{wins}W / {losses}L</span>}
+                      </strong>
+                    </div>
+                  )
+                })()}
               </div>
 
               <div className="strategy-card-foot">
@@ -308,11 +308,6 @@ export default function Strategies({ settings, profiles, refresh }: Props) {
               <span>Daily Limit</span>
               <input type="number" value={strategyEditor.draft.max_daily_spend_cents}
                 onChange={e => updateDraft({ max_daily_spend_cents: parseInt(e.target.value) || 0 })} />
-            </label>
-            <label className="field">
-              <span>Scan Interval</span>
-              <input type="number" value={strategyEditor.draft.scan_interval_seconds}
-                onChange={e => updateDraft({ scan_interval_seconds: parseInt(e.target.value) || 0 })} />
             </label>
             <label className="field field-wide">
               <span>Strategy Market</span>

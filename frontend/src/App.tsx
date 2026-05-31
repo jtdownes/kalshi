@@ -92,6 +92,8 @@ export interface Profile {
   exit_strategy: 'hold_to_expiration' | 'limit_sell'
   limit_sell_price_cents: number | null
   order_count: number
+  win_count: number
+  loss_count: number
 }
 
 export type Quotes = Record<string, {
