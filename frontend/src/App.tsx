@@ -280,21 +280,21 @@ export default function App() {
         <div className="header-left">
           <span className="header-logo">⧟</span>
           <span className="header-title">Kalshi Bot</span>
-          <nav className="header-nav">
-            <NavLink to="/" end className={({ isActive }) => isActive ? 'nav-link nav-link-active' : 'nav-link'}>
-              Dashboard
-            </NavLink>
-            <NavLink to="/strategies" className={({ isActive }) => isActive ? 'nav-link nav-link-active' : 'nav-link'}>
-              Strategies
-            </NavLink>
-            <NavLink to="/markets" className={({ isActive }) => isActive ? 'nav-link nav-link-active' : 'nav-link'}>
-              Markets
-            </NavLink>
-            <NavLink to="/backtest" className={({ isActive }) => isActive ? 'nav-link nav-link-active' : 'nav-link'}>
-              Backtest
-            </NavLink>
-          </nav>
         </div>
+        <nav className="header-nav">
+          <NavLink to="/" end className={({ isActive }) => isActive ? 'nav-link nav-link-active' : 'nav-link'}>
+            Dashboard
+          </NavLink>
+          <NavLink to="/strategies" className={({ isActive }) => isActive ? 'nav-link nav-link-active' : 'nav-link'}>
+            Strategies
+          </NavLink>
+          <NavLink to="/markets" className={({ isActive }) => isActive ? 'nav-link nav-link-active' : 'nav-link'}>
+            Markets
+          </NavLink>
+          <NavLink to="/backtest" className={({ isActive }) => isActive ? 'nav-link nav-link-active' : 'nav-link'}>
+            Backtest
+          </NavLink>
+        </nav>
         <div className="header-right">
           {error && <span style={{ color: '#ff4444', fontSize: 12 }}>{error}</span>}
           <span

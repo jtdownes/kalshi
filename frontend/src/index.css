@@ -866,3 +866,55 @@ tbody tr:hover { background: rgba(255,255,255,0.025); }
     flex: 1;
   }
 }
+
+@media (max-width: 640px) {
+  .app {
+    padding: 0 12px 40px;
+  }
+
+  /* Row 1: logo+title (left) and controls (right) stay together.
+     Row 2: nav links wrap below and span full width. */
+  .header {
+    flex-wrap: wrap;
+    align-items: center;
+    padding: 12px 0 10px;
+    gap: 0;
+  }
+
+  /* Logo + title: shrink to content, stay on row 1 */
+  .header-left {
+    flex: 1 1 auto;
+    min-width: 0;
+  }
+
+  /* Controls: stay on row 1, right side */
+  .header-right {
+    flex: 0 0 auto;
+    gap: 6px;
+  }
+
+  /* Nav: full-width row 2 */
+  .header-nav {
+    flex: 0 0 100%;
+    order: 3;
+    margin-left: 0;
+    margin-top: 8px;
+    flex-wrap: wrap;
+    gap: 4px;
+  }
+
+  .nav-link {
+    font-size: 12px;
+    padding: 5px 10px;
+  }
+
+  /* Hide timestamp — saves row space */
+  .last-refresh {
+    display: none;
+  }
+
+  /* Stat cards: 2-column grid on narrow screens */
+  .stats-row {
+    grid-template-columns: repeat(2, 1fr);
+  }
+}
