@@ -563,7 +563,7 @@ def trades():
         FROM orders o
         {where_sql}
         GROUP BY o.market_ticker
-        ORDER BY MIN(o.placed_at) ASC
+        ORDER BY MAX(o.placed_at) DESC
         LIMIT %s
     """
     params.append(limit)

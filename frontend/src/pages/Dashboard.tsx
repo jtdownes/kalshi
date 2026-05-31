@@ -499,7 +499,11 @@ export default function Dashboard({ orders, trades, openOrders, positions, snaps
                       <td className="cell-dim">{fmtUnixTime(t.market_close_time)}</td>
                     </tr>
                     {isExpanded && (() => {
-                      const tradeOrders = orders.filter(o => o.market_ticker === t.market_ticker)
+                      const tradeOrders = orders.filter(o => o.market_ticker === t.market_ticker).slice().sort((a, b) => {
+                        const fa = a.filled_at ? new Date(a.filled_at).getTime() : Infinity
+                        const fb = b.filled_at ? new Date(b.filled_at).getTime() : Infinity
+                        return fa - fb
+                      })
                       return (
                         <tr key={`${t.market_ticker}-detail`}>
                           <td colSpan={11} style={{ padding: '0 0 6px 0', background: 'rgba(9,13,24,0.7)' }}>
