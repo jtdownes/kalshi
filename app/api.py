@@ -512,7 +512,7 @@ def orders():
 def trades():
     """
     Orders grouped by market ticker — one row per market showing aggregate
-    lifecycle: order count, fill status, peak yes_bid after first fill, P&L.
+    lifecycle: order count, entry cost, close proceeds, and realized P&L.
     """
     limit = min(int(request.args.get("limit", 200)), 500)
     profile_id = request.args.get("profile_id")
@@ -525,64 +525,46 @@ def trades():
 
     where_sql = ("WHERE " + " AND ".join(where_clauses)) if where_clauses else ""
 
-    # Params list is used twice: once for the inner grouped query, once for LIMIT
     query = f"""
         SELECT
-            g.*,
-            (
-                SELECT MAX(CASE WHEN g.filled_side = 'yes' THEN s.yes_bid ELSE s.no_bid END)
-                FROM market_snapshots s
-                WHERE s.ticker = g.market_ticker
-                  AND g.filled_at IS NOT NULL
-                  AND s.scanned_at >= g.filled_at
-            ) AS peak_price_cents,
-            (
-                SELECT s.scanned_at
-                FROM market_snapshots s
-                WHERE s.ticker = g.market_ticker
-                  AND g.filled_at IS NOT NULL
-                  AND s.scanned_at >= g.filled_at
-                ORDER BY (CASE WHEN g.filled_side = 'yes' THEN s.yes_bid ELSE s.no_bid END) DESC NULLS LAST,
-                         s.scanned_at ASC
-                LIMIT 1
-            ) AS peak_time
-        FROM (
-            SELECT
-                o.market_ticker,
-                COUNT(*)                                                             AS order_count,
-                MIN(o.placed_at)                                                     AS placed_at,
-                MIN(CASE WHEN o.status = 'filled' THEN o.filled_at END)              AS filled_at,
-                (ARRAY_AGG(o.side ORDER BY o.filled_at ASC NULLS LAST)
-                    FILTER (WHERE o.status = 'filled'))[1]                           AS filled_side,
-                MIN(o.market_close_time)                                              AS market_close_time,
-                ROUND(AVG(CASE WHEN o.status = 'filled' THEN o.entry_price_cents END))::int
+            o.market_ticker,
+            COUNT(*)                                                                 AS order_count,
+            COUNT(*) FILTER (WHERE o.closed_at IS NOT NULL)                          AS closed_order_count,
+            MIN(o.placed_at)                                                         AS placed_at,
+            MIN(CASE WHEN o.status = 'filled' THEN o.filled_at END)                  AS first_entry_filled_at,
+            MAX(CASE WHEN o.status = 'filled' THEN o.filled_at END)                  AS last_entry_filled_at,
+            MAX(o.closed_at)                                                         AS closed_at,
+            MIN(o.market_close_time)                                                  AS market_close_time,
+            ROUND(AVG(CASE WHEN o.status = 'filled' THEN o.entry_price_cents END))::int
                                                                                      AS entry_price_cents,
-                SUM(o.net_profit_cents)                                              AS net_profit_cents,
-                CASE MAX(
-                    CASE o.status
-                        WHEN 'filled'   THEN 3
-                        WHEN 'resting'  THEN 2
-                        WHEN 'pending'  THEN 2
-                        WHEN 'canceled' THEN 1
-                        ELSE 0
-                    END
-                )
-                    WHEN 3 THEN 'filled'
-                    WHEN 2 THEN 'resting'
-                    WHEN 1 THEN 'canceled'
-                    ELSE 'unknown'
-                END AS status,
-                CASE
-                    WHEN COUNT(CASE WHEN o.outcome = 'win'  THEN 1 END) > 0 THEN 'win'
-                    WHEN COUNT(CASE WHEN o.outcome = 'loss' THEN 1 END) > 0 THEN 'loss'
-                    ELSE NULL
-                END AS outcome
-            FROM orders o
-            {where_sql}
-            GROUP BY o.market_ticker
-            ORDER BY MAX(o.placed_at) DESC
-            LIMIT %s
-        ) g
+            COALESCE(SUM(o.entry_price_cents * o.count)
+                     FILTER (WHERE o.status = 'filled'), 0)                         AS total_entry_cost_cents,
+            COALESCE(SUM(o.payout_cents)
+                     FILTER (WHERE o.closed_at IS NOT NULL), 0)                     AS total_close_proceeds_cents,
+            COALESCE(SUM(o.net_profit_cents)
+                     FILTER (WHERE o.net_profit_cents IS NOT NULL), 0)              AS net_profit_cents,
+            CASE
+                WHEN COUNT(*) FILTER (WHERE o.status IN ('resting', 'pending')) > 0 THEN 'resting'
+                WHEN COUNT(*) FILTER (WHERE o.status = 'filled' AND o.closed_at IS NULL) > 0 THEN 'filled'
+                WHEN COUNT(*) FILTER (WHERE o.closed_at IS NOT NULL) > 0 THEN 'closed'
+                WHEN COUNT(*) FILTER (WHERE o.status = 'canceled') = COUNT(*) THEN 'canceled'
+                ELSE 'unknown'
+            END AS status,
+            CASE
+                WHEN COALESCE(SUM(o.net_profit_cents)
+                              FILTER (WHERE o.net_profit_cents IS NOT NULL), 0) > 0 THEN 'win'
+                WHEN COALESCE(SUM(o.net_profit_cents)
+                              FILTER (WHERE o.net_profit_cents IS NOT NULL), 0) < 0 THEN 'loss'
+                ELSE NULL
+            END AS outcome,
+            NULL::int       AS peak_price_cents,
+            NULL::timestamp AS peak_time,
+            MIN(CASE WHEN o.status = 'filled' THEN o.filled_at END) AS filled_at
+        FROM orders o
+        {where_sql}
+        GROUP BY o.market_ticker
+        ORDER BY MAX(o.placed_at) DESC
+        LIMIT %s
     """
     params.append(limit)
 

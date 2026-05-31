@@ -37,10 +37,16 @@ export interface Order {
 export interface Trade {
   market_ticker: string
   order_count: number
+  closed_order_count: number
   placed_at: string
   filled_at: string | null
+  first_entry_filled_at: string | null
+  last_entry_filled_at: string | null
+  closed_at: string | null
   market_close_time: string | null
   entry_price_cents: number | null
+  total_entry_cost_cents: number
+  total_close_proceeds_cents: number
   net_profit_cents: number | null
   status: string
   outcome: string | null

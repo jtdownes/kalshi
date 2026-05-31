@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { Fragment, useEffect, useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import type { Order, Trade, Position, Snapshot, Settings, Profile, Quotes } from '../App'
 import PriceActionChart from '../components/PriceActionChart'
@@ -31,6 +31,7 @@ function StatusBadge({ status, outcome }: { status: string; outcome: string | nu
   const map: Record<string, [string, string, string]> = {
     resting:  ['RESTING',  '#f5c842', 'rgba(245,200,66,0.14)'],
     filled:   ['FILLED',   '#60a5fa', 'rgba(96,165,250,0.14)'],
+    closed:   ['CLOSED',   '#00d4a0', 'rgba(0,212,160,0.14)'],
     canceled: ['CANCELED', '#9ca3af', 'rgba(156,163,175,0.10)'],
     pending:  ['PENDING',  '#a78bfa', 'rgba(167,139,250,0.14)'],
   }
@@ -448,13 +449,13 @@ export default function Dashboard({ orders, trades, openOrders, positions, snaps
               <tr>
                 <th>Market</th>
                 <th>Orders</th>
-                <th>Entry</th>
-                <th>Peak</th>
-                <th>Peak Time</th>
+                <th>Entry Cost</th>
+                <th>Exit Proceeds</th>
                 <th>Status</th>
                 <th>P&amp;L</th>
                 <th>Placed</th>
-                <th>Filled</th>
+                <th>Entry Fill</th>
+                <th>Closed</th>
                 <th>Open</th>
                 <th>Close</th>
               </tr>
@@ -465,9 +466,8 @@ export default function Dashboard({ orders, trades, openOrders, positions, snaps
               ) : trades.map(t => {
                 const isExpanded = selectedTrade === t.market_ticker
                 return (
-                  <>
+                  <Fragment key={t.market_ticker}>
                     <tr
-                      key={t.market_ticker}
                       onClick={() => setSelectedTrade(prev => prev === t.market_ticker ? null : t.market_ticker)}
                       style={{ cursor: 'pointer', background: isExpanded ? 'rgba(96,165,250,0.07)' : undefined }}
                     >
@@ -482,17 +482,19 @@ export default function Dashboard({ orders, trades, openOrders, positions, snaps
                         </span>
                       </td>
                       <td className="cell-dim">{t.order_count}</td>
-                      <td className="cell-dim">{t.entry_price_cents != null ? `${t.entry_price_cents}¢` : '—'}</td>
-                      <td className={t.peak_price_cents != null && t.entry_price_cents != null && t.peak_price_cents > t.entry_price_cents ? 'cell-profit' : 'cell-dim'}>
-                        {fmtCents(t.peak_price_cents)}
-                      </td>
-                      <td className="cell-dim">{fmtTime(t.peak_time)}</td>
+                      <td className="cell-dim">{centsToUSD(t.total_entry_cost_cents ?? 0)}</td>
+                      <td className="cell-dim">{t.total_close_proceeds_cents != null && t.total_close_proceeds_cents > 0 ? centsToUSD(t.total_close_proceeds_cents) : '—'}</td>
                       <td><StatusBadge status={t.status} outcome={t.outcome} /></td>
                       <td className={t.net_profit_cents != null && t.net_profit_cents > 0 ? 'cell-profit' : t.net_profit_cents != null && t.net_profit_cents < 0 ? 'cell-loss' : 'cell-dim'}>
                         {t.net_profit_cents != null ? fmtPnL(t.net_profit_cents) : '—'}
                       </td>
                       <td className="cell-dim">{fmtTime(t.placed_at)}</td>
-                      <td className="cell-dim">{fmtTime(t.filled_at)}</td>
+                      <td className="cell-dim">
+                        {t.first_entry_filled_at && t.last_entry_filled_at && t.first_entry_filled_at !== t.last_entry_filled_at
+                          ? `${fmtTime(t.first_entry_filled_at)}–${fmtTime(t.last_entry_filled_at)}`
+                          : fmtTime(t.first_entry_filled_at ?? t.filled_at)}
+                      </td>
+                      <td className="cell-dim">{fmtTime(t.closed_at)}</td>
                       <td className="cell-dim">{tickerOpenTime(t.market_ticker)}</td>
                       <td className="cell-dim">{fmtUnixTime(t.market_close_time)}</td>
                     </tr>
@@ -506,10 +508,10 @@ export default function Dashboard({ orders, trades, openOrders, positions, snaps
                                 <tr style={{ borderBottom: '1px solid #1f2637' }}>
                                   <th style={{ padding: '6px 12px', textAlign: 'left', color: '#475569', fontWeight: 700, fontSize: 10, letterSpacing: '0.05em', textTransform: 'uppercase' }}>Role</th>
                                   <th style={{ padding: '6px 12px', textAlign: 'left', color: '#475569', fontWeight: 700, fontSize: 10, letterSpacing: '0.05em', textTransform: 'uppercase' }}>Direction</th>
-                                  <th style={{ padding: '6px 12px', textAlign: 'left', color: '#475569', fontWeight: 700, fontSize: 10, letterSpacing: '0.05em', textTransform: 'uppercase' }}>Entry</th>
+                                  <th style={{ padding: '6px 12px', textAlign: 'left', color: '#475569', fontWeight: 700, fontSize: 10, letterSpacing: '0.05em', textTransform: 'uppercase' }}>Price</th>
                                   <th style={{ padding: '6px 12px', textAlign: 'left', color: '#475569', fontWeight: 700, fontSize: 10, letterSpacing: '0.05em', textTransform: 'uppercase' }}>Qty</th>
                                   <th style={{ padding: '6px 12px', textAlign: 'left', color: '#475569', fontWeight: 700, fontSize: 10, letterSpacing: '0.05em', textTransform: 'uppercase' }}>Status</th>
-                                  <th style={{ padding: '6px 12px', textAlign: 'left', color: '#475569', fontWeight: 700, fontSize: 10, letterSpacing: '0.05em', textTransform: 'uppercase' }}>Payout</th>
+                                  <th style={{ padding: '6px 12px', textAlign: 'left', color: '#475569', fontWeight: 700, fontSize: 10, letterSpacing: '0.05em', textTransform: 'uppercase' }}>Cash Flow</th>
                                   <th style={{ padding: '6px 12px', textAlign: 'left', color: '#475569', fontWeight: 700, fontSize: 10, letterSpacing: '0.05em', textTransform: 'uppercase' }}>P&L</th>
                                   <th style={{ padding: '6px 12px', textAlign: 'left', color: '#475569', fontWeight: 700, fontSize: 10, letterSpacing: '0.05em', textTransform: 'uppercase' }}>Placed</th>
                                   <th style={{ padding: '6px 12px', textAlign: 'left', color: '#475569', fontWeight: 700, fontSize: 10, letterSpacing: '0.05em', textTransform: 'uppercase' }}>Filled</th>
@@ -518,7 +520,9 @@ export default function Dashboard({ orders, trades, openOrders, positions, snaps
                               <tbody>
                                 {tradeOrders.length === 0 ? (
                                   <tr><td colSpan={9} style={{ padding: '10px 12px', color: '#475569', textAlign: 'center' }}>No orders found</td></tr>
-                                ) : tradeOrders.map(o => (
+                                ) : tradeOrders.map(o => {
+                                  const cashFlowCents = (o.entry_price_cents * o.count) * (o.order_role === 'entry' ? -1 : 1)
+                                  return (
                                   <tr key={o.id} style={{ borderBottom: '1px solid #111827' }}>
                                     <td style={{ padding: '7px 12px' }}>
                                       <span className={`badge ${o.order_role === 'entry' ? 'side-buy' : 'side-sell'}`}>
@@ -533,21 +537,24 @@ export default function Dashboard({ orders, trades, openOrders, positions, snaps
                                     <td style={{ padding: '7px 12px', color: '#94a3b8' }}>{o.entry_price_cents}¢</td>
                                     <td style={{ padding: '7px 12px', color: '#94a3b8' }}>{o.count}</td>
                                     <td style={{ padding: '7px 12px' }}><StatusBadge status={o.status} outcome={o.outcome} /></td>
-                                    <td style={{ padding: '7px 12px', color: '#94a3b8' }}>{o.payout_cents != null ? `${o.payout_cents}¢` : '—'}</td>
+                                    <td style={{ padding: '7px 12px' }} className={cashFlowCents > 0 ? 'cell-profit' : cashFlowCents < 0 ? 'cell-loss' : 'cell-dim'}>
+                                      {fmtPnL(cashFlowCents)}
+                                    </td>
                                     <td style={{ padding: '7px 12px' }} className={o.net_profit_cents != null && o.net_profit_cents > 0 ? 'cell-profit' : o.net_profit_cents != null && o.net_profit_cents < 0 ? 'cell-loss' : 'cell-dim'}>
                                       {o.net_profit_cents != null ? fmtPnL(o.net_profit_cents) : '—'}
                                     </td>
                                     <td style={{ padding: '7px 12px', color: '#64748b' }}>{fmtTime(o.placed_at)}</td>
                                     <td style={{ padding: '7px 12px', color: '#64748b' }}>{fmtTime(o.filled_at)}</td>
                                   </tr>
-                                ))}
+                                  )
+                                })}
                               </tbody>
                             </table>
                           </td>
                         </tr>
                       )
                     })()}
-                  </>
+                  </Fragment>
                 )
               })}
             </tbody>
