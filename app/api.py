@@ -631,9 +631,10 @@ def get_profiles():
     with _conn() as c:
         c.execute("""
             SELECT p.*,
-                   COUNT(DISTINCT o.market_ticker)                                     AS order_count,
-                   COUNT(DISTINCT o.market_ticker) FILTER (WHERE o.outcome = 'win')   AS win_count,
-                   COUNT(DISTINCT o.market_ticker) FILTER (WHERE o.outcome = 'loss')  AS loss_count
+                   COUNT(DISTINCT o.market_ticker)                                                           AS order_count,
+                   COUNT(DISTINCT o.market_ticker) FILTER (WHERE o.net_profit_cents > 0)               AS win_count,
+                   COUNT(DISTINCT o.market_ticker) FILTER (WHERE o.net_profit_cents IS NOT NULL
+                                                               AND o.net_profit_cents <= 0)            AS loss_count
             FROM profiles p
                  LEFT JOIN orders o ON o.profile_id = p.id AND o.order_role = 'entry'
             GROUP BY p.id
