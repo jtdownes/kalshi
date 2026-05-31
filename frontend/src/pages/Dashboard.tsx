@@ -68,6 +68,7 @@ export default function Dashboard({ orders, trades, openOrders, positions, snaps
 
   const [selectedTicker, setSelectedTicker] = useState<string | null>(null)
   const [pinnedTicker, setPinnedTicker] = useState<string | null>(null)
+  const [selectedTrade, setSelectedTrade] = useState<string | null>(null)
 
   const activeProfile = profiles.find(p => p.id === settings?.active_profile_id)
   const history = orders.filter(o => o.status !== 'resting').slice(0, historyLimit)
@@ -461,29 +462,94 @@ export default function Dashboard({ orders, trades, openOrders, positions, snaps
             <tbody>
               {trades.length === 0 ? (
                 <tr><td colSpan={11} className="cell-empty">No trades yet</td></tr>
-              ) : trades.map(t => (
-                <tr key={t.market_ticker}>
-                  <td className="cell-ticker">
-                    <a href={kalshiMarketUrl(t.market_ticker)} target="_blank" rel="noreferrer" style={{ color: 'inherit', textDecoration: 'none' }}>
-                      {t.market_ticker}
-                    </a>
-                  </td>
-                  <td className="cell-dim">{t.order_count}</td>
-                  <td className="cell-dim">{t.entry_price_cents != null ? `${t.entry_price_cents}¢` : '—'}</td>
-                  <td className={t.peak_price_cents != null && t.entry_price_cents != null && t.peak_price_cents > t.entry_price_cents ? 'cell-profit' : 'cell-dim'}>
-                    {fmtCents(t.peak_price_cents)}
-                  </td>
-                  <td className="cell-dim">{fmtTime(t.peak_time)}</td>
-                  <td><StatusBadge status={t.status} outcome={t.outcome} /></td>
-                  <td className={t.net_profit_cents != null && t.net_profit_cents > 0 ? 'cell-profit' : t.net_profit_cents != null && t.net_profit_cents < 0 ? 'cell-loss' : 'cell-dim'}>
-                    {t.net_profit_cents != null ? fmtPnL(t.net_profit_cents) : '—'}
-                  </td>
-                  <td className="cell-dim">{fmtTime(t.placed_at)}</td>
-                  <td className="cell-dim">{fmtTime(t.filled_at)}</td>
-                  <td className="cell-dim">{tickerOpenTime(t.market_ticker)}</td>
-                  <td className="cell-dim">{fmtUnixTime(t.market_close_time)}</td>
-                </tr>
-              ))}
+              ) : trades.map(t => {
+                const isExpanded = selectedTrade === t.market_ticker
+                return (
+                  <>
+                    <tr
+                      key={t.market_ticker}
+                      onClick={() => setSelectedTrade(prev => prev === t.market_ticker ? null : t.market_ticker)}
+                      style={{ cursor: 'pointer', background: isExpanded ? 'rgba(96,165,250,0.07)' : undefined }}
+                    >
+                      <td className="cell-ticker" style={{ color: isExpanded ? '#60a5fa' : undefined }}>
+                        <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+                          <span style={{ fontSize: 10, color: '#64748b' }}>{isExpanded ? '▾' : '▸'}</span>
+                          <a href={kalshiMarketUrl(t.market_ticker)} target="_blank" rel="noreferrer"
+                            style={{ color: 'inherit', textDecoration: 'none' }}
+                            onClick={e => e.stopPropagation()}>
+                            {t.market_ticker}
+                          </a>
+                        </span>
+                      </td>
+                      <td className="cell-dim">{t.order_count}</td>
+                      <td className="cell-dim">{t.entry_price_cents != null ? `${t.entry_price_cents}¢` : '—'}</td>
+                      <td className={t.peak_price_cents != null && t.entry_price_cents != null && t.peak_price_cents > t.entry_price_cents ? 'cell-profit' : 'cell-dim'}>
+                        {fmtCents(t.peak_price_cents)}
+                      </td>
+                      <td className="cell-dim">{fmtTime(t.peak_time)}</td>
+                      <td><StatusBadge status={t.status} outcome={t.outcome} /></td>
+                      <td className={t.net_profit_cents != null && t.net_profit_cents > 0 ? 'cell-profit' : t.net_profit_cents != null && t.net_profit_cents < 0 ? 'cell-loss' : 'cell-dim'}>
+                        {t.net_profit_cents != null ? fmtPnL(t.net_profit_cents) : '—'}
+                      </td>
+                      <td className="cell-dim">{fmtTime(t.placed_at)}</td>
+                      <td className="cell-dim">{fmtTime(t.filled_at)}</td>
+                      <td className="cell-dim">{tickerOpenTime(t.market_ticker)}</td>
+                      <td className="cell-dim">{fmtUnixTime(t.market_close_time)}</td>
+                    </tr>
+                    {isExpanded && (() => {
+                      const tradeOrders = orders.filter(o => o.market_ticker === t.market_ticker)
+                      return (
+                        <tr key={`${t.market_ticker}-detail`}>
+                          <td colSpan={11} style={{ padding: '0 0 6px 0', background: 'rgba(9,13,24,0.7)' }}>
+                            <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
+                              <thead>
+                                <tr style={{ borderBottom: '1px solid #1f2637' }}>
+                                  <th style={{ padding: '6px 12px', textAlign: 'left', color: '#475569', fontWeight: 700, fontSize: 10, letterSpacing: '0.05em', textTransform: 'uppercase' }}>Role</th>
+                                  <th style={{ padding: '6px 12px', textAlign: 'left', color: '#475569', fontWeight: 700, fontSize: 10, letterSpacing: '0.05em', textTransform: 'uppercase' }}>Direction</th>
+                                  <th style={{ padding: '6px 12px', textAlign: 'left', color: '#475569', fontWeight: 700, fontSize: 10, letterSpacing: '0.05em', textTransform: 'uppercase' }}>Entry</th>
+                                  <th style={{ padding: '6px 12px', textAlign: 'left', color: '#475569', fontWeight: 700, fontSize: 10, letterSpacing: '0.05em', textTransform: 'uppercase' }}>Qty</th>
+                                  <th style={{ padding: '6px 12px', textAlign: 'left', color: '#475569', fontWeight: 700, fontSize: 10, letterSpacing: '0.05em', textTransform: 'uppercase' }}>Status</th>
+                                  <th style={{ padding: '6px 12px', textAlign: 'left', color: '#475569', fontWeight: 700, fontSize: 10, letterSpacing: '0.05em', textTransform: 'uppercase' }}>Payout</th>
+                                  <th style={{ padding: '6px 12px', textAlign: 'left', color: '#475569', fontWeight: 700, fontSize: 10, letterSpacing: '0.05em', textTransform: 'uppercase' }}>P&L</th>
+                                  <th style={{ padding: '6px 12px', textAlign: 'left', color: '#475569', fontWeight: 700, fontSize: 10, letterSpacing: '0.05em', textTransform: 'uppercase' }}>Placed</th>
+                                  <th style={{ padding: '6px 12px', textAlign: 'left', color: '#475569', fontWeight: 700, fontSize: 10, letterSpacing: '0.05em', textTransform: 'uppercase' }}>Filled</th>
+                                </tr>
+                              </thead>
+                              <tbody>
+                                {tradeOrders.length === 0 ? (
+                                  <tr><td colSpan={9} style={{ padding: '10px 12px', color: '#475569', textAlign: 'center' }}>No orders found</td></tr>
+                                ) : tradeOrders.map(o => (
+                                  <tr key={o.id} style={{ borderBottom: '1px solid #111827' }}>
+                                    <td style={{ padding: '7px 12px' }}>
+                                      <span className={`badge ${o.order_role === 'entry' ? 'side-buy' : 'side-sell'}`}>
+                                        {o.order_role === 'entry' ? 'BUY' : 'SELL'}
+                                      </span>
+                                    </td>
+                                    <td style={{ padding: '7px 12px' }}>
+                                      <span className={`badge ${o.side === 'yes' ? 'side-yes' : 'side-no'}`}>
+                                        {o.side.toUpperCase()}
+                                      </span>
+                                    </td>
+                                    <td style={{ padding: '7px 12px', color: '#94a3b8' }}>{o.entry_price_cents}¢</td>
+                                    <td style={{ padding: '7px 12px', color: '#94a3b8' }}>{o.count}</td>
+                                    <td style={{ padding: '7px 12px' }}><StatusBadge status={o.status} outcome={o.outcome} /></td>
+                                    <td style={{ padding: '7px 12px', color: '#94a3b8' }}>{o.payout_cents != null ? `${o.payout_cents}¢` : '—'}</td>
+                                    <td style={{ padding: '7px 12px' }} className={o.net_profit_cents != null && o.net_profit_cents > 0 ? 'cell-profit' : o.net_profit_cents != null && o.net_profit_cents < 0 ? 'cell-loss' : 'cell-dim'}>
+                                      {o.net_profit_cents != null ? fmtPnL(o.net_profit_cents) : '—'}
+                                    </td>
+                                    <td style={{ padding: '7px 12px', color: '#64748b' }}>{fmtTime(o.placed_at)}</td>
+                                    <td style={{ padding: '7px 12px', color: '#64748b' }}>{fmtTime(o.filled_at)}</td>
+                                  </tr>
+                                ))}
+                              </tbody>
+                            </table>
+                          </td>
+                        </tr>
+                      )
+                    })()}
+                  </>
+                )
+              })}
             </tbody>
           </table>
         </div>}
