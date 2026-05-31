@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
-import type { Snapshot } from '../App'
+import type { Snapshot, Order } from '../App'
 import { fmtCents, fmtDur, fmtTime, fmtUnixTime, kalshiMarketUrl } from '../App'
 import PriceActionChart from '../components/PriceActionChart'
 
@@ -19,9 +19,11 @@ interface TickerSummary {
 
 interface Props {
   snapshots: Snapshot[]
+  orders?: Order[]
+  openOrders?: Order[]
 }
 
-export default function Snapshots({ snapshots }: Props) {
+export default function Snapshots({ snapshots, orders = [], openOrders = [] }: Props) {
   const [allTickers, setAllTickers] = useState<TickerSummary[]>([])
   const [selectedTicker, setSelectedTicker] = useState<string | null>(null)
   const [expandedTicker, setExpandedTicker] = useState<string | null>(null)
@@ -46,7 +48,6 @@ export default function Snapshots({ snapshots }: Props) {
   }, [snapshots])
 
   function toggleExpanded(ticker: string) {
-    setSelectedTicker(ticker)
     if (expandedTicker === ticker) {
       setExpandedTicker(null)
       setExpandedHistory([])
@@ -127,7 +128,7 @@ export default function Snapshots({ snapshots }: Props) {
 
       {selectedTicker && (
         <section className="chart-panel">
-          <PriceActionChart ticker={selectedTicker} globalSnapshots={snapshots} />
+          <PriceActionChart ticker={selectedTicker} globalSnapshots={snapshots} openOrders={openOrders} historyOrders={orders} />
         </section>
       )}
 
@@ -186,7 +187,14 @@ export default function Snapshots({ snapshots }: Props) {
                         ) : expandedHistory.length === 0 ? (
                           <div className="snapshot-history-status">No stored snapshots for this market</div>
                         ) : (
-                          <div className="snapshot-history-scroll">
+                          <>
+                            <PriceActionChart
+                              ticker={t.ticker}
+                              globalSnapshots={snapshots}
+                              openOrders={openOrders}
+                              historyOrders={orders}
+                            />
+                            <div className="snapshot-history-scroll">
                             <table className="snapshot-history-table">
                               <thead>
                                 <tr>
@@ -220,6 +228,7 @@ export default function Snapshots({ snapshots }: Props) {
                               </tbody>
                             </table>
                           </div>
+                          </>
                         )}
                       </td>
                     </tr>

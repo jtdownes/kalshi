@@ -337,7 +337,7 @@ export default function App() {
         />
         <Route
           path="/markets"
-          element={<Snapshots snapshots={snapshots} />}
+          element={<Snapshots snapshots={snapshots} orders={orders} openOrders={orders.filter(o => o.status === 'resting')} />}
         />
         <Route path="/backtest" element={<Backtest />} />
       </Routes>
