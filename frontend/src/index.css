@@ -584,7 +584,7 @@ tbody tr:hover { background: rgba(255,255,255,0.025); }
 }
 
 .strategy-modal-view {
-  max-width: 760px;
+  max-width: 640px;
 }
 
 /* Read-only parameter grid inside view modal */
