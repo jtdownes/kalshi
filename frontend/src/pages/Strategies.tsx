@@ -20,6 +20,20 @@ interface StrategyDraft {
   max_time_to_close_secs: number | null
 }
 
+interface Trade {
+  market_ticker: string
+  order_count: number
+  placed_at: string
+  filled_at: string | null
+  filled_side: string | null
+  market_close_time: string | null
+  entry_price_cents: number | null
+  net_profit_cents: number | null
+  status: string
+  outcome: string | null
+  peak_price_cents: number | null
+}
+
 function formatExitStrategy(exitStrategy: StrategyDraft['exit_strategy'] | Profile['exit_strategy'] | Settings['exit_strategy']): string {
   return exitStrategy === 'limit_sell' ? 'Limit Sell' : 'Hold to Expiration'
 }
@@ -72,7 +86,12 @@ interface Props {
 }
 
 export default function Strategies({ settings, profiles, refresh }: Props) {
-  const [viewModal,        setViewModal]        = useState<{ profile: Profile } | null>(null)
+  const [viewModal, setViewModal] = useState<{
+    profile: Profile
+    tab: 'settings' | 'trades'
+    trades: Trade[]
+    loadingTrades: boolean
+  } | null>(null)
   const [newStrategyDraft, setNewStrategyDraft] = useState<StrategyDraft | null>(null)
   const [renameModal,      setRenameModal]      = useState<{ profileId: number; name: string } | null>(null)
   const [saving,           setSaving]           = useState(false)
@@ -98,7 +117,18 @@ export default function Strategies({ settings, profiles, refresh }: Props) {
 
   const openViewModal = (profile: Profile) => {
     setNewStrategyDraft(null)
-    setViewModal({ profile })
+    setViewModal({ profile, tab: 'settings', trades: [], loadingTrades: false })
+  }
+
+  const switchToTrades = async () => {
+    setViewModal(v => v ? { ...v, tab: 'trades', loadingTrades: true } : v)
+    try {
+      const resp = await fetch(`/api/trades?profile_id=${viewModal!.profile.id}&limit=200`)
+      const trades = resp.ok ? await resp.json() : []
+      setViewModal(v => v ? { ...v, trades, loadingTrades: false } : v)
+    } catch {
+      setViewModal(v => v ? { ...v, loadingTrades: false } : v)
+    }
   }
 
   const saveStrategy = async (ev: React.FormEvent) => {
@@ -140,7 +170,7 @@ export default function Strategies({ settings, profiles, refresh }: Props) {
       if (!resp.ok) throw new Error('Failed to rename strategy')
       setRenameModal(null)
       if (viewModal?.profile.id === renameModal.profileId) {
-        setViewModal(v => v ? { profile: { ...v.profile, name: renameModal.name } } : v)
+        setViewModal(v => v ? { ...v, profile: { ...v.profile, name: renameModal.name } } : v)
       }
       await refresh()
     } catch (err: any) {
@@ -156,7 +186,7 @@ export default function Strategies({ settings, profiles, refresh }: Props) {
       const resp = await fetch(`/api/profiles/${profileId}/activate`, { method: 'POST' })
       if (!resp.ok) throw new Error('Failed to activate strategy')
       if (viewModal?.profile.id === profileId)
-        setViewModal(v => v ? { profile: { ...v.profile, is_active: true } } : v)
+        setViewModal(v => v ? { ...v, profile: { ...v.profile, is_active: true } } : v)
       await refresh()
     } catch (err: any) {
       alert(err.message)
@@ -171,7 +201,7 @@ export default function Strategies({ settings, profiles, refresh }: Props) {
       const resp = await fetch(`/api/profiles/${profileId}/deactivate`, { method: 'POST' })
       if (!resp.ok) throw new Error('Failed to deactivate strategy')
       if (viewModal?.profile.id === profileId)
-        setViewModal(v => v ? { profile: { ...v.profile, is_active: false } } : v)
+        setViewModal(v => v ? { ...v, profile: { ...v.profile, is_active: false } } : v)
       await refresh()
     } catch (err: any) {
       alert(err.message)
@@ -292,7 +322,7 @@ export default function Strategies({ settings, profiles, refresh }: Props) {
       {/* ── Strategy view modal ── */}
       {viewModal && (
         <div className="strategy-modal-backdrop" onClick={() => setViewModal(null)}>
-          <div className="strategy-modal strategy-modal-view" onClick={e => e.stopPropagation()}>
+          <div className={`strategy-modal strategy-modal-view${viewModal.tab === 'trades' ? ' strategy-modal-view-trades' : ''}`} onClick={e => e.stopPropagation()}>
             <section className="strategy-config-panel">
 
               <div className="strategy-section-head">
@@ -310,77 +340,114 @@ export default function Strategies({ settings, profiles, refresh }: Props) {
                 </div>
               </div>
 
-              <div className="strategy-form strategy-form-readonly">
-                <label className="field">
-                  <span>Min Entry</span>
-                  <input type="number" value={viewModal.profile.min_entry_cents} readOnly />
-                </label>
-                <label className="field">
-                  <span>Max Entry</span>
-                  <input type="number" value={viewModal.profile.max_entry_cents} readOnly />
-                </label>
-                <label className="field">
-                  <span>Max Open Orders</span>
-                  <input type="number" value={viewModal.profile.max_open_orders} readOnly />
-                </label>
-                <label className="field">
-                  <span>Daily Limit (¢)</span>
-                  <input type="number" value={viewModal.profile.max_daily_spend_cents} readOnly />
-                </label>
-                <label className="field field-wide">
-                  <span>Exit Strategy</span>
-                  <input type="text" value={formatExitStrategy(viewModal.profile.exit_strategy)} readOnly />
-                </label>
-                {viewModal.profile.limit_sell_price_cents != null && (
-                  <label className="field field-wide">
-                    <span>Limit Sell Price</span>
-                    <input type="text" value={`${viewModal.profile.limit_sell_price_cents}¢`} readOnly />
+              {viewModal.tab === 'settings' ? (
+                <div className="strategy-form strategy-form-readonly">
+                  <label className="field">
+                    <span>Min Entry</span>
+                    <input type="number" value={viewModal.profile.min_entry_cents} readOnly />
                   </label>
-                )}
-                <label className="field">
-                  <span>Min Time to Close (min)</span>
-                  <input type="text" value={viewModal.profile.min_time_to_close_secs != null ? String(viewModal.profile.min_time_to_close_secs / 60) : 'Any'} readOnly />
-                </label>
-                <label className="field">
-                  <span>Max Time to Close (min)</span>
-                  <input type="text" value={viewModal.profile.max_time_to_close_secs != null ? String(viewModal.profile.max_time_to_close_secs / 60) : 'Any'} readOnly />
-                </label>
-                <label className="strategy-toggle field-wide strategy-toggle-readonly">
-                  <input type="checkbox" checked={viewModal.profile.proactive_mode} readOnly onChange={() => {}} />
-                  <span>
-                    <strong>Proactive Mode</strong>
-                    <small>Place orders before price hits target</small>
-                  </span>
-                </label>
-              </div>
+                  <label className="field">
+                    <span>Max Entry</span>
+                    <input type="number" value={viewModal.profile.max_entry_cents} readOnly />
+                  </label>
+                  <label className="field">
+                    <span>Max Open Orders</span>
+                    <input type="number" value={viewModal.profile.max_open_orders} readOnly />
+                  </label>
+                  <label className="field">
+                    <span>Daily Limit (¢)</span>
+                    <input type="number" value={viewModal.profile.max_daily_spend_cents} readOnly />
+                  </label>
+                  <label className="field field-wide">
+                    <span>Exit Strategy</span>
+                    <input type="text" value={formatExitStrategy(viewModal.profile.exit_strategy)} readOnly />
+                  </label>
+                  {viewModal.profile.limit_sell_price_cents != null && (
+                    <label className="field field-wide">
+                      <span>Limit Sell Price</span>
+                      <input type="text" value={`${viewModal.profile.limit_sell_price_cents}¢`} readOnly />
+                    </label>
+                  )}
+                  <label className="field">
+                    <span>Min Time to Close (min)</span>
+                    <input type="text" value={viewModal.profile.min_time_to_close_secs != null ? String(viewModal.profile.min_time_to_close_secs / 60) : 'Any'} readOnly />
+                  </label>
+                  <label className="field">
+                    <span>Max Time to Close (min)</span>
+                    <input type="text" value={viewModal.profile.max_time_to_close_secs != null ? String(viewModal.profile.max_time_to_close_secs / 60) : 'Any'} readOnly />
+                  </label>
+                  <label className="strategy-toggle field-wide strategy-toggle-readonly">
+                    <input type="checkbox" checked={viewModal.profile.proactive_mode} readOnly onChange={() => {}} />
+                    <span>
+                      <strong>Proactive Mode</strong>
+                      <small>Place orders before price hits target</small>
+                    </span>
+                  </label>
+                </div>
+              ) : (
+                <div className="strategy-trades-table-wrap" style={{ marginTop: 4 }}>
+                  {viewModal.loadingTrades ? (
+                    <div className="strategy-trades-empty">Loading trades…</div>
+                  ) : viewModal.trades.length === 0 ? (
+                    <div className="strategy-trades-empty">No trades recorded for this strategy yet.</div>
+                  ) : (
+                    <table className="strategy-trades-table">
+                      <thead>
+                        <tr>
+                          <th>Market</th>
+                          <th>Orders</th>
+                          <th>Status</th>
+                          <th>Outcome</th>
+                          <th>Avg Entry</th>
+                          <th>P&amp;L</th>
+                          <th>Placed</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {viewModal.trades.map(t => (
+                          <tr key={t.market_ticker}>
+                            <td className="trade-ticker">{t.market_ticker}</td>
+                            <td>{t.order_count}</td>
+                            <td><span className={`trade-status trade-status-${t.status}`}>{t.status}</span></td>
+                            <td>
+                              {t.outcome
+                                ? <span className={`outcome-chip outcome-${t.outcome}`}>{t.outcome}</span>
+                                : <span className="outcome-chip outcome-none">—</span>}
+                            </td>
+                            <td>{t.entry_price_cents != null ? `${t.entry_price_cents}¢` : '—'}</td>
+                            <td className={t.net_profit_cents != null ? (t.net_profit_cents >= 0 ? 'pnl-pos' : 'pnl-neg') : ''}>
+                              {t.net_profit_cents != null ? centsToUSD(t.net_profit_cents) : '—'}
+                            </td>
+                            <td>{fmtTime(t.placed_at)}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  )}
+                </div>
+              )}
 
               <div className="strategy-view-footer">
                 <div className="strategy-form-buttons">
-                  <button
-                    className="btn"
-                    onClick={() => setRenameModal({ profileId: viewModal.profile.id, name: viewModal.profile.name })}
-                  >
-                    Rename
-                  </button>
-                  <button
-                    className={`btn${viewModal.profile.is_active ? '' : ' btn-active'}`}
-                    disabled={activating}
-                    onClick={() => viewModal.profile.is_active
-                      ? deactivateProfile(viewModal.profile.id)
-                      : activateProfile(viewModal.profile.id)
-                    }
-                  >
-                    {activating ? 'Updating…' : viewModal.profile.is_active ? 'Deactivate' : 'Activate'}
-                  </button>
-                  <button
-                    className="btn"
-                    onClick={() => {
-                      setNewStrategyDraft({ ...profileToDraft(viewModal.profile), name: '' })
-                      setViewModal(null)
-                    }}
-                  >
-                    Copy as Template
-                  </button>
+                  {viewModal.tab === 'settings' ? (
+                    <>
+                      <button className="btn" onClick={() => setRenameModal({ profileId: viewModal.profile.id, name: viewModal.profile.name })}>Rename</button>
+                      <button
+                        className={`btn${viewModal.profile.is_active ? '' : ' btn-active'}`}
+                        disabled={activating}
+                        onClick={() => viewModal.profile.is_active
+                          ? deactivateProfile(viewModal.profile.id)
+                          : activateProfile(viewModal.profile.id)
+                        }
+                      >
+                        {activating ? 'Updating…' : viewModal.profile.is_active ? 'Deactivate' : 'Activate'}
+                      </button>
+                      <button className="btn" onClick={() => { setNewStrategyDraft({ ...profileToDraft(viewModal.profile), name: '' }); setViewModal(null) }}>Copy as Template</button>
+                      <button className="btn" onClick={switchToTrades}>View Trades</button>
+                    </>
+                  ) : (
+                    <button className="btn" onClick={() => setViewModal(v => v ? { ...v, tab: 'settings' } : v)}>← Back to Settings</button>
+                  )}
                 </div>
                 <button className="btn" onClick={() => setViewModal(null)}>Close</button>
               </div>

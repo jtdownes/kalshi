@@ -587,6 +587,10 @@ tbody tr:hover { background: rgba(255,255,255,0.025); }
   max-width: 640px;
 }
 
+.strategy-modal-view-trades {
+  max-width: 820px;
+}
+
 /* Read-only parameter grid inside view modal */
 .strategy-form-readonly .field input,
 .strategy-form-readonly .field select {
