@@ -4,6 +4,7 @@ import Dashboard from './pages/Dashboard'
 import Strategies from './pages/Strategies'
 import Snapshots from './pages/Snapshots'
 import Backtest from './pages/Backtest'
+import Analytics from './pages/Analytics'
 
 // ── Types ────────────────────────────────────────────────────────────────────────────────
 export interface Position {
@@ -80,6 +81,8 @@ export interface Settings {
   btc_series_tickers: string[]
   exit_strategy: 'hold_to_expiration' | 'limit_sell'
   limit_sell_price_cents: number | null
+  min_time_to_close_secs: number | null
+  max_time_to_close_secs: number | null
   active_profile_id: number | null
   name?: string
 }
@@ -97,6 +100,8 @@ export interface Profile {
   btc_series_tickers: string
   exit_strategy: 'hold_to_expiration' | 'limit_sell'
   limit_sell_price_cents: number | null
+  min_time_to_close_secs: number | null
+  max_time_to_close_secs: number | null
   order_count: number
   win_count: number
   loss_count: number
@@ -294,6 +299,9 @@ export default function App() {
           <NavLink to="/backtest" className={({ isActive }) => isActive ? 'nav-link nav-link-active' : 'nav-link'}>
             Backtest
           </NavLink>
+          <NavLink to="/analytics" className={({ isActive }) => isActive ? 'nav-link nav-link-active' : 'nav-link'}>
+            Analytics
+          </NavLink>
         </nav>
         <div className="header-right">
           {error && <span style={{ color: '#ff4444', fontSize: 12 }}>{error}</span>}
@@ -350,6 +358,7 @@ export default function App() {
           element={<Snapshots snapshots={snapshots} orders={orders} openOrders={orders.filter(o => o.status === 'resting')} />}
         />
         <Route path="/backtest" element={<Backtest />} />
+        <Route path="/analytics" element={<Analytics />} />
       </Routes>
     </div>
   )

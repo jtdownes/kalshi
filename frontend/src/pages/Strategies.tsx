@@ -16,6 +16,8 @@ interface StrategyDraft {
   btc_series_tickers: string[]
   exit_strategy: 'hold_to_expiration' | 'limit_sell'
   limit_sell_price_cents: number | null
+  min_time_to_close_secs: number | null
+  max_time_to_close_secs: number | null
 }
 
 interface Trade {
@@ -56,6 +58,8 @@ function profileToDraft(profile: Profile): StrategyDraft {
     btc_series_tickers: normalizeStrategyMarkets(profile.btc_series_tickers.split(',').map(t => t.trim()).filter(Boolean)),
     exit_strategy: profile.exit_strategy,
     limit_sell_price_cents: profile.limit_sell_price_cents,
+    min_time_to_close_secs: profile.min_time_to_close_secs,
+    max_time_to_close_secs: profile.max_time_to_close_secs,
   }
 }
 
@@ -70,6 +74,8 @@ function settingsToDraft(settings: Settings, name = ''): StrategyDraft {
     btc_series_tickers: normalizeStrategyMarkets(settings.btc_series_tickers),
     exit_strategy: settings.exit_strategy,
     limit_sell_price_cents: settings.limit_sell_price_cents,
+    min_time_to_close_secs: settings.min_time_to_close_secs,
+    max_time_to_close_secs: settings.max_time_to_close_secs,
   }
 }
 
@@ -273,6 +279,11 @@ export default function Strategies({ settings, profiles, refresh }: Props) {
               <div className="strategy-card-foot">
                 <span className="strategy-chip">{formatExitStrategy(p.exit_strategy)}</span>
                 {p.limit_sell_price_cents != null && <span className="strategy-chip">Target {formatExitTarget(p.limit_sell_price_cents)}</span>}
+                {(p.min_time_to_close_secs != null || p.max_time_to_close_secs != null) && (
+                  <span className="strategy-chip">
+                    TTC {p.min_time_to_close_secs != null ? `${p.min_time_to_close_secs / 60}` : '0'}–{p.max_time_to_close_secs != null ? `${p.max_time_to_close_secs / 60}m` : '∞'}
+                  </span>
+                )}
                 <span className="strategy-chip strategy-chip-dim">View trades</span>
               </div>
             </article>
@@ -444,6 +455,30 @@ export default function Strategies({ settings, profiles, refresh }: Props) {
                 <small className="field-help">When the entry fill lands, the bot places a same-market sell order at this price.</small>
               </label>
             )}
+            <label className="field">
+              <span>Min Time to Close (min)</span>
+              <input
+                type="number"
+                min={0}
+                step={0.5}
+                placeholder="Any"
+                value={strategyEditor.draft.min_time_to_close_secs != null ? strategyEditor.draft.min_time_to_close_secs / 60 : ''}
+                onChange={e => updateDraft({ min_time_to_close_secs: e.target.value ? Math.round(parseFloat(e.target.value) * 60) : null })}
+              />
+              <small className="field-help">Skip markets with less time remaining.</small>
+            </label>
+            <label className="field">
+              <span>Max Time to Close (min)</span>
+              <input
+                type="number"
+                min={0}
+                step={0.5}
+                placeholder="Any"
+                value={strategyEditor.draft.max_time_to_close_secs != null ? strategyEditor.draft.max_time_to_close_secs / 60 : ''}
+                onChange={e => updateDraft({ max_time_to_close_secs: e.target.value ? Math.round(parseFloat(e.target.value) * 60) : null })}
+              />
+              <small className="field-help">Skip markets with more time remaining. Set to 5 for time-decay plays.</small>
+            </label>
             <label className="strategy-toggle field-wide">
               <input
                 type="checkbox"

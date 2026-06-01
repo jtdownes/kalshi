@@ -117,8 +117,9 @@ def create_profile(settings_dict, name=None):
         INSERT INTO profiles (
             name, created_at, min_entry_cents, max_entry_cents, proactive_mode,
             max_open_orders, max_daily_spend_cents,
-            btc_series_tickers, exit_strategy, limit_sell_price_cents
-        ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s) RETURNING id
+            btc_series_tickers, exit_strategy, limit_sell_price_cents,
+            min_time_to_close_secs, max_time_to_close_secs
+        ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s) RETURNING id
     """
     params = (
         name, datetime.utcnow().isoformat(),
@@ -127,7 +128,9 @@ def create_profile(settings_dict, name=None):
         settings_dict['max_daily_spend_cents'],
         btc_tickers,
         settings_dict.get('exit_strategy', 'hold_to_expiration'),
-        settings_dict.get('limit_sell_price_cents')
+        settings_dict.get('limit_sell_price_cents'),
+        settings_dict.get('min_time_to_close_secs'),
+        settings_dict.get('max_time_to_close_secs'),
     )
     with _lock, _conn() as conn:
         cur = conn.cursor()
@@ -140,7 +143,8 @@ def update_profile(profile_id: int, settings_dict: dict):
     allowed_keys = [
         'name', 'min_entry_cents', 'max_entry_cents', 'proactive_mode',
         'max_open_orders', 'max_daily_spend_cents',
-        'btc_series_tickers', 'exit_strategy', 'limit_sell_price_cents'
+        'btc_series_tickers', 'exit_strategy', 'limit_sell_price_cents',
+        'min_time_to_close_secs', 'max_time_to_close_secs'
     ]
     to_update = {k: v for k, v in settings_dict.items() if k in allowed_keys}
     if not to_update:
@@ -171,7 +175,9 @@ def update_profile(profile_id: int, settings_dict: dict):
                     max_daily_spend_cents  = p.max_daily_spend_cents,
                     btc_series_tickers     = p.btc_series_tickers,
                     exit_strategy          = p.exit_strategy,
-                    limit_sell_price_cents = p.limit_sell_price_cents
+                    limit_sell_price_cents = p.limit_sell_price_cents,
+                    min_time_to_close_secs = p.min_time_to_close_secs,
+                    max_time_to_close_secs = p.max_time_to_close_secs
                 FROM profiles p
                 WHERE settings.id = 1 AND p.id = %s
             """, (profile_id,))
@@ -435,9 +441,10 @@ def update_settings(settings: dict):
     
     # Filter settings to only valid columns
     allowed_keys = [
-        'min_entry_cents', 'max_entry_cents', 'proactive_mode', 
+        'min_entry_cents', 'max_entry_cents', 'proactive_mode',
         'max_open_orders', 'max_daily_spend_cents',
-        'btc_series_tickers', 'exit_strategy', 'limit_sell_price_cents', 'active_profile_id'
+        'btc_series_tickers', 'exit_strategy', 'limit_sell_price_cents', 'active_profile_id',
+        'min_time_to_close_secs', 'max_time_to_close_secs'
     ]
     to_update = {k: v for k, v in settings.items() if k in allowed_keys}
     if not to_update:
@@ -445,9 +452,10 @@ def update_settings(settings: dict):
 
     critical_changed = False
     critical_keys = [
-        'min_entry_cents', 'max_entry_cents', 'proactive_mode', 
+        'min_entry_cents', 'max_entry_cents', 'proactive_mode',
         'max_open_orders', 'max_daily_spend_cents',
-        'btc_series_tickers', 'exit_strategy', 'limit_sell_price_cents'
+        'btc_series_tickers', 'exit_strategy', 'limit_sell_price_cents',
+        'min_time_to_close_secs', 'max_time_to_close_secs'
     ]
     
     for k in critical_keys:
@@ -495,6 +503,8 @@ def activate_profile(profile_id: int):
                 btc_series_tickers     = %s,
                 exit_strategy          = %s,
                 limit_sell_price_cents = %s,
+                min_time_to_close_secs = %s,
+                max_time_to_close_secs = %s,
                 active_profile_id      = %s
             WHERE id = 1
         """, (
@@ -506,6 +516,8 @@ def activate_profile(profile_id: int):
             p['btc_series_tickers'],
             p['exit_strategy'],
             p['limit_sell_price_cents'],
+            p.get('min_time_to_close_secs'),
+            p.get('max_time_to_close_secs'),
             profile_id,
         ))
         conn.commit()
@@ -536,7 +548,8 @@ def get_active_profiles() -> list[dict]:
         SELECT id, name, created_at, is_active,
                min_entry_cents, max_entry_cents, proactive_mode,
                max_open_orders, max_daily_spend_cents,
-               btc_series_tickers, exit_strategy, limit_sell_price_cents
+               btc_series_tickers, exit_strategy, limit_sell_price_cents,
+               min_time_to_close_secs, max_time_to_close_secs
         FROM profiles
         WHERE is_active = TRUE
         ORDER BY id

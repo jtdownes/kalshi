@@ -215,6 +215,13 @@ def _scan(client: KalshiClient, settings: dict):
         if time_to_close < min_secs:
             continue
 
+        max_ttc = settings.get("max_time_to_close_secs")
+        if max_ttc is not None and time_to_close > max_ttc:
+            continue
+        min_ttc = settings.get("min_time_to_close_secs")
+        if min_ttc is not None and time_to_close < min_ttc:
+            continue
+
         yes_ask = market.get("yes_ask")
         no_ask = market.get("no_ask")
 

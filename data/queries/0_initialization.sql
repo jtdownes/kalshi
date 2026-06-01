@@ -198,6 +198,34 @@ BEGIN
     END IF;
 END $$;
 
+DO $$
+BEGIN
+    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='profiles' AND column_name='min_time_to_close_secs') THEN
+        ALTER TABLE profiles ADD COLUMN min_time_to_close_secs INTEGER;
+    END IF;
+END $$;
+
+DO $$
+BEGIN
+    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='profiles' AND column_name='max_time_to_close_secs') THEN
+        ALTER TABLE profiles ADD COLUMN max_time_to_close_secs INTEGER;
+    END IF;
+END $$;
+
+DO $$
+BEGIN
+    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='settings' AND column_name='min_time_to_close_secs') THEN
+        ALTER TABLE settings ADD COLUMN min_time_to_close_secs INTEGER;
+    END IF;
+END $$;
+
+DO $$
+BEGIN
+    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='settings' AND column_name='max_time_to_close_secs') THEN
+        ALTER TABLE settings ADD COLUMN max_time_to_close_secs INTEGER;
+    END IF;
+END $$;
+
 CREATE INDEX IF NOT EXISTS idx_orders_ticker  ON orders(market_ticker);
 CREATE INDEX IF NOT EXISTS idx_orders_status  ON orders(status);
 CREATE INDEX IF NOT EXISTS idx_snaps_ticker   ON market_snapshots(ticker);
