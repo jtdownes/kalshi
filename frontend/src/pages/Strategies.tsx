@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import type { Settings, Profile } from '../App'
 import { centsToUSD, fmtTime, fmtTickers } from '../App'
 
@@ -92,6 +92,13 @@ export default function Strategies({ settings, profiles, refresh }: Props) {
   const [selectedProfile, setSelectedProfile] = useState<Profile | null>(null)
   const [profileTrades,   setProfileTrades]   = useState<Trade[]>([])
   const [loadingTrades,   setLoadingTrades]   = useState(false)
+
+  useEffect(() => {
+    if (!strategyEditor) return
+    const handler = (e: KeyboardEvent) => { if (e.key === 'Escape') setStrategyEditor(null) }
+    document.addEventListener('keydown', handler)
+    return () => document.removeEventListener('keydown', handler)
+  }, [strategyEditor])
 
   const activeProfile = profiles.find(p => p.id === settings?.active_profile_id)
   const editingProfileId = strategyEditor?.mode === 'edit' ? strategyEditor.profileId ?? null : null
@@ -347,6 +354,8 @@ export default function Strategies({ settings, profiles, refresh }: Props) {
       )}
 
       {strategyEditor && (
+        <div className="strategy-modal-backdrop" onClick={() => setStrategyEditor(null)}>
+          <div className="strategy-modal" onClick={e => e.stopPropagation()}>
         <section className="strategy-config-panel">
           <div className="strategy-section-head">
             <div>
@@ -501,6 +510,8 @@ export default function Strategies({ settings, profiles, refresh }: Props) {
             </div>
           </form>
         </section>
+          </div>
+        </div>
       )}
     </div>
   )

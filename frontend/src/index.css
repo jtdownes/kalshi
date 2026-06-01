@@ -560,6 +560,29 @@ tbody tr:hover { background: rgba(255,255,255,0.025); }
   text-align: center;
 }
 
+.strategy-modal-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.65);
+  z-index: 100;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+}
+
+.strategy-modal {
+  width: 100%;
+  max-width: 640px;
+  max-height: 90vh;
+  overflow-y: auto;
+  border-radius: 12px;
+}
+
+.strategy-modal .strategy-form {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
 .strategy-config-panel {
   padding: 22px;
 }
@@ -831,6 +854,20 @@ tbody tr:hover { background: rgba(255,255,255,0.025); }
 
 .strategy-form-buttons {
   flex-shrink: 0;
+}
+
+@media (max-width: 640px) {
+  .strategy-modal {
+    max-height: 95vh;
+  }
+
+  .strategy-modal .strategy-form {
+    grid-template-columns: 1fr;
+  }
+
+  .strategy-modal .field-wide {
+    grid-column: span 1;
+  }
 }
 
 @media (max-width: 900px) {
