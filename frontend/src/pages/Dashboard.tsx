@@ -507,6 +507,14 @@ export default function Dashboard({ orders, trades, openOrders, positions, snaps
                       return (
                         <tr key={`${t.market_ticker}-detail`}>
                           <td colSpan={11} style={{ padding: '0 0 6px 0', background: 'rgba(9,13,24,0.7)' }}>
+                            <div style={{ padding: '12px 12px 0' }}>
+                              <PriceActionChart
+                                ticker={t.market_ticker}
+                                globalSnapshots={snapshots}
+                                openOrders={openOrders}
+                                historyOrders={orders}
+                              />
+                            </div>
                             <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
                               <thead>
                                 <tr style={{ borderBottom: '1px solid #1f2637' }}>
