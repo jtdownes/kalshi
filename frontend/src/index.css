@@ -579,6 +579,39 @@ tbody tr:hover { background: rgba(255,255,255,0.025); }
   border-radius: 12px;
 }
 
+.strategy-modal-sm {
+  max-width: 400px;
+}
+
+.strategy-modal-view {
+  max-width: 760px;
+}
+
+/* Read-only parameter grid inside view modal */
+.strategy-form-readonly .field input,
+.strategy-form-readonly .field select {
+  opacity: 0.6;
+  cursor: default;
+  pointer-events: none;
+  background: rgba(255, 255, 255, 0.03);
+}
+
+.strategy-toggle-readonly {
+  opacity: 0.6;
+  pointer-events: none;
+}
+
+/* Footer bar inside view modal */
+.strategy-view-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding-top: 14px;
+  margin-top: 18px;
+  border-top: 1px solid #242435;
+}
+
 .strategy-modal .strategy-form {
   grid-template-columns: repeat(2, minmax(0, 1fr));
 }
