@@ -152,6 +152,7 @@ CREATE TABLE IF NOT EXISTS market_snapshots (
     btc_price            REAL,
     brti_price           REAL,
     kraken_price         REAL,
+    bitstamp_price       REAL,
     time_to_close_secs   INTEGER,
     strike_str           TEXT,
     volume               INTEGER,
@@ -169,6 +170,13 @@ DO $$
 BEGIN
     IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='market_snapshots' AND column_name='kraken_price') THEN
         ALTER TABLE market_snapshots ADD COLUMN kraken_price REAL;
+    END IF;
+END $$;
+
+DO $$
+BEGIN
+    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='market_snapshots' AND column_name='bitstamp_price') THEN
+        ALTER TABLE market_snapshots ADD COLUMN bitstamp_price REAL;
     END IF;
 END $$;
 

@@ -70,6 +70,7 @@ export interface Snapshot {
   btc_price: number | null
   brti_price: number | null
   kraken_price: number | null
+  bitstamp_price: number | null
   volume: number | null
   open_interest: number | null
 }
