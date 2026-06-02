@@ -122,6 +122,22 @@ export default function PriceActionChart({ ticker, globalSnapshots, openOrders =
     return ticks.sort((a, b) => a - b);
   })();
 
+  // Split point for the consolidated line's green(above)/red(below)-strike
+  // gradient. SVG objectBoundingBox maps offset 0 -> top (max value) and
+  // offset 1 -> bottom (min value) of the line's own bounding box, so the
+  // strike's fractional height within [min,max] is where the color flips.
+  const consolidatedSplit: number | null = (() => {
+    if (strikeNum == null) return null;
+    const vals = data.map(d => d.brti_price).filter((p): p is number => p != null);
+    if (vals.length === 0) return null;
+    const mn = Math.min(...vals);
+    const mx = Math.max(...vals);
+    if (mx === mn) return mx >= strikeNum ? 1 : 0;
+    return Math.min(1, Math.max(0, (mx - strikeNum) / (mx - mn)));
+  })();
+  const ABOVE = '#00d4a0';  // above strike → green
+  const BELOW = '#ff4444';  // below strike → red
+
   const BtcTick = ({ x, y, payload }: { x?: number; y?: number; payload?: { value: number } }) => {
     if (x == null || y == null || payload == null) return null;
     const isStrike = strikeNum != null && Math.abs(payload.value - strikeNum) < 1;
@@ -274,6 +290,16 @@ export default function PriceActionChart({ ticker, globalSnapshots, openOrders =
             </div>
             <ResponsiveContainer width="100%" height="93%">
               <LineChart data={data} margin={{ top: 5, right: 10, left: 0, bottom: 5 }}>
+                {btcView === 'consolidated' && consolidatedSplit != null && (
+                  <defs>
+                    <linearGradient id="consolidatedStrikeSplit" x1="0" y1="0" x2="0" y2="1">
+                      <stop offset="0" stopColor={ABOVE} />
+                      <stop offset={consolidatedSplit} stopColor={ABOVE} />
+                      <stop offset={consolidatedSplit} stopColor={BELOW} />
+                      <stop offset="1" stopColor={BELOW} />
+                    </linearGradient>
+                  </defs>
+                )}
                 <CartesianGrid strokeDasharray="3 3" stroke="#333" vertical={false} />
                 <XAxis
                   dataKey="scanned_at"
@@ -315,7 +341,7 @@ export default function PriceActionChart({ ticker, globalSnapshots, openOrders =
                 )}
 
                 {btcView === 'consolidated'
-                  ? <Line key="consolidated" type="monotone" dataKey="brti_price" name="Consolidated (4-venue avg)" stroke="#ffffff" dot={false} strokeWidth={2.5} isAnimationActive={false} connectNulls />
+                  ? <Line key="consolidated" type="monotone" dataKey="brti_price" name="Consolidated (4-venue avg)" stroke={consolidatedSplit != null ? 'url(#consolidatedStrikeSplit)' : '#ffffff'} dot={false} strokeWidth={2.5} isAnimationActive={false} connectNulls />
                   : [
                       <Line key="coinbase" type="monotone" dataKey="btc_price" name="Coinbase" stroke="#f7931a" dot={false} strokeWidth={2} isAnimationActive={false} connectNulls />,
                       <Line key="kraken" type="monotone" dataKey="kraken_price" name="Kraken" stroke="#a855f7" dot={false} strokeWidth={2} isAnimationActive={false} connectNulls />,
