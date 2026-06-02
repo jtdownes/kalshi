@@ -455,30 +455,45 @@ def close_entry_order_with_exit(parent_kalshi_order_id: str, close_price_cents: 
         net_profit_cents=net_profit_cents,
     )
 
+def save_bitcoin_snapshot(scanned_at: str, coinbase_price: float = None,
+                          kraken_price: float = None, bitstamp_price: float = None,
+                          gemini_price: float = None, consolidated_price: float = None,
+                          coinbase_volume: float = None, kraken_volume: float = None,
+                          bitstamp_volume: float = None, gemini_volume: float = None):
+    """One bitcoin price/volume row per collection pass. Shares scanned_at with
+    all market_snapshots rows from the same pass so they join on the tick."""
+    query = """
+        INSERT INTO bitcoin_snapshots
+          (scanned_at, coinbase_price, kraken_price, bitstamp_price, gemini_price,
+           consolidated_price, coinbase_volume, kraken_volume, bitstamp_volume, gemini_volume)
+        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+    """
+    params = (scanned_at, coinbase_price, kraken_price, bitstamp_price, gemini_price,
+              consolidated_price, coinbase_volume, kraken_volume, bitstamp_volume, gemini_volume)
+    with _lock, _conn() as conn:
+        cur = conn.cursor()
+        cur.execute(query, params)
+        conn.commit()
+
+
 def save_market_snapshot(ticker: str, title: str, close_time: str,
                          yes_ask: float | None, yes_bid: float | None,
                          no_ask: float | None, no_bid: float | None,
-                         btc_price: float, time_to_close_secs: int,
+                         time_to_close_secs: int, scanned_at: str = None,
                          strike_str: str = None, volume: int = None,
-                         open_interest: int = None, brti_price: float = None,
-                         kraken_price: float = None, bitstamp_price: float = None,
-                         gemini_price: float = None, coinbase_volume: float = None,
-                         kraken_volume: float = None, bitstamp_volume: float = None,
-                         gemini_volume: float = None):
-    now = datetime.utcnow().isoformat()
+                         open_interest: int = None):
+    # Bitcoin price/volume now lives in bitcoin_snapshots, joined on scanned_at.
+    # Pass the pass-wide scanned_at so this row shares the tick with its bitcoin row.
+    now = scanned_at or datetime.utcnow().isoformat()
     query = """
         INSERT INTO market_snapshots
           (ticker, title, scanned_at, close_time, yes_ask, yes_bid,
-           no_ask, no_bid, btc_price, brti_price, kraken_price, bitstamp_price, gemini_price,
-           coinbase_volume, kraken_volume, bitstamp_volume, gemini_volume,
-           time_to_close_secs, strike_str, volume, open_interest)
-        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+           no_ask, no_bid, time_to_close_secs, strike_str, volume, open_interest)
+        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
     """
     params = (ticker, title, now, close_time, yes_ask, yes_bid, no_ask, no_bid,
-              btc_price, brti_price, kraken_price, bitstamp_price, gemini_price,
-              coinbase_volume, kraken_volume, bitstamp_volume, gemini_volume,
               time_to_close_secs, strike_str, volume, open_interest)
-    
+
     with _lock, _conn() as conn:
         cur = conn.cursor()
         cur.execute(query, params)
@@ -487,13 +502,15 @@ def save_market_snapshot(ticker: str, title: str, close_time: str,
 def get_recent_market_snapshots(limit: int | None = None) -> list[dict]:
     limit_sql = f"LIMIT {int(limit)}" if limit is not None else ""
     query = f"""
-        SELECT id, ticker, title, scanned_at, close_time,
-               yes_ask, no_ask, yes_bid, no_bid,
-               btc_price, brti_price, kraken_price, bitstamp_price, gemini_price,
-               coinbase_volume, kraken_volume, bitstamp_volume, gemini_volume,
-               time_to_close_secs, strike_str, volume, open_interest
-        FROM market_snapshots
-        ORDER BY id DESC
+        SELECT m.id, m.ticker, m.title, m.scanned_at, m.close_time,
+               m.yes_ask, m.no_ask, m.yes_bid, m.no_bid,
+               b.coinbase_price AS btc_price, b.consolidated_price AS brti_price,
+               b.kraken_price, b.bitstamp_price, b.gemini_price,
+               b.coinbase_volume, b.kraken_volume, b.bitstamp_volume, b.gemini_volume,
+               m.time_to_close_secs, m.strike_str, m.volume, m.open_interest
+        FROM market_snapshots m
+        LEFT JOIN bitcoin_snapshots b ON b.scanned_at = m.scanned_at
+        ORDER BY m.id DESC
         {limit_sql}
     """
     with _lock, _conn() as conn:
@@ -505,14 +522,16 @@ def get_recent_market_snapshots(limit: int | None = None) -> list[dict]:
 def get_market_snapshots_for_ticker(ticker: str, limit: int | None = None) -> list[dict]:
     limit_sql = f"LIMIT {int(limit)}" if limit is not None else ""
     query = f"""
-        SELECT id, ticker, title, scanned_at, close_time,
-               yes_ask, no_ask, yes_bid, no_bid,
-               btc_price, brti_price, kraken_price, bitstamp_price, gemini_price,
-               coinbase_volume, kraken_volume, bitstamp_volume, gemini_volume,
-               time_to_close_secs, strike_str, volume, open_interest
-        FROM market_snapshots
-        WHERE ticker = %s
-        ORDER BY id DESC
+        SELECT m.id, m.ticker, m.title, m.scanned_at, m.close_time,
+               m.yes_ask, m.no_ask, m.yes_bid, m.no_bid,
+               b.coinbase_price AS btc_price, b.consolidated_price AS brti_price,
+               b.kraken_price, b.bitstamp_price, b.gemini_price,
+               b.coinbase_volume, b.kraken_volume, b.bitstamp_volume, b.gemini_volume,
+               m.time_to_close_secs, m.strike_str, m.volume, m.open_interest
+        FROM market_snapshots m
+        LEFT JOIN bitcoin_snapshots b ON b.scanned_at = m.scanned_at
+        WHERE m.ticker = %s
+        ORDER BY m.id DESC
         {limit_sql}
     """
     with _lock, _conn() as conn:
@@ -525,20 +544,22 @@ def get_latest_snapshots_for_series(series_tickers: list[str], max_age_seconds: 
     if not series_tickers:
         return []
 
-    where = " OR ".join("ticker LIKE %s" for _ in series_tickers)
+    where = " OR ".join("m.ticker LIKE %s" for _ in series_tickers)
     params = [f"{series}-%" for series in series_tickers]
     params.append(str(max_age_seconds))
     query = f"""
-        SELECT DISTINCT ON (ticker)
-               id, ticker, title, scanned_at, close_time,
-               yes_ask, no_ask, yes_bid, no_bid,
-               btc_price, brti_price, kraken_price, bitstamp_price, gemini_price,
-               coinbase_volume, kraken_volume, bitstamp_volume, gemini_volume,
-               time_to_close_secs, strike_str, volume, open_interest
-        FROM market_snapshots
+        SELECT DISTINCT ON (m.ticker)
+               m.id, m.ticker, m.title, m.scanned_at, m.close_time,
+               m.yes_ask, m.no_ask, m.yes_bid, m.no_bid,
+               b.coinbase_price AS btc_price, b.consolidated_price AS brti_price,
+               b.kraken_price, b.bitstamp_price, b.gemini_price,
+               b.coinbase_volume, b.kraken_volume, b.bitstamp_volume, b.gemini_volume,
+               m.time_to_close_secs, m.strike_str, m.volume, m.open_interest
+        FROM market_snapshots m
+        LEFT JOIN bitcoin_snapshots b ON b.scanned_at = m.scanned_at
         WHERE ({where})
-          AND scanned_at::timestamp >= ((CURRENT_TIMESTAMP AT TIME ZONE 'UTC') - (%s || ' seconds')::interval)
-        ORDER BY ticker, scanned_at DESC
+          AND m.scanned_at::timestamp >= ((CURRENT_TIMESTAMP AT TIME ZONE 'UTC') - (%s || ' seconds')::interval)
+        ORDER BY m.ticker, m.scanned_at DESC
     """
     with _lock, _conn() as conn:
         cur = conn.cursor(cursor_factory=psycopg2.extras.DictCursor)

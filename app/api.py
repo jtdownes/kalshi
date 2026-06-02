@@ -326,12 +326,12 @@ def backtest():
 
 _BT_COL = {
     "time_to_close":      "m.time_to_close_secs",
-    "distance_to_strike": "(m.btc_price - NULLIF(m.strike_str, '')::numeric)",
+    "distance_to_strike": "(b.coinbase_price - NULLIF(m.strike_str, '')::numeric)",
     "yes_ask":            "m.yes_ask",
     "yes_bid":            "m.yes_bid",
     "no_ask":             "m.no_ask",
     "no_bid":             "m.no_bid",
-    "btc_price":          "m.btc_price",
+    "btc_price":          "b.coinbase_price",
     "spread":             "(m.yes_ask - m.yes_bid)",
     "volume":             "m.volume",
     "open_interest":      "m.open_interest",
@@ -436,6 +436,7 @@ def _bt_simulate_rule(cur, series_like, rule, side):
                 m.{ask_col}          AS fill_price,
                 m.time_to_close_secs AS ttc_at_fill
             FROM market_snapshots m
+            LEFT JOIN bitcoin_snapshots b ON b.scanned_at = m.scanned_at
             {' '.join(join_parts)}
             WHERE m.ticker LIKE %s
               AND {entry_clause}
@@ -969,10 +970,13 @@ def snapshot_series():
     # We want them ascending for the chart
     with _conn() as c:
         c.execute("""
-            SELECT scanned_at, yes_bid, no_bid, btc_price, brti_price, kraken_price, bitstamp_price, gemini_price, strike_str
-            FROM market_snapshots
-            WHERE ticker = %s
-            ORDER BY id DESC
+            SELECT m.scanned_at, m.yes_bid, m.no_bid,
+                   b.coinbase_price AS btc_price, b.consolidated_price AS brti_price,
+                   b.kraken_price, b.bitstamp_price, b.gemini_price, m.strike_str
+            FROM market_snapshots m
+            LEFT JOIN bitcoin_snapshots b ON b.scanned_at = m.scanned_at
+            WHERE m.ticker = %s
+            ORDER BY m.id DESC
             LIMIT %s
         """, (ticker, limit))
         rows = c.fetchall()

@@ -208,6 +208,49 @@ BEGIN
     END IF;
 END $$;
 
+-- Bitcoin price/volume is global per tick (not per market), so it lives in its
+-- own table written once per collection pass and joined to market_snapshots on
+-- scanned_at. The bitcoin columns on market_snapshots above are retained for
+-- historical reads / backfill but are no longer written by the bot.
+CREATE TABLE IF NOT EXISTS bitcoin_snapshots (
+    id                  SERIAL PRIMARY KEY,
+    scanned_at          TEXT NOT NULL,
+    coinbase_price      REAL,
+    kraken_price        REAL,
+    bitstamp_price      REAL,
+    gemini_price        REAL,
+    consolidated_price  REAL,
+    coinbase_volume     REAL,
+    kraken_volume       REAL,
+    bitstamp_volume     REAL,
+    gemini_volume       REAL
+);
+CREATE INDEX IF NOT EXISTS idx_bitcoin_snapshots_scanned_at ON bitcoin_snapshots (scanned_at);
+
+-- One-time backfill: lift the bitcoin data already embedded in market_snapshots
+-- into bitcoin_snapshots, keyed by each row's scanned_at, so historical joins
+-- resolve. Runs only while bitcoin_snapshots is empty (idempotent across restarts).
+DO $$
+BEGIN
+    IF NOT EXISTS (SELECT 1 FROM bitcoin_snapshots LIMIT 1) THEN
+        INSERT INTO bitcoin_snapshots
+            (scanned_at, coinbase_price, kraken_price, bitstamp_price, gemini_price,
+             consolidated_price, coinbase_volume, kraken_volume, bitstamp_volume, gemini_volume)
+        SELECT
+            m.scanned_at,
+            m.btc_price, m.kraken_price, m.bitstamp_price, m.gemini_price,
+            ( COALESCE(m.btc_price, 0) + COALESCE(m.kraken_price, 0)
+            + COALESCE(m.bitstamp_price, 0) + COALESCE(m.gemini_price, 0) )
+            / NULLIF(
+                (m.btc_price      IS NOT NULL)::int + (m.kraken_price   IS NOT NULL)::int
+              + (m.bitstamp_price IS NOT NULL)::int + (m.gemini_price   IS NOT NULL)::int, 0),
+            m.coinbase_volume, m.kraken_volume, m.bitstamp_volume, m.gemini_volume
+        FROM market_snapshots m
+        WHERE m.btc_price IS NOT NULL OR m.kraken_price IS NOT NULL
+           OR m.bitstamp_price IS NOT NULL OR m.gemini_price IS NOT NULL;
+    END IF;
+END $$;
+
 CREATE TABLE IF NOT EXISTS settings (
     id                     INTEGER PRIMARY KEY CHECK (id = 1),
     min_entry_cents        INTEGER NOT NULL,

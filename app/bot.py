@@ -385,12 +385,24 @@ def _scan(client: KalshiClient, settings: dict):
 def _collect_market_snapshots(client: KalshiClient):
     now_ts = int(time.time())
     max_close = now_ts + config.LOOK_AHEAD_SECONDS
+
+    # Bitcoin price/volume is global per tick: fetch once, write a single
+    # bitcoin_snapshots row, and stamp every market_snapshots row in this pass
+    # with the same scanned_at so they join on the tick.
+    scanned_at = datetime.utcnow().isoformat()
     venues = fetch_venue_prices()
-    btc_price = venues["coinbase_price"]
-    brti_price = venues["brti_price"]
-    kraken_price = venues["kraken_price"]
-    bitstamp_price = venues["bitstamp_price"]
-    gemini_price = venues["gemini_price"]
+    db.save_bitcoin_snapshot(
+        scanned_at=scanned_at,
+        coinbase_price=venues["coinbase_price"],
+        kraken_price=venues["kraken_price"],
+        bitstamp_price=venues["bitstamp_price"],
+        gemini_price=venues["gemini_price"],
+        consolidated_price=venues["brti_price"],
+        coinbase_volume=venues["coinbase_volume"],
+        kraken_volume=venues["kraken_volume"],
+        bitstamp_volume=venues["bitstamp_volume"],
+        gemini_volume=venues["gemini_volume"],
+    )
 
     for series in config.SNAPSHOT_SERIES_TICKERS:
         try:
@@ -429,16 +441,8 @@ def _collect_market_snapshots(client: KalshiClient):
                 yes_bid=yes_bid,
                 no_ask=no_ask,
                 no_bid=no_bid,
-                btc_price=btc_price,
-                brti_price=brti_price,
-                kraken_price=kraken_price,
-                bitstamp_price=bitstamp_price,
-                gemini_price=gemini_price,
-                coinbase_volume=venues["coinbase_volume"],
-                kraken_volume=venues["kraken_volume"],
-                bitstamp_volume=venues["bitstamp_volume"],
-                gemini_volume=venues["gemini_volume"],
                 time_to_close_secs=time_to_close,
+                scanned_at=scanned_at,
                 strike_str=str(strike) if strike is not None else None,
                 volume=volume,
                 open_interest=oi,
