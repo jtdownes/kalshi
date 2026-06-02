@@ -97,11 +97,17 @@ export default function PriceActionChart({ ticker, globalSnapshots, openOrders =
     if (btcDomain[0] === 'auto') return undefined;
     const [lo, hi] = btcDomain as [number, number];
     const range = hi - lo;
-    const step = Math.pow(10, Math.floor(Math.log10(range))) * (range / Math.pow(10, Math.floor(Math.log10(range))) > 5 ? 2 : 1);
-    const ticks: number[] = [];
+    const mag = Math.pow(10, Math.floor(Math.log10(range)));
+    const step = mag * (range / mag > 5 ? 2 : 1);
+    let ticks: number[] = [];
     const start = Math.ceil(lo / step) * step;
     for (let v = start; v <= hi; v += step) ticks.push(Math.round(v));
-    if (strikeNum != null && !ticks.some(t => Math.abs(t - strikeNum) < step * 0.1)) ticks.push(strikeNum);
+    if (strikeNum != null) {
+      // Drop any round tick close enough to collide with the strike label,
+      // then insert the strike so it always renders on the axis.
+      ticks = ticks.filter(t => Math.abs(t - strikeNum) > step * 0.45);
+      ticks.push(strikeNum);
+    }
     return ticks.sort((a, b) => a - b);
   })();
 
