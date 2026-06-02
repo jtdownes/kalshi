@@ -226,6 +226,32 @@ BEGIN
     END IF;
 END $$;
 
+-- ── Conditional-rule strategy model ──────────────────────────────────────────
+-- profiles.rules / settings.rules hold an ordered list of IF/THEN rules (JSONB).
+-- orders.entry_rule_id attributes each placed order to the rule that fired it,
+-- so the scanner can dedup per (market, side, rule) when laddering.
+
+DO $$
+BEGIN
+    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='profiles' AND column_name='rules') THEN
+        ALTER TABLE profiles ADD COLUMN rules JSONB;
+    END IF;
+END $$;
+
+DO $$
+BEGIN
+    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='settings' AND column_name='rules') THEN
+        ALTER TABLE settings ADD COLUMN rules JSONB;
+    END IF;
+END $$;
+
+DO $$
+BEGIN
+    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='orders' AND column_name='entry_rule_id') THEN
+        ALTER TABLE orders ADD COLUMN entry_rule_id TEXT;
+    END IF;
+END $$;
+
 CREATE INDEX IF NOT EXISTS idx_orders_ticker  ON orders(market_ticker);
 CREATE INDEX IF NOT EXISTS idx_orders_status  ON orders(status);
 CREATE INDEX IF NOT EXISTS idx_snaps_ticker   ON market_snapshots(ticker);

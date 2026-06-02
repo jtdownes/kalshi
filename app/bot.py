@@ -215,37 +215,47 @@ def _scan(client: KalshiClient, settings: dict):
         if time_to_close < min_secs:
             continue
 
-        max_ttc = settings.get("max_time_to_close_secs")
-        if max_ttc is not None and time_to_close > max_ttc:
-            continue
-        min_ttc = settings.get("min_time_to_close_secs")
-        if min_ttc is not None and time_to_close < min_ttc:
-            continue
-
         yes_ask = market.get("yes_ask")
         no_ask = market.get("no_ask")
 
-        for side, price_cents in evaluate_market(market, None, settings, profile_id=profile_id):
-            ok, reason = can_place_order(price_cents, settings, profile_id=profile_id)
+        for spec in evaluate_market(market, settings, profile_id=profile_id,
+                                    time_to_close=time_to_close):
+            side       = spec["side"]
+            price_cents = spec["price_cents"]
+            quantity   = spec["quantity"]
+            exit_spec  = spec["exit"]
+            rule_id    = spec["rule_id"]
+
+            ok, reason = can_place_order(price_cents, settings, profile_id=profile_id,
+                                         quantity=quantity)
             if not ok:
                 log.warning("Order skipped (%s): %s %s", reason, side, ticker)
                 continue
+
+            if exit_spec.get("type") == "limit_sell":
+                exit_strategy = "limit_sell"
+                exit_target_cents = exit_spec.get("price_cents")
+            else:
+                exit_strategy = "hold_to_expiration"
+                exit_target_cents = None
+
             client_oid = str(uuid.uuid4())
             try:
-                resp = client.place_order(ticker, side, price_cents, client_oid)
+                resp = client.place_order(ticker, side, price_cents, client_oid, count=quantity)
                 kalshi_oid = resp.get("order", {}).get("order_id")
-                log.info("ORDER PLACED  %-6s %-50s  %d\u00a2  ttc=%ds  yes_ask=%s\u00a2  no_ask=%s\u00a2  id=%s",
-                         side, ticker, price_cents, time_to_close,
-                         yes_ask, no_ask, kalshi_oid)
+                log.info("ORDER PLACED  %-6s %-50s  %d\u00a2 x%d  ttc=%ds  rule=%s  id=%s",
+                         side, ticker, price_cents, quantity, time_to_close,
+                         rule_id, kalshi_oid)
                 db.save_order(
                     client_order_id=client_oid, market_ticker=ticker,
                     side=side, entry_price_cents=price_cents,
                     kalshi_order_id=kalshi_oid, btc_price=None,
                     distance_to_strike=None, market_close_time=str(close_ts),
                     time_to_close_seconds=time_to_close,
-                    profile_id=profile_id,
-                    exit_strategy=settings.get("exit_strategy", "hold_to_expiration"),
-                    exit_target_cents=settings.get("limit_sell_price_cents"),
+                    profile_id=profile_id, count=quantity,
+                    entry_rule_id=rule_id,
+                    exit_strategy=exit_strategy,
+                    exit_target_cents=exit_target_cents,
                 )
             except KalshiError as e:
                 log.error("place_order failed on %s %s: %s", side, ticker, e)

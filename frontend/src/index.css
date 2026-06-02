@@ -772,6 +772,14 @@ tbody tr:hover { background: rgba(255,255,255,0.025); }
   outline: none;
 }
 
+/* Native <option> popups don't inherit the select's text color, so on the dark
+   theme they render dark-on-dark. Style options explicitly everywhere. */
+select option,
+select optgroup {
+  background: #14141f;
+  color: #e2e8f0;
+}
+
 .field-help {
   color: #64748b;
   font-size: 12px;
@@ -991,4 +999,240 @@ tbody tr:hover { background: rgba(255,255,255,0.025); }
   .stats-row {
     grid-template-columns: repeat(2, 1fr);
   }
+}
+
+/* ── Rule builder ──────────────────────────────────────────────────────────── */
+.strategy-modal-builder {
+  max-width: 760px;
+}
+
+.strategy-builder-form {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.strategy-builder-meta {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 14px;
+}
+
+.strategy-builder-rules-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  border-top: 1px solid #242435;
+  padding-top: 14px;
+}
+
+.strategy-caps-readonly {
+  display: flex;
+  gap: 28px;
+  padding: 12px 14px;
+  margin-bottom: 14px;
+  border: 1px solid #242435;
+  border-radius: 8px;
+  background: rgba(255,255,255,0.025);
+}
+.strategy-caps-readonly span {
+  display: block;
+  color: #64748b;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.6px;
+  text-transform: uppercase;
+}
+.strategy-caps-readonly strong {
+  color: #e2e8f0;
+  font-size: 15px;
+}
+
+.rule-builder {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.rule-empty {
+  padding: 20px;
+  border: 1px dashed #2d2d3e;
+  border-radius: 8px;
+  color: #64748b;
+  text-align: center;
+  font-size: 13px;
+}
+
+.rule-card {
+  border: 1px solid #242435;
+  border-radius: 10px;
+  background: #11111a;
+  padding: 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.rule-card.rule-disabled {
+  opacity: 0.55;
+}
+
+.rule-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.rule-index {
+  color: #00d4a0;
+  font-weight: 700;
+  font-size: 12px;
+  flex-shrink: 0;
+}
+.rule-name-input {
+  flex: 1;
+  min-height: 32px;
+  border: 1px solid #2d2d3e;
+  border-radius: 6px;
+  background: rgba(255,255,255,0.04);
+  color: #e2e8f0;
+  padding: 6px 10px;
+  font: inherit;
+  font-size: 13px;
+}
+.rule-name-input:focus { border-color: #00d4a0; outline: none; }
+
+.rule-head-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-shrink: 0;
+}
+.rule-enable {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 11px;
+  color: #64748b;
+  cursor: pointer;
+}
+.rule-enable input { width: 16px; height: 16px; cursor: pointer; }
+
+.rule-icon-btn {
+  width: 28px;
+  height: 28px;
+  border: 1px solid #2d2d3e;
+  border-radius: 6px;
+  background: rgba(255,255,255,0.04);
+  color: #cbd5e1;
+  cursor: pointer;
+  font-size: 13px;
+  line-height: 1;
+}
+.rule-icon-btn:hover:not(:disabled) { border-color: #4a5568; }
+.rule-icon-btn:disabled { opacity: 0.3; cursor: default; }
+.rule-icon-danger:hover:not(:disabled) { border-color: #ff4444; color: #ff4444; }
+
+.rule-section {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.rule-section-label {
+  color: #00d4a0;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.6px;
+}
+.rule-section-label span {
+  color: #64748b;
+  font-weight: 600;
+  text-transform: none;
+}
+
+.rule-cond-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.rule-input {
+  min-height: 34px;
+  border: 1px solid #2d2d3e;
+  border-radius: 6px;
+  background: rgba(255,255,255,0.04);
+  color: #e2e8f0;
+  padding: 6px 8px;
+  font: inherit;
+  font-size: 13px;
+}
+.rule-input:focus { border-color: #00d4a0; outline: none; }
+.rule-field { flex: 1 1 160px; }
+.rule-op    { width: 104px; flex: 0 0 auto; padding-right: 6px; }
+
+.rule-value-wrap {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex: 1 1 160px;
+}
+.rule-value { width: 80px; }
+.rule-and { color: #64748b; font-size: 12px; }
+.rule-unit { width: 64px; min-height: 34px; border: 1px solid #2d2d3e; border-radius: 6px;
+  background: rgba(255,255,255,0.04); color: #e2e8f0; font: inherit; font-size: 12px; }
+.rule-unit-static { color: #64748b; font-size: 12px; min-width: 16px; }
+
+.rule-add-cond {
+  align-self: flex-start;
+  border: 1px dashed #2d2d3e;
+  border-radius: 6px;
+  background: transparent;
+  color: #00d4a0;
+  padding: 5px 12px;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+}
+.rule-add-cond:hover { border-color: #00d4a0; }
+
+.rule-action-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+}
+.rule-action-field {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+.rule-action-field span {
+  color: #64748b;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.5px;
+  text-transform: uppercase;
+}
+
+.rule-summary {
+  border-top: 1px solid #1f2637;
+  padding-top: 10px;
+  color: #94a3b8;
+  font-size: 12px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  line-height: 1.5;
+}
+
+.rule-add-btn {
+  align-self: flex-start;
+}
+
+.strategy-chip-rule {
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+@media (max-width: 640px) {
+  .strategy-builder-meta { grid-template-columns: repeat(2, 1fr); }
+  .rule-action-grid { grid-template-columns: 1fr 1fr; }
 }

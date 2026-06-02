@@ -1,68 +1,57 @@
 """
-Trading logic: given a market dict from Kalshi and current BTC price,
-decide whether to place an order and at what price.
+Trading logic: given a market snapshot and the active strategy's rule list,
+decide which limit buy orders to place.
+
+The strategy model is a list of IF/THEN rules (see rules.py). Every enabled
+rule whose conditions pass fires (laddering); the scanner dedups per
+(market, side, rule id) so each rule rests its rung exactly once.
 """
 
 import logging
 
 import config
 import database as db
+import rules as rules_engine
 
 log = logging.getLogger(__name__)
 
 
-def evaluate_market(market: dict, btc_price: float | None, settings: dict | None = None, profile_id: int | None = None) -> list[tuple[str, int]]:
+def evaluate_market(market: dict, settings: dict | None = None,
+                    profile_id: int | None = None,
+                    time_to_close: int | None = None) -> list[dict]:
     """
-    Returns a list of (side, price_cents) pairs to place as limit buy orders.
-    Empty list = do nothing.
+    Return a list of order specs to place for this market:
+        {"side", "price_cents", "quantity", "exit", "rule_id"}
 
-    PROACTIVE_MODE (default):
-        Always try to place limit orders at MAX_ENTRY_CENTS on both Yes and No.
-        Orders sit resting in the book; they fill when BTC swings far enough
-        that the longshot side becomes worth <= MAX_ENTRY_CENTS to a seller.
-
-    REACTIVE_MODE:
-        Only place when the current ask is already at or below MAX_ENTRY_CENTS.
+    Empty list = do nothing. Specs whose rule has already rested/filled an entry
+    on this market+side are filtered out (per-rule dedup).
     """
     if settings is None:
         settings = {}
-    
-    proactive_mode = settings.get("proactive_mode", config.PROACTIVE_MODE)
-    max_entry_cents = settings.get("max_entry_cents", config.MAX_ENTRY_CENTS)
-    min_entry_cents = settings.get("min_entry_cents", config.MIN_ENTRY_CENTS)
 
+    rule_list = settings.get("rules") or []
     ticker = market.get("ticker", "")
-    orders: list[tuple[str, int]] = []
 
-    if proactive_mode:
-        for side in ("yes", "no"):
-            if not db.has_open_order(ticker, side, profile_id=profile_id):
-                orders.append((side, max_entry_cents))
-    else:
-        yes_ask = market.get("yes_ask")
-        no_ask  = market.get("no_ask")
-        if (yes_ask is not None
-                and min_entry_cents <= yes_ask <= max_entry_cents
-                and not db.has_open_order(ticker, "yes", profile_id=profile_id)):
-            orders.append(("yes", yes_ask))
-        if (no_ask is not None
-                and min_entry_cents <= no_ask <= max_entry_cents
-                and not db.has_open_order(ticker, "no", profile_id=profile_id)):
-            orders.append(("no", no_ask))
+    specs = rules_engine.evaluate_rules(rule_list, market, time_to_close=time_to_close)
 
-    if orders:
-        yes_ask = market.get("yes_ask", "?")
-        no_ask  = market.get("no_ask", "?")
-        log.debug("Opportunity: %s  yes_ask=%s¢  no_ask=%s¢  -> %s",
-                  ticker, yes_ask, no_ask, orders)
-    return orders
+    fresh = [
+        s for s in specs
+        if not db.has_open_order_for_rule(ticker, s["side"], s["rule_id"], profile_id=profile_id)
+    ]
+
+    if fresh:
+        log.debug("Opportunity: %s  yes_ask=%s  no_ask=%s  -> %s",
+                  ticker, market.get("yes_ask"), market.get("no_ask"),
+                  [(s["side"], s["price_cents"], s["quantity"]) for s in fresh])
+    return fresh
 
 
-def can_place_order(price_cents: int, settings: dict | None = None, profile_id: int | None = None) -> tuple[bool, str]:
+def can_place_order(price_cents: int, settings: dict | None = None,
+                    profile_id: int | None = None, quantity: int = 1) -> tuple[bool, str]:
     """Check per-profile safety limits before placing any single order."""
     if settings is None:
         settings = {}
-        
+
     max_open_orders = settings.get("max_open_orders", config.MAX_OPEN_ORDERS)
     max_daily_spend = settings.get("max_daily_spend_cents", config.MAX_DAILY_SPEND_CENTS)
 
@@ -70,9 +59,10 @@ def can_place_order(price_cents: int, settings: dict | None = None, profile_id: 
     if resting >= max_open_orders:
         return False, f"max open orders reached ({resting}/{max_open_orders})"
 
+    cost = price_cents * quantity
     spent = db.get_today_spend_cents(profile_id=profile_id)
-    if spent + price_cents > max_daily_spend:
+    if spent + cost > max_daily_spend:
         return False, (f"daily spend limit reached "
-                       f"({spent}+{price_cents} > {max_daily_spend}¢)")
+                       f"({spent}+{cost} > {max_daily_spend}¢)")
 
     return True, "ok"

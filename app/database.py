@@ -3,6 +3,7 @@ PostgreSQL persistence for the Kalshi bot.
 """
 
 import os
+import json
 import psycopg2
 import psycopg2.extras
 import threading
@@ -10,6 +11,7 @@ import logging
 from datetime import datetime, date
 
 import config
+import rules as rules_engine
 
 SQL_QUERIES_PATH = "/data/queries"
 
@@ -95,7 +97,40 @@ def init_db():
             execute_sql_file("9_set_active_profile.sql", (pid,))
             execute_sql_file("5_link_orphan_orders.sql", (pid,))
 
+    _backfill_rules()
     log.info("Database ready: %s (postgres)", config.DB_URL)
+
+
+def _backfill_rules():
+    """
+    One-time auto-conversion: any profile without a `rules` list gets the rule
+    set that reproduces its legacy flat-field behaviour. Mirrors the active
+    profile's rules into settings so the dashboard reflects them.
+    """
+    with _lock, _conn() as conn:
+        cur = conn.cursor(cursor_factory=psycopg2.extras.DictCursor)
+        cur.execute("""
+            SELECT id, min_entry_cents, max_entry_cents, proactive_mode,
+                   min_time_to_close_secs, max_time_to_close_secs,
+                   exit_strategy, limit_sell_price_cents
+            FROM profiles
+            WHERE rules IS NULL
+        """)
+        legacy_rows = [dict(r) for r in cur.fetchall()]
+        for p in legacy_rows:
+            rule_list = rules_engine.legacy_profile_to_rules(p)
+            cur.execute("UPDATE profiles SET rules = %s WHERE id = %s",
+                        (psycopg2.extras.Json(rule_list), p["id"]))
+
+        # Keep settings.rules in sync with the active profile.
+        cur.execute("""
+            UPDATE settings s SET rules = p.rules
+            FROM profiles p
+            WHERE s.id = 1 AND p.id = s.active_profile_id
+        """)
+        conn.commit()
+        if legacy_rows:
+            log.info("Backfilled rules for %d legacy profile(s)", len(legacy_rows))
 
 def get_active_profile_id() -> int:
     with _lock, _conn() as conn:
@@ -112,25 +147,38 @@ def create_profile(settings_dict, name=None):
     btc_tickers = settings_dict.get('btc_series_tickers', "")
     if isinstance(btc_tickers, list):
         btc_tickers = ",".join(btc_tickers)
-        
+
+    # Every profile carries a rule list. If the caller supplied one use it,
+    # otherwise derive the equivalent rules from the flat fields so legacy
+    # create paths (env-seeded defaults) still produce a working strategy.
+    rule_list = settings_dict.get('rules')
+    if rule_list is None:
+        rule_list = rules_engine.legacy_profile_to_rules(settings_dict)
+
     query = """
         INSERT INTO profiles (
             name, created_at, min_entry_cents, max_entry_cents, proactive_mode,
             max_open_orders, max_daily_spend_cents,
             btc_series_tickers, exit_strategy, limit_sell_price_cents,
-            min_time_to_close_secs, max_time_to_close_secs
-        ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s) RETURNING id
+            min_time_to_close_secs, max_time_to_close_secs, rules
+        ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s) RETURNING id
     """
+    # Flat fields are vestigial under the rule engine (entry logic lives in
+    # `rules`), but the columns are NOT NULL and the safety caps still use
+    # max_open_orders / max_daily_spend_cents, so default any the caller omits.
     params = (
         name, datetime.utcnow().isoformat(),
-        settings_dict['min_entry_cents'], settings_dict['max_entry_cents'],
-        settings_dict['proactive_mode'], settings_dict['max_open_orders'],
-        settings_dict['max_daily_spend_cents'],
+        settings_dict.get('min_entry_cents', config.MIN_ENTRY_CENTS),
+        settings_dict.get('max_entry_cents', config.MAX_ENTRY_CENTS),
+        settings_dict.get('proactive_mode', config.PROACTIVE_MODE),
+        settings_dict.get('max_open_orders', config.MAX_OPEN_ORDERS),
+        settings_dict.get('max_daily_spend_cents', config.MAX_DAILY_SPEND_CENTS),
         btc_tickers,
         settings_dict.get('exit_strategy', 'hold_to_expiration'),
         settings_dict.get('limit_sell_price_cents'),
         settings_dict.get('min_time_to_close_secs'),
         settings_dict.get('max_time_to_close_secs'),
+        psycopg2.extras.Json(rule_list),
     )
     with _lock, _conn() as conn:
         cur = conn.cursor()
@@ -144,7 +192,7 @@ def update_profile(profile_id: int, settings_dict: dict):
         'name', 'min_entry_cents', 'max_entry_cents', 'proactive_mode',
         'max_open_orders', 'max_daily_spend_cents',
         'btc_series_tickers', 'exit_strategy', 'limit_sell_price_cents',
-        'min_time_to_close_secs', 'max_time_to_close_secs'
+        'min_time_to_close_secs', 'max_time_to_close_secs', 'rules'
     ]
     to_update = {k: v for k, v in settings_dict.items() if k in allowed_keys}
     if not to_update:
@@ -152,6 +200,8 @@ def update_profile(profile_id: int, settings_dict: dict):
 
     if 'btc_series_tickers' in to_update and isinstance(to_update['btc_series_tickers'], list):
         to_update['btc_series_tickers'] = ",".join(to_update['btc_series_tickers'])
+    if 'rules' in to_update:
+        to_update['rules'] = psycopg2.extras.Json(to_update['rules'])
 
     with _lock, _conn() as conn:
         cur = conn.cursor()
@@ -177,7 +227,8 @@ def update_profile(profile_id: int, settings_dict: dict):
                     exit_strategy          = p.exit_strategy,
                     limit_sell_price_cents = p.limit_sell_price_cents,
                     min_time_to_close_secs = p.min_time_to_close_secs,
-                    max_time_to_close_secs = p.max_time_to_close_secs
+                    max_time_to_close_secs = p.max_time_to_close_secs,
+                    rules                  = p.rules
                 FROM profiles p
                 WHERE settings.id = 1 AND p.id = %s
             """, (profile_id,))
@@ -190,23 +241,25 @@ def save_order(client_order_id: str, market_ticker: str, side: str,
                profile_id: int = None, order_role: str = 'entry',
                parent_kalshi_order_id: str = None,
                exit_strategy: str = 'hold_to_expiration',
-               exit_target_cents: int = None):
+               exit_target_cents: int = None, count: int = 1,
+               entry_rule_id: str = None):
     now = datetime.utcnow().isoformat()
     query = """
         INSERT OR IGNORE INTO orders
           (client_order_id, kalshi_order_id, market_ticker, side,
-           entry_price_cents, placed_at, btc_price_at_placement,
+           entry_price_cents, count, placed_at, btc_price_at_placement,
            distance_to_strike_at_placement, market_close_time,
            time_to_close_at_placement, profile_id, order_role,
-           parent_kalshi_order_id, exit_strategy, exit_target_cents)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+           parent_kalshi_order_id, exit_strategy, exit_target_cents,
+           entry_rule_id)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     """
     params = (client_order_id, kalshi_order_id, market_ticker, side,
-              entry_price_cents, now, btc_price, distance_to_strike,
+              entry_price_cents, count, now, btc_price, distance_to_strike,
               market_close_time, time_to_close_seconds, profile_id,
               order_role, parent_kalshi_order_id, exit_strategy,
-              exit_target_cents)
-    
+              exit_target_cents, entry_rule_id)
+
     with _lock, _conn() as conn:
         _execute(conn, query, params)
         conn.commit()
@@ -230,6 +283,26 @@ def has_open_order(market_ticker: str, side: str, profile_id: int | None = None)
     else:
         query = "SELECT 1 FROM orders WHERE market_ticker = %s AND side = %s AND order_role = 'entry' AND status IN ('resting', 'pending', 'filled')"
         params = (market_ticker, side)
+    with _lock, _conn() as conn:
+        cur = conn.cursor()
+        cur.execute(query, params)
+        row = cur.fetchone()
+    return row is not None
+
+def has_open_order_for_rule(market_ticker: str, side: str, entry_rule_id: str,
+                            profile_id: int | None = None) -> bool:
+    """
+    Per-rule dedup for the laddering engine: has THIS rule already rested/filled
+    an entry on this market+side? Lets multiple rules ladder the same market
+    while each rule places its own rung exactly once.
+    """
+    clauses = ["market_ticker = %s", "side = %s", "entry_rule_id = %s",
+               "order_role = 'entry'", "status IN ('resting', 'pending', 'filled')"]
+    params = [market_ticker, side, entry_rule_id]
+    if profile_id is not None:
+        clauses.append("profile_id = %s")
+        params.append(profile_id)
+    query = f"SELECT 1 FROM orders WHERE {' AND '.join(clauses)} LIMIT 1"
     with _lock, _conn() as conn:
         cur = conn.cursor()
         cur.execute(query, params)
@@ -505,6 +578,7 @@ def activate_profile(profile_id: int):
                 limit_sell_price_cents = %s,
                 min_time_to_close_secs = %s,
                 max_time_to_close_secs = %s,
+                rules                  = %s,
                 active_profile_id      = %s
             WHERE id = 1
         """, (
@@ -518,6 +592,7 @@ def activate_profile(profile_id: int):
             p['limit_sell_price_cents'],
             p.get('min_time_to_close_secs'),
             p.get('max_time_to_close_secs'),
+            psycopg2.extras.Json(p.get('rules')) if p.get('rules') is not None else None,
             profile_id,
         ))
         conn.commit()
@@ -549,7 +624,7 @@ def get_active_profiles() -> list[dict]:
                min_entry_cents, max_entry_cents, proactive_mode,
                max_open_orders, max_daily_spend_cents,
                btc_series_tickers, exit_strategy, limit_sell_price_cents,
-               min_time_to_close_secs, max_time_to_close_secs
+               min_time_to_close_secs, max_time_to_close_secs, rules
         FROM profiles
         WHERE is_active = TRUE
         ORDER BY id

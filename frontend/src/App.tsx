@@ -72,6 +72,35 @@ export interface Snapshot {
   open_interest: number | null
 }
 
+// ── Conditional-rule strategy model ──────────────────────────────────────────
+export type RuleField =
+  | 'time_to_close' | 'distance_to_strike'
+  | 'yes_ask' | 'yes_bid' | 'no_ask' | 'no_bid'
+  | 'btc_price' | 'spread' | 'volume' | 'open_interest'
+export type RuleOp = 'lt' | 'lte' | 'gt' | 'gte' | 'eq' | 'between'
+
+export interface RuleCondition {
+  field: RuleField
+  op: RuleOp
+  value: number | null
+  value2?: number | null
+}
+export interface RuleEntry { type: 'limit' | 'ask'; price_cents?: number | null }
+export interface RuleExit  { type: 'hold' | 'limit_sell'; price_cents?: number | null }
+export interface RuleAction {
+  side: 'yes' | 'no' | 'both'
+  entry: RuleEntry
+  quantity: number
+  exit: RuleExit
+}
+export interface StrategyRule {
+  id: string
+  name?: string
+  enabled: boolean
+  conditions: RuleCondition[]
+  action: RuleAction
+}
+
 export interface Settings {
   min_entry_cents: number
   max_entry_cents: number
@@ -84,6 +113,7 @@ export interface Settings {
   min_time_to_close_secs: number | null
   max_time_to_close_secs: number | null
   active_profile_id: number | null
+  rules: StrategyRule[] | null
   name?: string
 }
 
@@ -102,6 +132,7 @@ export interface Profile {
   limit_sell_price_cents: number | null
   min_time_to_close_secs: number | null
   max_time_to_close_secs: number | null
+  rules: StrategyRule[] | null
   order_count: number
   win_count: number
   loss_count: number
