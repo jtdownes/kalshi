@@ -107,8 +107,18 @@ export default function PriceActionChart({ ticker, globalSnapshots, openOrders =
   const BtcTick = ({ x, y, payload }: { x?: number; y?: number; payload?: { value: number } }) => {
     if (x == null || y == null || payload == null) return null;
     const isStrike = strikeNum != null && Math.abs(payload.value - strikeNum) < 1;
+    if (isStrike) {
+      return (
+        <g style={{ cursor: 'default' }}>
+          <title>${strikeNum!.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</title>
+          <text x={x} y={y} textAnchor="end" dominantBaseline="middle" fontSize={10} fill="#ffffff" fontWeight={700}>
+            {fmtBtc(payload.value)}
+          </text>
+        </g>
+      );
+    }
     return (
-      <text x={x} y={y} textAnchor="end" dominantBaseline="middle" fontSize={10} fill={isStrike ? '#f5c842' : '#888'} fontWeight={isStrike ? 700 : 400}>
+      <text x={x} y={y} textAnchor="end" dominantBaseline="middle" fontSize={10} fill="#888" fontWeight={400}>
         {fmtBtc(payload.value)}
       </text>
     );
@@ -248,13 +258,13 @@ export default function PriceActionChart({ ticker, globalSnapshots, openOrders =
                 {strikeNum != null && (
                   <ReferenceLine
                     y={strikeNum}
-                    stroke="#f5c842"
+                    stroke="#ffffff"
                     strokeDasharray="6 3"
-                    strokeWidth={1.5}
+                    strokeWidth={1}
                     label={{
                       value: `Strike $${strikeNum.toLocaleString()}`,
                       position: 'insideTopRight',
-                      fill: '#f5c842',
+                      fill: '#ffffff',
                       fontSize: 10,
                     }}
                   />
