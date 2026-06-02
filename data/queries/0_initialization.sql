@@ -149,69 +149,16 @@ CREATE TABLE IF NOT EXISTS market_snapshots (
     yes_bid              REAL,
     no_ask               REAL,
     no_bid               REAL,
-    btc_price            REAL,
-    brti_price           REAL,
-    kraken_price         REAL,
-    bitstamp_price       REAL,
-    gemini_price         REAL,
-    coinbase_volume      REAL,
-    kraken_volume        REAL,
-    bitstamp_volume      REAL,
-    gemini_volume        REAL,
     time_to_close_secs   INTEGER,
     strike_str           TEXT,
     volume               INTEGER,
     open_interest        INTEGER
 );
 
-DO $$
-BEGIN
-    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='market_snapshots' AND column_name='brti_price') THEN
-        ALTER TABLE market_snapshots ADD COLUMN brti_price REAL;
-    END IF;
-END $$;
-
-DO $$
-BEGIN
-    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='market_snapshots' AND column_name='kraken_price') THEN
-        ALTER TABLE market_snapshots ADD COLUMN kraken_price REAL;
-    END IF;
-END $$;
-
-DO $$
-BEGIN
-    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='market_snapshots' AND column_name='bitstamp_price') THEN
-        ALTER TABLE market_snapshots ADD COLUMN bitstamp_price REAL;
-    END IF;
-END $$;
-
-DO $$
-BEGIN
-    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='market_snapshots' AND column_name='gemini_price') THEN
-        ALTER TABLE market_snapshots ADD COLUMN gemini_price REAL;
-    END IF;
-END $$;
-
-DO $$
-BEGIN
-    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='market_snapshots' AND column_name='coinbase_volume') THEN
-        ALTER TABLE market_snapshots ADD COLUMN coinbase_volume REAL;
-    END IF;
-    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='market_snapshots' AND column_name='kraken_volume') THEN
-        ALTER TABLE market_snapshots ADD COLUMN kraken_volume REAL;
-    END IF;
-    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='market_snapshots' AND column_name='bitstamp_volume') THEN
-        ALTER TABLE market_snapshots ADD COLUMN bitstamp_volume REAL;
-    END IF;
-    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='market_snapshots' AND column_name='gemini_volume') THEN
-        ALTER TABLE market_snapshots ADD COLUMN gemini_volume REAL;
-    END IF;
-END $$;
-
 -- Bitcoin price/volume is global per tick (not per market), so it lives in its
 -- own table written once per collection pass and joined to market_snapshots on
--- scanned_at. The bitcoin columns on market_snapshots above are retained for
--- historical reads / backfill but are no longer written by the bot.
+-- scanned_at. Bitcoin data formerly lived in per-market columns on
+-- market_snapshots; those are backfilled into this table then dropped below.
 CREATE TABLE IF NOT EXISTS bitcoin_snapshots (
     id                  SERIAL PRIMARY KEY,
     scanned_at          TEXT NOT NULL,
@@ -227,29 +174,48 @@ CREATE TABLE IF NOT EXISTS bitcoin_snapshots (
 );
 CREATE INDEX IF NOT EXISTS idx_bitcoin_snapshots_scanned_at ON bitcoin_snapshots (scanned_at);
 
--- One-time backfill: lift the bitcoin data already embedded in market_snapshots
--- into bitcoin_snapshots, keyed by each row's scanned_at, so historical joins
--- resolve. Runs only while bitcoin_snapshots is empty (idempotent across restarts).
+-- One-time backfill: lift bitcoin data still embedded in the legacy
+-- market_snapshots columns into bitcoin_snapshots, keyed by each row's
+-- scanned_at, so historical joins resolve. Only runs on a pre-split DB that
+-- still has those columns AND has no bitcoin rows yet; the INSERT is dynamic
+-- so it doesn't fail to parse once the columns have been dropped below.
 DO $$
 BEGIN
-    IF NOT EXISTS (SELECT 1 FROM bitcoin_snapshots LIMIT 1) THEN
-        INSERT INTO bitcoin_snapshots
-            (scanned_at, coinbase_price, kraken_price, bitstamp_price, gemini_price,
-             consolidated_price, coinbase_volume, kraken_volume, bitstamp_volume, gemini_volume)
-        SELECT
-            m.scanned_at,
-            m.btc_price, m.kraken_price, m.bitstamp_price, m.gemini_price,
-            ( COALESCE(m.btc_price, 0) + COALESCE(m.kraken_price, 0)
-            + COALESCE(m.bitstamp_price, 0) + COALESCE(m.gemini_price, 0) )
-            / NULLIF(
-                (m.btc_price      IS NOT NULL)::int + (m.kraken_price   IS NOT NULL)::int
-              + (m.bitstamp_price IS NOT NULL)::int + (m.gemini_price   IS NOT NULL)::int, 0),
-            m.coinbase_volume, m.kraken_volume, m.bitstamp_volume, m.gemini_volume
-        FROM market_snapshots m
-        WHERE m.btc_price IS NOT NULL OR m.kraken_price IS NOT NULL
-           OR m.bitstamp_price IS NOT NULL OR m.gemini_price IS NOT NULL;
+    IF EXISTS (SELECT 1 FROM information_schema.columns
+               WHERE table_name='market_snapshots' AND column_name='btc_price')
+       AND NOT EXISTS (SELECT 1 FROM bitcoin_snapshots LIMIT 1) THEN
+        EXECUTE $bf$
+            INSERT INTO bitcoin_snapshots
+                (scanned_at, coinbase_price, kraken_price, bitstamp_price, gemini_price,
+                 consolidated_price, coinbase_volume, kraken_volume, bitstamp_volume, gemini_volume)
+            SELECT
+                m.scanned_at,
+                m.btc_price, m.kraken_price, m.bitstamp_price, m.gemini_price,
+                ( COALESCE(m.btc_price, 0) + COALESCE(m.kraken_price, 0)
+                + COALESCE(m.bitstamp_price, 0) + COALESCE(m.gemini_price, 0) )
+                / NULLIF(
+                    (m.btc_price      IS NOT NULL)::int + (m.kraken_price   IS NOT NULL)::int
+                  + (m.bitstamp_price IS NOT NULL)::int + (m.gemini_price   IS NOT NULL)::int, 0),
+                m.coinbase_volume, m.kraken_volume, m.bitstamp_volume, m.gemini_volume
+            FROM market_snapshots m
+            WHERE m.btc_price IS NOT NULL OR m.kraken_price IS NOT NULL
+               OR m.bitstamp_price IS NOT NULL OR m.gemini_price IS NOT NULL
+        $bf$;
     END IF;
 END $$;
+
+-- Drop the now-redundant per-market bitcoin columns from market_snapshots.
+-- All readers join bitcoin_snapshots instead; the data was backfilled above.
+ALTER TABLE market_snapshots
+    DROP COLUMN IF EXISTS btc_price,
+    DROP COLUMN IF EXISTS brti_price,
+    DROP COLUMN IF EXISTS kraken_price,
+    DROP COLUMN IF EXISTS bitstamp_price,
+    DROP COLUMN IF EXISTS gemini_price,
+    DROP COLUMN IF EXISTS coinbase_volume,
+    DROP COLUMN IF EXISTS kraken_volume,
+    DROP COLUMN IF EXISTS bitstamp_volume,
+    DROP COLUMN IF EXISTS gemini_volume;
 
 CREATE TABLE IF NOT EXISTS settings (
     id                     INTEGER PRIMARY KEY CHECK (id = 1),
