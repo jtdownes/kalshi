@@ -44,6 +44,7 @@ const fmtBtc = (val: number) =>
 export default function PriceActionChart({ ticker, globalSnapshots, openOrders = [], historyOrders = [] }: Props) {
   const [data, setData] = useState<SeriesData[]>([]);
   const [loading, setLoading] = useState(false);
+  const [showStrikeLabel, setShowStrikeLabel] = useState(false);
 
   useEffect(() => {
     if (!ticker) return;
@@ -109,8 +110,12 @@ export default function PriceActionChart({ ticker, globalSnapshots, openOrders =
     const isStrike = strikeNum != null && Math.abs(payload.value - strikeNum) < 1;
     if (isStrike) {
       return (
-        <g style={{ cursor: 'default' }}>
-          <title>${strikeNum!.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</title>
+        <g
+          onMouseEnter={() => setShowStrikeLabel(true)}
+          onMouseLeave={() => setShowStrikeLabel(false)}
+          style={{ cursor: 'default' }}
+        >
+          <rect x={x - 46} y={y - 8} width={46} height={16} fill="transparent" />
           <text x={x} y={y} textAnchor="end" dominantBaseline="middle" fontSize={10} fill="#ffffff" fontWeight={700}>
             {fmtBtc(payload.value)}
           </text>
@@ -261,12 +266,12 @@ export default function PriceActionChart({ ticker, globalSnapshots, openOrders =
                     stroke="#ffffff"
                     strokeDasharray="6 3"
                     strokeWidth={1}
-                    label={{
+                    label={showStrikeLabel ? {
                       value: `Strike $${strikeNum.toLocaleString()}`,
                       position: 'insideTopRight',
                       fill: '#ffffff',
                       fontSize: 10,
-                    }}
+                    } : undefined}
                   />
                 )}
 
