@@ -92,9 +92,22 @@ export default function PriceActionChart({ ticker, globalSnapshots, openOrders =
   const strike = data.find(d => d.strike_str != null)?.strike_str ?? null;
   const strikeNum = strike != null ? parseFloat(strike) : null;
 
+  // Consolidated = mean of whatever venue prices a row actually has. Computed
+  // per row rather than read from the stored brti_price column, so historical
+  // rows that only have Coinbase still get a value (= Coinbase) instead of a
+  // blank gap where the other venues didn't exist yet.
+  const chartData = data.map(d => {
+    const venues = [d.btc_price, d.kraken_price, d.bitstamp_price, d.gemini_price]
+      .filter((p): p is number => p != null);
+    const consolidated = venues.length
+      ? Math.round((venues.reduce((a, b) => a + b, 0) / venues.length) * 100) / 100
+      : null;
+    return { ...d, consolidated };
+  });
+
   const btcDomain: [number, number] | ['auto', 'auto'] = (() => {
     const prices = data
-      .flatMap(d => [d.btc_price, d.kraken_price, d.bitstamp_price, d.gemini_price, d.brti_price])
+      .flatMap(d => [d.btc_price, d.kraken_price, d.bitstamp_price, d.gemini_price])
       .filter((p): p is number => p != null);
     if (prices.length === 0) return ['auto', 'auto'];
     const candidates = strikeNum != null ? [...prices, strikeNum] : prices;
@@ -128,7 +141,7 @@ export default function PriceActionChart({ ticker, globalSnapshots, openOrders =
   // strike's fractional height within [min,max] is where the color flips.
   const consolidatedSplit: number | null = (() => {
     if (strikeNum == null) return null;
-    const vals = data.map(d => d.brti_price).filter((p): p is number => p != null);
+    const vals = chartData.map(d => d.consolidated).filter((p): p is number => p != null);
     if (vals.length === 0) return null;
     const mn = Math.min(...vals);
     const mx = Math.max(...vals);
@@ -289,7 +302,7 @@ export default function PriceActionChart({ ticker, globalSnapshots, openOrders =
               </div>
             </div>
             <ResponsiveContainer width="100%" height="93%">
-              <LineChart data={data} margin={{ top: 5, right: 10, left: 0, bottom: 5 }}>
+              <LineChart data={chartData} margin={{ top: 5, right: 10, left: 0, bottom: 5 }}>
                 {btcView === 'consolidated' && consolidatedSplit != null && (
                   <defs>
                     <linearGradient id="consolidatedStrikeSplit" x1="0" y1="0" x2="0" y2="1">
@@ -341,7 +354,7 @@ export default function PriceActionChart({ ticker, globalSnapshots, openOrders =
                 )}
 
                 {btcView === 'consolidated'
-                  ? <Line key="consolidated" type="monotone" dataKey="brti_price" name="Consolidated (4-venue avg)" stroke={consolidatedSplit != null ? 'url(#consolidatedStrikeSplit)' : '#ffffff'} dot={false} strokeWidth={2.5} isAnimationActive={false} connectNulls />
+                  ? <Line key="consolidated" type="monotone" dataKey="consolidated" name="Consolidated (avg available)" stroke={consolidatedSplit != null ? 'url(#consolidatedStrikeSplit)' : '#ffffff'} dot={false} strokeWidth={2.5} isAnimationActive={false} connectNulls />
                   : [
                       <Line key="coinbase" type="monotone" dataKey="btc_price" name="Coinbase" stroke="#f7931a" dot={false} strokeWidth={2} isAnimationActive={false} connectNulls />,
                       <Line key="kraken" type="monotone" dataKey="kraken_price" name="Kraken" stroke="#a855f7" dot={false} strokeWidth={2} isAnimationActive={false} connectNulls />,
