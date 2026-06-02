@@ -136,6 +136,16 @@ def fetch_bitstamp_price() -> float | None:
     return round(price, 2)
 
 
+def fetch_gemini_price() -> float | None:
+    """Gemini BTC/USD mid — another BRTI constituent, recorded as a fourth
+    venue line so the inter-venue basis is visible on the chart."""
+    price = _venue_gemini()
+    if price is None:
+        log.warning("fetch_gemini_price failed")
+        return None
+    return round(price, 2)
+
+
 def dollars_to_cents(v) -> float | None:
     """Kalshi returns prices as strings like '0.3000' (USD). Convert to cents with 0.1c precision."""
     if v is None or v == "":
@@ -390,6 +400,7 @@ def _collect_market_snapshots(client: KalshiClient):
     brti_price = fetch_brti_price()
     kraken_price = fetch_kraken_price()
     bitstamp_price = fetch_bitstamp_price()
+    gemini_price = fetch_gemini_price()
 
     for series in config.SNAPSHOT_SERIES_TICKERS:
         try:
@@ -432,6 +443,7 @@ def _collect_market_snapshots(client: KalshiClient):
                 brti_price=brti_price,
                 kraken_price=kraken_price,
                 bitstamp_price=bitstamp_price,
+                gemini_price=gemini_price,
                 time_to_close_secs=time_to_close,
                 strike_str=str(strike) if strike is not None else None,
                 volume=volume,

@@ -21,6 +21,7 @@ interface SeriesData {
   brti_price: number | null;
   kraken_price: number | null;
   bitstamp_price: number | null;
+  gemini_price: number | null;
   strike_str: string | null;
 }
 
@@ -75,6 +76,7 @@ export default function PriceActionChart({ ticker, globalSnapshots, openOrders =
           brti_price: latest.brti_price,
           kraken_price: latest.kraken_price,
           bitstamp_price: latest.bitstamp_price,
+          gemini_price: latest.gemini_price,
           strike_str: latest.strike_str,
         }].slice(-1000);
       });
@@ -91,7 +93,7 @@ export default function PriceActionChart({ ticker, globalSnapshots, openOrders =
 
   const btcDomain: [number, number] | ['auto', 'auto'] = (() => {
     const prices = data
-      .flatMap(d => [d.btc_price, d.kraken_price, d.bitstamp_price])
+      .flatMap(d => [d.btc_price, d.kraken_price, d.bitstamp_price, d.gemini_price])
       .filter((p): p is number => p != null);
     if (prices.length === 0) return ['auto', 'auto'];
     const candidates = strikeNum != null ? [...prices, strikeNum] : prices;
@@ -293,6 +295,7 @@ export default function PriceActionChart({ ticker, globalSnapshots, openOrders =
                 <Line type="monotone" dataKey="btc_price" name="Coinbase" stroke="#f7931a" dot={false} strokeWidth={2} isAnimationActive={false} connectNulls />
                 <Line type="monotone" dataKey="kraken_price" name="Kraken" stroke="#a855f7" dot={false} strokeWidth={2} isAnimationActive={false} connectNulls />
                 <Line type="monotone" dataKey="bitstamp_price" name="Bitstamp" stroke="#86efac" dot={false} strokeWidth={2} isAnimationActive={false} connectNulls />
+                <Line type="monotone" dataKey="gemini_price" name="Gemini" stroke="#38bdf8" dot={false} strokeWidth={2} isAnimationActive={false} connectNulls />
               </LineChart>
             </ResponsiveContainer>
           </div>
