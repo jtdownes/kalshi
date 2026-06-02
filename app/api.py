@@ -325,16 +325,18 @@ def backtest():
 # tally P&L. One entry per (market, rule, side) — matches the live bot's dedup.
 
 _BT_COL = {
-    "time_to_close":      "time_to_close_secs",
-    "distance_to_strike": "(btc_price - NULLIF(strike_str, '')::numeric)",
-    "yes_ask":            "yes_ask",
-    "yes_bid":            "yes_bid",
-    "no_ask":             "no_ask",
-    "no_bid":             "no_bid",
-    "btc_price":          "btc_price",
-    "spread":             "(yes_ask - yes_bid)",
-    "volume":             "volume",
-    "open_interest":      "open_interest",
+    "time_to_close":      "m.time_to_close_secs",
+    "distance_to_strike": "(m.btc_price - NULLIF(m.strike_str, '')::numeric)",
+    "yes_ask":            "m.yes_ask",
+    "yes_bid":            "m.yes_bid",
+    "no_ask":             "m.no_ask",
+    "no_bid":             "m.no_bid",
+    "btc_price":          "m.btc_price",
+    "spread":             "(m.yes_ask - m.yes_bid)",
+    "volume":             "m.volume",
+    "open_interest":      "m.open_interest",
+    "prior_resolution":   "pr.res",
+    "prev2_resolution":   "p2r.res",
 }
 _BT_OP = {"lt": "<", "lte": "<=", "gt": ">", "gte": ">=", "eq": "="}
 
@@ -381,13 +383,13 @@ def _bt_simulate_rule(cur, series_like, rule, side):
     cond_clause, cond_params = _bt_conditions_sql(rule.get("conditions"))
 
     if entry.get("type") == "ask":
-        entry_clause = f"{ask_col} IS NOT NULL AND {ask_col} > 0"
+        entry_clause = f"m.{ask_col} IS NOT NULL AND m.{ask_col} > 0"
         entry_params = []
     else:
         price = entry.get("price_cents")
         if price is None:
             return None
-        entry_clause = f"{ask_col} <= %s AND {ask_col} > 0"
+        entry_clause = f"m.{ask_col} <= %s AND m.{ask_col} > 0"
         entry_params = [price]
 
     is_limit_sell = exit_.get("type") == "limit_sell"
@@ -395,20 +397,53 @@ def _bt_simulate_rule(cur, series_like, rule, side):
     if is_limit_sell and sell_price is None:
         return None
 
-    fills_cte = f"""
-        WITH fills AS (
-            SELECT DISTINCT ON (ticker)
-                ticker,
-                scanned_at         AS fill_time,
-                {ask_col}          AS fill_price,
-                time_to_close_secs AS ttc_at_fill
-            FROM market_snapshots
-            WHERE ticker LIKE %s
+    # Cross-window resolution CTEs are expensive full-series scans; only build
+    # them when a condition actually references the corresponding field. Each
+    # window resolves on its FINAL snapshot (yes_bid, else yes_ask, >= 50) — the
+    # same definition as hold-to-expiration settlement below. The regex guard
+    # skips non-numeric close_time rows so the ::bigint cast can't throw.
+    fields_used = {c.get("field") for c in (rule.get("conditions") or [])}
+
+    def _res_cte(name, offset):
+        return f"""
+        {name} AS (
+            SELECT (w.close_time::bigint + {offset})::text AS ct,
+                   CASE WHEN COALESCE(w.last_bid, w.last_ask) >= 50 THEN 1 ELSE 0 END AS res
+            FROM (
+                SELECT DISTINCT ON (close_time)
+                    close_time, yes_bid AS last_bid, yes_ask AS last_ask
+                FROM market_snapshots
+                WHERE ticker LIKE %s AND close_time ~ '^[0-9]+$'
+                ORDER BY close_time, scanned_at DESC
+            ) w
+        )"""
+
+    cte_defs, cte_params, join_parts = [], [], []
+    if "prior_resolution" in fields_used:
+        cte_defs.append(_res_cte("prior_res", 900))
+        cte_params.append(series_like)
+        join_parts.append("LEFT JOIN prior_res  pr  ON pr.ct  = m.close_time")
+    if "prev2_resolution" in fields_used:
+        cte_defs.append(_res_cte("prev2_res", 1800))
+        cte_params.append(series_like)
+        join_parts.append("LEFT JOIN prev2_res  p2r ON p2r.ct = m.close_time")
+
+    fills_def = f"""
+        fills AS (
+            SELECT DISTINCT ON (m.ticker)
+                m.ticker,
+                m.scanned_at         AS fill_time,
+                m.{ask_col}          AS fill_price,
+                m.time_to_close_secs AS ttc_at_fill
+            FROM market_snapshots m
+            {' '.join(join_parts)}
+            WHERE m.ticker LIKE %s
               AND {entry_clause}
               {cond_clause}
-            ORDER BY ticker, scanned_at
+            ORDER BY m.ticker, m.scanned_at
         )"""
-    params = [series_like] + entry_params + cond_params
+    fills_cte = "WITH " + ",".join(cte_defs + [fills_def])
+    params = cte_params + [series_like] + entry_params + cond_params
 
     if is_limit_sell:
         sql = fills_cte + f""",

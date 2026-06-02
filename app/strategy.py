@@ -32,7 +32,23 @@ def evaluate_market(market: dict, settings: dict | None = None,
     rule_list = settings.get("rules") or []
     ticker = market.get("ticker", "")
 
-    specs = rules_engine.evaluate_rules(rule_list, market, time_to_close=time_to_close)
+    # Fetch prior window resolutions for cross-contract momentum conditions.
+    # Only query when a rule actually references those fields — otherwise this is
+    # a needless DB hit on every market every scan tick.
+    extra = {}
+    close_time = market.get("close_time")
+    needs_prior = any(
+        c.get("field") in ("prior_resolution", "prev2_resolution")
+        for r in rule_list for c in (r.get("conditions") or [])
+    )
+    if needs_prior and close_time and "-" in ticker:
+        series_prefix = ticker.split("-", 1)[0]  # series id only, e.g. "KXBTC15M"
+        try:
+            extra = db.get_prior_resolutions_for_close(series_prefix, str(close_time))
+        except Exception:
+            pass
+
+    specs = rules_engine.evaluate_rules(rule_list, market, time_to_close=time_to_close, extra=extra)
 
     fresh = []
     for s in specs:

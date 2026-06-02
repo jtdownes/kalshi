@@ -4,6 +4,7 @@ PostgreSQL persistence for the Kalshi bot.
 
 import os
 import json
+import time
 import psycopg2
 import psycopg2.extras
 import threading
@@ -531,6 +532,72 @@ def get_latest_snapshots_for_series(series_tickers: list[str], max_age_seconds: 
         cur.execute(query, params)
         rows = cur.fetchall()
     return [dict(r) for r in rows]
+
+# Resolution of a *closed* 15-min window never changes, so memoise it.
+# Key: (series_prefix, window_close_str) -> 1 | 0.
+_window_res_cache: dict = {}
+
+
+def _window_resolution(cur, series_prefix: str, window_close: str):
+    """
+    Resolve a single window (identified by its close_time string) to 1 (YES) or
+    0 (NO) using the *final* snapshot's price, matching the backtest's
+    hold-to-expiration settlement (yes_bid, falling back to yes_ask, >= 50).
+
+    Returns None when no snapshot exists for that window. Only windows that have
+    actually closed are cached, so an in-progress window isn't pinned early.
+    """
+    key = (series_prefix, window_close)
+    cached = _window_res_cache.get(key)
+    if cached is not None:
+        return cached
+
+    cur.execute("""
+        SELECT yes_bid, yes_ask
+        FROM market_snapshots
+        WHERE close_time = %s AND ticker LIKE %s
+        ORDER BY scanned_at DESC
+        LIMIT 1
+    """, [window_close, series_prefix + "%"])
+    row = cur.fetchone()
+    if row is None:
+        return None
+
+    ref = row["yes_bid"] if row["yes_bid"] is not None else row["yes_ask"]
+    res = 1 if (ref is not None and ref >= 50) else 0
+
+    try:
+        if int(window_close) < int(time.time()):
+            _window_res_cache[key] = res
+    except (TypeError, ValueError):
+        pass
+    return res
+
+
+def get_prior_resolutions_for_close(series_prefix: str, close_time_str: str) -> dict:
+    """
+    Given a series prefix (e.g. 'KXBTC15M') and a market's close_time string
+    (Unix seconds as text), look up whether the previous one and two sequential
+    15-min windows resolved YES (1) or NO (0).
+
+    Returns {"prior_resolution": 1|0|None, "prev2_resolution": 1|0|None}.
+    None means no snapshot data exists for that window.
+    """
+    try:
+        ct = int(float(close_time_str))
+    except (TypeError, ValueError):
+        return {"prior_resolution": None, "prev2_resolution": None}
+
+    prev1 = str(ct - 900)
+    prev2 = str(ct - 1800)
+
+    with _lock, _conn() as conn:
+        cur = conn.cursor(cursor_factory=psycopg2.extras.DictCursor)
+        r1 = _window_resolution(cur, series_prefix, prev1)
+        r2 = _window_resolution(cur, series_prefix, prev2)
+
+    return {"prior_resolution": r1, "prev2_resolution": r2}
+
 
 def get_settings() -> dict:
     query = "SELECT * FROM settings WHERE id = 1"

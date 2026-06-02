@@ -77,6 +77,7 @@ export type RuleField =
   | 'time_to_close' | 'distance_to_strike'
   | 'yes_ask' | 'yes_bid' | 'no_ask' | 'no_bid'
   | 'btc_price' | 'spread' | 'volume' | 'open_interest'
+  | 'prior_resolution' | 'prev2_resolution'
 export type RuleOp = 'lt' | 'lte' | 'gt' | 'gte' | 'eq' | 'between'
 
 export interface RuleCondition {

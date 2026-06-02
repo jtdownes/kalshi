@@ -264,3 +264,6 @@ END $$;
 CREATE INDEX IF NOT EXISTS idx_orders_ticker  ON orders(market_ticker);
 CREATE INDEX IF NOT EXISTS idx_orders_status  ON orders(status);
 CREATE INDEX IF NOT EXISTS idx_snaps_ticker   ON market_snapshots(ticker);
+-- Supports per-window resolution lookups (close_time = X ORDER BY scanned_at DESC)
+-- used by the live momentum signal and the backtest's prior-window CTEs.
+CREATE INDEX IF NOT EXISTS idx_snaps_close_scanned ON market_snapshots(close_time, scanned_at);

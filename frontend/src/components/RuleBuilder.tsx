@@ -6,16 +6,18 @@ import type {
 type Unit = 'time' | '¢' | '$' | ''
 
 const FIELD_META: Record<RuleField, { label: string; unit: Unit }> = {
-  time_to_close:      { label: 'Time to close',      unit: 'time' },
-  distance_to_strike: { label: 'Distance to strike', unit: '$' },
-  yes_ask:            { label: 'YES ask',            unit: '¢' },
-  yes_bid:            { label: 'YES bid',            unit: '¢' },
-  no_ask:             { label: 'NO ask',             unit: '¢' },
-  no_bid:             { label: 'NO bid',             unit: '¢' },
-  btc_price:          { label: 'BTC price',          unit: '$' },
-  spread:             { label: 'Spread (ask−bid)',   unit: '¢' },
-  volume:             { label: 'Volume',             unit: '' },
-  open_interest:      { label: 'Open interest',      unit: '' },
+  time_to_close:      { label: 'Time to close',           unit: 'time' },
+  distance_to_strike: { label: 'Distance to strike',      unit: '$' },
+  yes_ask:            { label: 'YES ask',                 unit: '¢' },
+  yes_bid:            { label: 'YES bid',                 unit: '¢' },
+  no_ask:             { label: 'NO ask',                  unit: '¢' },
+  no_bid:             { label: 'NO bid',                  unit: '¢' },
+  btc_price:          { label: 'BTC price',               unit: '$' },
+  spread:             { label: 'Spread (ask−bid)',        unit: '¢' },
+  volume:             { label: 'Volume',                  unit: '' },
+  open_interest:      { label: 'Open interest',           unit: '' },
+  prior_resolution:   { label: 'Prior window (1=YES 0=NO)',  unit: '' },
+  prev2_resolution:   { label: '2nd prior window (1=YES 0=NO)', unit: '' },
 }
 const FIELD_ORDER = Object.keys(FIELD_META) as RuleField[]
 
@@ -64,8 +66,10 @@ function displayToSecs(val: number, unit: 'min' | 'sec'): number {
 // ── Plain-English summary ─────────────────────────────────────────────────────
 function fmtFieldValue(c: RuleCondition): string {
   const meta = FIELD_META[c.field]
+  const isResolution = c.field === 'prior_resolution' || c.field === 'prev2_resolution'
   const v = (n: number | null | undefined) => {
     if (n == null) return '?'
+    if (isResolution) return n === 1 ? 'YES' : n === 0 ? 'NO' : String(n)
     if (meta.unit === 'time') {
       const u = timeUnitOf(n)
       return `${secsToDisplay(n, u)}${u === 'min' ? 'm' : 's'}`

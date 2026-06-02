@@ -40,16 +40,21 @@ FIELDS = (
     "spread",
     "volume",
     "open_interest",
+    "prior_resolution",   # 1=YES 0=NO: result of previous sequential 15-min window
+    "prev2_resolution",   # 1=YES 0=NO: result 2 windows back
 )
 
 OPS = ("lt", "lte", "gt", "gte", "eq", "between")
 
 
-def compute_fields(market: dict, time_to_close: int | None = None) -> dict:
+def compute_fields(market: dict, time_to_close: int | None = None,
+                   extra: dict | None = None) -> dict:
     """
     Build the field dict a rule's conditions are evaluated against, from a
     market snapshot row. `time_to_close` overrides the (possibly stale) snapshot
     value with a freshly computed seconds-to-close from the scanner.
+    `extra` may supply cross-contract fields such as prior_resolution and
+    prev2_resolution (values 0.0 or 1.0).
     """
     def num(v):
         if v is None or v == "":
@@ -76,7 +81,7 @@ def compute_fields(market: dict, time_to_close: int | None = None) -> dict:
     if btc is not None and strike is not None:
         distance = btc - strike
 
-    return {
+    result = {
         "time_to_close":      float(ttc) if ttc is not None else None,
         "distance_to_strike": distance,
         "yes_ask":            yes_ask,
@@ -88,6 +93,12 @@ def compute_fields(market: dict, time_to_close: int | None = None) -> dict:
         "volume":             num(market.get("volume")),
         "open_interest":      num(market.get("open_interest")),
     }
+    if extra:
+        for k in ("prior_resolution", "prev2_resolution"):
+            v = extra.get(k)
+            if v is not None:
+                result[k] = float(v)
+    return result
 
 
 def _check_condition(cond: dict, fields: dict) -> bool:
@@ -145,14 +156,16 @@ def _resolve_entry_price(entry: dict, side: str, fields: dict) -> int | None:
     return price
 
 
-def evaluate_rules(rules: list, market: dict, time_to_close: int | None = None) -> list[dict]:
+def evaluate_rules(rules: list, market: dict, time_to_close: int | None = None,
+                   extra: dict | None = None) -> list[dict]:
     """
     Return a list of order specs for every enabled rule whose conditions pass.
 
     Each spec: {"side", "price_cents", "quantity", "exit", "rule_id"}.
     Dedup against already-open orders is the caller's responsibility.
+    `extra` may carry cross-contract fields (e.g. prior_resolution).
     """
-    fields = compute_fields(market, time_to_close)
+    fields = compute_fields(market, time_to_close, extra=extra)
     specs: list[dict] = []
 
     for idx, rule in enumerate(rules or []):
