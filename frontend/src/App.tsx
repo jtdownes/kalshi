@@ -92,6 +92,7 @@ export interface RuleAction {
   entry: RuleEntry
   quantity: number
   exit: RuleExit
+  cancel_sibling_on_fill?: boolean
 }
 export interface StrategyRule {
   id: string

@@ -169,6 +169,7 @@ def evaluate_rules(rules: list, market: dict, time_to_close: int | None = None) 
         except (TypeError, ValueError):
             quantity = 1
         exit_spec = action.get("exit") or {"type": "hold"}
+        oco = bool(action.get("cancel_sibling_on_fill"))
 
         for side in sides:
             if side not in ("yes", "no"):
@@ -182,6 +183,7 @@ def evaluate_rules(rules: list, market: dict, time_to_close: int | None = None) 
                 "quantity":    quantity,
                 "exit":        exit_spec,
                 "rule_id":     rule_id,
+                "oco":         oco,
             })
 
     return specs

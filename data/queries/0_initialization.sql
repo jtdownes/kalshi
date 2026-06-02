@@ -252,6 +252,15 @@ BEGIN
     END IF;
 END $$;
 
+-- OCO: when set on an entry order, filling it cancels sibling resting entries
+-- from the same rule on the same market (one-cancels-other).
+DO $$
+BEGIN
+    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='orders' AND column_name='cancel_sibling_on_fill') THEN
+        ALTER TABLE orders ADD COLUMN cancel_sibling_on_fill BOOLEAN NOT NULL DEFAULT FALSE;
+    END IF;
+END $$;
+
 CREATE INDEX IF NOT EXISTS idx_orders_ticker  ON orders(market_ticker);
 CREATE INDEX IF NOT EXISTS idx_orders_status  ON orders(status);
 CREATE INDEX IF NOT EXISTS idx_snaps_ticker   ON market_snapshots(ticker);

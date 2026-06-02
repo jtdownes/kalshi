@@ -34,10 +34,16 @@ def evaluate_market(market: dict, settings: dict | None = None,
 
     specs = rules_engine.evaluate_rules(rule_list, market, time_to_close=time_to_close)
 
-    fresh = [
-        s for s in specs
-        if not db.has_open_order_for_rule(ticker, s["side"], s["rule_id"], profile_id=profile_id)
-    ]
+    fresh = []
+    for s in specs:
+        # This rule already has a resting/filled order on this side+market.
+        if db.has_open_order_for_rule(ticker, s["side"], s["rule_id"], profile_id=profile_id):
+            continue
+        # OCO: once any leg of this rule has filled on this market, don't place
+        # more legs (the cancelled sibling would otherwise be re-rested).
+        if s.get("oco") and db.has_filled_entry_for_rule(ticker, s["rule_id"], profile_id=profile_id):
+            continue
+        fresh.append(s)
 
     if fresh:
         log.debug("Opportunity: %s  yes_ask=%s  no_ask=%s  -> %s",

@@ -42,6 +42,7 @@ export const defaultRule = (): StrategyRule => ({
     entry: { type: 'limit', price_cents: null },
     quantity: 1,
     exit: { type: 'hold' },
+    cancel_sibling_on_fill: false,
   },
 })
 
@@ -89,7 +90,10 @@ export function ruleSummary(rule: StrategyRule): string {
   const exitTxt = a.exit.type === 'limit_sell'
     ? `, sell @ ${a.exit.price_cents ?? '?'}¢`
     : ''
-  return `IF ${conds} → buy ${sideTxt} ${entryTxt} ×${a.quantity}${exitTxt}`
+  const ocoTxt = a.side === 'both' && a.cancel_sibling_on_fill
+    ? ' (first fill cancels the other)'
+    : ''
+  return `IF ${conds} → buy ${sideTxt} ${entryTxt} ×${a.quantity}${exitTxt}${ocoTxt}`
 }
 
 // ── Component ─────────────────────────────────────────────────────────────────
@@ -303,6 +307,20 @@ export default function RuleBuilder({ rules, onChange, readOnly = false }: Props
                   </label>
                 )}
               </div>
+              {a.side === 'both' && (
+                <label className="rule-oco">
+                  <input
+                    type="checkbox"
+                    checked={!!a.cancel_sibling_on_fill}
+                    disabled={readOnly}
+                    onChange={e => patchRule(ri, { action: { ...a, cancel_sibling_on_fill: e.target.checked } })}
+                  />
+                  <span>
+                    <strong>Cancel the other side when one fills (OCO)</strong>
+                    <small>Rest both legs; the first to fill cancels the sibling. Leave off for cheap two-sided longshot fishing.</small>
+                  </span>
+                </label>
+              )}
             </div>
 
             <div className="rule-summary">{ruleSummary(rule)}</div>

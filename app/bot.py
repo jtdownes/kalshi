@@ -155,6 +155,33 @@ def _place_limit_sell_exit(client: KalshiClient, entry_order: dict):
     )
 
 
+def _cancel_sibling_legs(client: KalshiClient, order: dict):
+    """
+    OCO: when one entry leg of a rule fills, cancel the other resting legs from
+    the same rule on the same market so we don't double-fill (e.g. a "Both"
+    rule that rested YES and NO).
+    """
+    siblings = db.get_sibling_resting_entries(
+        order["market_ticker"],
+        order.get("entry_rule_id"),
+        order.get("kalshi_order_id"),
+        profile_id=order.get("profile_id"),
+    )
+    for sib in siblings:
+        sib_oid = sib.get("kalshi_order_id")
+        if not sib_oid:
+            continue
+        try:
+            client.cancel_order(sib_oid)
+        except KalshiError as e:
+            # Likely already filled/canceled in a race — record best-effort.
+            log.warning("OCO cancel failed for %s %s: %s",
+                        sib.get("side"), order["market_ticker"], e)
+        db.update_order(sib_oid, status="canceled")
+        log.info("OCO CANCEL %-6s %-50s  (sibling of filled %s)",
+                 sib.get("side"), order["market_ticker"], order["side"])
+
+
 def _handle_filled_order(client: KalshiClient, order: dict, filled_at: str = None):
     filled_at = filled_at or datetime.utcnow().isoformat()
     db.update_order(order["kalshi_order_id"], status="filled", filled_at=filled_at)
@@ -179,6 +206,9 @@ def _handle_filled_order(client: KalshiClient, order: dict, filled_at: str = Non
         order["market_ticker"],
         order["entry_price_cents"],
     )
+
+    if order.get("cancel_sibling_on_fill"):
+        _cancel_sibling_legs(client, order)
 
     if order.get("exit_strategy") != "limit_sell":
         return
@@ -254,6 +284,7 @@ def _scan(client: KalshiClient, settings: dict):
                     time_to_close_seconds=time_to_close,
                     profile_id=profile_id, count=quantity,
                     entry_rule_id=rule_id,
+                    cancel_sibling_on_fill=spec.get("oco", False),
                     exit_strategy=exit_strategy,
                     exit_target_cents=exit_target_cents,
                 )

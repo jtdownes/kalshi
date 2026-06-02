@@ -242,7 +242,7 @@ def save_order(client_order_id: str, market_ticker: str, side: str,
                parent_kalshi_order_id: str = None,
                exit_strategy: str = 'hold_to_expiration',
                exit_target_cents: int = None, count: int = 1,
-               entry_rule_id: str = None):
+               entry_rule_id: str = None, cancel_sibling_on_fill: bool = False):
     now = datetime.utcnow().isoformat()
     query = """
         INSERT OR IGNORE INTO orders
@@ -251,14 +251,14 @@ def save_order(client_order_id: str, market_ticker: str, side: str,
            distance_to_strike_at_placement, market_close_time,
            time_to_close_at_placement, profile_id, order_role,
            parent_kalshi_order_id, exit_strategy, exit_target_cents,
-           entry_rule_id)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+           entry_rule_id, cancel_sibling_on_fill)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     """
     params = (client_order_id, kalshi_order_id, market_ticker, side,
               entry_price_cents, count, now, btc_price, distance_to_strike,
               market_close_time, time_to_close_seconds, profile_id,
               order_role, parent_kalshi_order_id, exit_strategy,
-              exit_target_cents, entry_rule_id)
+              exit_target_cents, entry_rule_id, cancel_sibling_on_fill)
 
     with _lock, _conn() as conn:
         _execute(conn, query, params)
@@ -299,6 +299,27 @@ def has_open_order_for_rule(market_ticker: str, side: str, entry_rule_id: str,
     clauses = ["market_ticker = %s", "side = %s", "entry_rule_id = %s",
                "order_role = 'entry'", "status IN ('resting', 'pending', 'filled')"]
     params = [market_ticker, side, entry_rule_id]
+    if profile_id is not None:
+        clauses.append("profile_id = %s")
+        params.append(profile_id)
+    query = f"SELECT 1 FROM orders WHERE {' AND '.join(clauses)} LIMIT 1"
+    with _lock, _conn() as conn:
+        cur = conn.cursor()
+        cur.execute(query, params)
+        row = cur.fetchone()
+    return row is not None
+
+def has_filled_entry_for_rule(market_ticker: str, entry_rule_id: str,
+                              profile_id: int | None = None) -> bool:
+    """
+    Has any entry leg of this rule already filled on this market? Used to stop
+    an OCO rule from re-placing a cancelled sibling leg after its partner filled.
+    """
+    if not entry_rule_id:
+        return False
+    clauses = ["market_ticker = %s", "entry_rule_id = %s",
+               "order_role = 'entry'", "status = 'filled'"]
+    params = [market_ticker, entry_rule_id]
     if profile_id is not None:
         clauses.append("profile_id = %s")
         params.append(profile_id)
@@ -353,13 +374,36 @@ def get_resting_orders() -> list[dict]:
         SELECT kalshi_order_id, market_ticker, side, entry_price_cents,
                count, market_close_time, profile_id, order_role,
                parent_kalshi_order_id, exit_order_kalshi_id,
-               exit_strategy, exit_target_cents
+               exit_strategy, exit_target_cents,
+               entry_rule_id, cancel_sibling_on_fill
         FROM orders
         WHERE status = 'resting'
     """
     with _lock, _conn() as conn:
         cur = conn.cursor(cursor_factory=psycopg2.extras.DictCursor)
         cur.execute(query)
+        rows = cur.fetchall()
+    return [dict(r) for r in rows]
+
+def get_sibling_resting_entries(market_ticker: str, entry_rule_id: str,
+                                exclude_kalshi_order_id: str,
+                                profile_id: int | None = None) -> list[dict]:
+    """
+    Resting entry orders from the SAME rule on the SAME market, excluding the
+    given order — i.e. the other OCO legs to cancel when one fills.
+    """
+    if not entry_rule_id:
+        return []
+    clauses = ["market_ticker = %s", "entry_rule_id = %s", "order_role = 'entry'",
+               "status = 'resting'", "kalshi_order_id IS DISTINCT FROM %s"]
+    params = [market_ticker, entry_rule_id, exclude_kalshi_order_id]
+    if profile_id is not None:
+        clauses.append("profile_id = %s")
+        params.append(profile_id)
+    query = f"SELECT kalshi_order_id, side FROM orders WHERE {' AND '.join(clauses)}"
+    with _lock, _conn() as conn:
+        cur = conn.cursor(cursor_factory=psycopg2.extras.DictCursor)
+        cur.execute(query, params)
         rows = cur.fetchall()
     return [dict(r) for r in rows]
 
