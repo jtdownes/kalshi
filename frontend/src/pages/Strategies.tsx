@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react'
 import type { Settings, Profile, StrategyRule } from '../App'
 import { centsToUSD, fmtTime, fmtTickers } from '../App'
 import RuleBuilder, { defaultRule, ruleSummary } from '../components/RuleBuilder'
+import StrategyBacktest from '../components/StrategyBacktest'
 
 const SUPPORTED_STRATEGY_MARKETS = [
   { value: 'KXBTC15M', label: 'Bitcoin 15 Minute' },
@@ -336,6 +337,10 @@ export default function Strategies({ settings, profiles, refresh }: Props) {
                     <div><span>Daily Limit</span><strong>{centsToUSD(viewModal.profile.max_daily_spend_cents)}</strong></div>
                   </div>
                   <RuleBuilder rules={viewModal.profile.rules ?? []} onChange={() => {}} readOnly />
+                  <StrategyBacktest
+                    rules={viewModal.profile.rules ?? []}
+                    series={normalizeStrategyMarkets(viewModal.profile.btc_series_tickers.split(',').map(t => t.trim()).filter(Boolean))[0]}
+                  />
                 </>
               ) : (
                 <div className="strategy-trades-table-wrap" style={{ marginTop: 4 }}>
@@ -465,6 +470,11 @@ export default function Strategies({ settings, profiles, refresh }: Props) {
                 <RuleBuilder
                   rules={newStrategyDraft.rules}
                   onChange={rules => updateDraft({ rules })}
+                />
+
+                <StrategyBacktest
+                  rules={newStrategyDraft.rules}
+                  series={newStrategyDraft.btc_series_tickers[0] ?? SUPPORTED_STRATEGY_MARKETS[0].value}
                 />
 
                 <div className="strategy-form-actions field-wide">
