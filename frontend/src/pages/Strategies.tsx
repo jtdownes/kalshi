@@ -184,6 +184,28 @@ export default function Strategies({ settings, profiles, refresh }: Props) {
     }
   }
 
+  const deleteProfile = async (profileId: number) => {
+    if (!confirm('Delete this strategy? This cannot be undone.')) return
+    try {
+      const resp = await fetch(`/api/profiles/${profileId}`, { method: 'DELETE' })
+      if (resp.ok) {
+        if (viewModal?.profile.id === profileId) setViewModal(null)
+        await refresh()
+      } else if (resp.status === 409) {
+        const js = await resp.json().catch(() => ({}))
+        alert(js.error || 'Strategy has historical runs and cannot be deleted')
+      } else if (resp.status === 404) {
+        alert('Strategy not found')
+        await refresh()
+      } else {
+        const js = await resp.json().catch(() => ({}))
+        throw new Error(js.error || 'Failed to delete strategy')
+      }
+    } catch (err: any) {
+      alert(err.message || String(err))
+    }
+  }
+
   const deactivateProfile = async (profileId: number) => {
     setActivating(true)
     try {
@@ -252,6 +274,16 @@ export default function Strategies({ settings, profiles, refresh }: Props) {
                 <div className="strategy-card-head-right">
                   {isActive && <span className="badge badge-live">ACTIVE</span>}
                   <span className="strategy-chip strategy-chip-dim">{fmtTickers(p.btc_series_tickers)}</span>
+                  {(p.order_count ?? 0) === 0 && (
+                    <button
+                      className="btn"
+                      onClick={e => { e.stopPropagation(); deleteProfile(p.id) }}
+                      style={{ marginLeft: 8 }}
+                      aria-label={`Delete strategy ${p.name}`}
+                    >
+                      Delete
+                    </button>
+                  )}
                 </div>
               </div>
 

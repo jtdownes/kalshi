@@ -956,6 +956,21 @@ def deactivate_profile(profile_id: int):
     return jsonify({"status": "success"})
 
 
+@app.delete("/api/profiles/<int:profile_id>")
+def delete_profile(profile_id: int):
+    try:
+        ok, count = database.delete_profile(profile_id)
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+    if not ok:
+        if count is None:
+            return jsonify({"error": "Profile not found"}), 404
+        return jsonify({"error": "Profile has historical runs and cannot be deleted", "order_count": count}), 409
+
+    return jsonify({"status": "success", "deleted_profile_id": profile_id}), 200
+
+
 @app.get("/api/snapshots/series")
 def snapshot_series():
     ticker = request.args.get("ticker", "").strip().upper()

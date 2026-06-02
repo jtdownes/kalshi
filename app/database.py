@@ -235,6 +235,45 @@ def update_profile(profile_id: int, settings_dict: dict):
             """, (profile_id,))
         conn.commit()
 
+
+def delete_profile(profile_id: int) -> tuple[bool, int | None]:
+    """
+    Delete a profile only if it has no historical entry orders.
+    Returns (True, 0) on success.
+    Returns (False, count) if there are existing entry orders (count > 0).
+    Returns (False, None) if the profile was not found.
+    """
+    with _lock, _conn() as conn:
+        cur = conn.cursor()
+        # Count any entry orders for this profile
+        cur.execute("SELECT COUNT(*) FROM orders WHERE profile_id = %s AND order_role = 'entry'", (profile_id,))
+        row = cur.fetchone()
+        count = row[0] if row else 0
+        if count and count > 0:
+            return (False, count)
+
+        # Ensure profile exists
+        cur.execute("SELECT id FROM profiles WHERE id = %s", (profile_id,))
+        if not cur.fetchone():
+            return (False, None)
+
+        # Delete profile
+        cur.execute("DELETE FROM profiles WHERE id = %s", (profile_id,))
+
+        # If this was the active profile, pick another or null
+        cur.execute("SELECT active_profile_id FROM settings WHERE id = 1")
+        r = cur.fetchone()
+        if r and r[0] == profile_id:
+            cur.execute("SELECT id FROM profiles ORDER BY created_at DESC LIMIT 1")
+            new = cur.fetchone()
+            if new:
+                cur.execute("UPDATE settings SET active_profile_id = %s WHERE id = 1", (new[0],))
+            else:
+                cur.execute("UPDATE settings SET active_profile_id = NULL WHERE id = 1")
+
+        conn.commit()
+    return (True, 0)
+
 def save_order(client_order_id: str, market_ticker: str, side: str,
                entry_price_cents: int, kalshi_order_id: str = None,
                btc_price: float = None, distance_to_strike: float = None,
