@@ -18,6 +18,8 @@ interface SeriesData {
   yes_bid: number | null;
   no_bid: number | null;
   btc_price: number | null;
+  brti_price: number | null;
+  kraken_price: number | null;
   strike_str: string | null;
 }
 
@@ -69,6 +71,8 @@ export default function PriceActionChart({ ticker, globalSnapshots, openOrders =
           yes_bid: latest.yes_bid,
           no_bid: latest.no_bid,
           btc_price: latest.btc_price,
+          brti_price: latest.brti_price,
+          kraken_price: latest.kraken_price,
           strike_str: latest.strike_str,
         }].slice(-1000);
       });
@@ -84,7 +88,9 @@ export default function PriceActionChart({ ticker, globalSnapshots, openOrders =
   const strikeNum = strike != null ? parseFloat(strike) : null;
 
   const btcDomain: [number, number] | ['auto', 'auto'] = (() => {
-    const prices = data.map(d => d.btc_price).filter((p): p is number => p != null);
+    const prices = data
+      .flatMap(d => [d.btc_price, d.kraken_price])
+      .filter((p): p is number => p != null);
     if (prices.length === 0) return ['auto', 'auto'];
     const candidates = strikeNum != null ? [...prices, strikeNum] : prices;
     const mn = Math.min(...candidates);
@@ -262,8 +268,9 @@ export default function PriceActionChart({ ticker, globalSnapshots, openOrders =
                   labelFormatter={fmtTime}
                   contentStyle={{ backgroundColor: '#1a1a1a', borderColor: '#444', color: '#eee', borderRadius: '4px' }}
                   itemStyle={{ fontSize: 11 }}
-                  formatter={(val: number) => [`$${val.toLocaleString()}`, 'BTC']}
+                  formatter={(val: number, name: string) => [`$${val.toLocaleString()}`, name]}
                 />
+                <Legend verticalAlign="top" height={24} iconType="plainline" iconSize={12} wrapperStyle={{ fontSize: 11 }} />
 
                 {/* Strike price line */}
                 {strikeNum != null && (
@@ -281,7 +288,8 @@ export default function PriceActionChart({ ticker, globalSnapshots, openOrders =
                   />
                 )}
 
-                <Line type="monotone" dataKey="btc_price" name="BTC" stroke="#f7931a" dot={false} strokeWidth={2} isAnimationActive={false} connectNulls />
+                <Line type="monotone" dataKey="btc_price" name="Coinbase" stroke="#f7931a" dot={false} strokeWidth={2} isAnimationActive={false} connectNulls />
+                <Line type="monotone" dataKey="kraken_price" name="Kraken" stroke="#a855f7" dot={false} strokeWidth={2} isAnimationActive={false} connectNulls />
               </LineChart>
             </ResponsiveContainer>
           </div>

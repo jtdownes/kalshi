@@ -45,6 +45,87 @@ def fetch_btc_price() -> float | None:
         return None
 
 
+def _get_json(url: str, timeout: int = 3):
+    req = urllib.request.Request(url, headers={"User-Agent": "kalshi-bot/1.0"})
+    with urllib.request.urlopen(req, timeout=timeout) as resp:
+        return json.loads(resp.read().decode())
+
+
+def _mid(bid, ask) -> float | None:
+    try:
+        b, a = float(bid), float(ask)
+        if b > 0 and a > 0:
+            return (b + a) / 2
+    except (TypeError, ValueError):
+        pass
+    return None
+
+
+# Each constituent returns a single venue mid (or None on any failure). These are
+# the venues CF Benchmarks aggregates for BRTI, so an equal-weighted average of
+# whatever responds is a close, license-free proxy for the real index.
+def _venue_coinbase() -> float | None:
+    try:
+        d = _get_json("https://api.coinbase.com/v2/prices/BTC-USD/spot")
+        return float(d["data"]["amount"])
+    except Exception:
+        return None
+
+
+def _venue_kraken() -> float | None:
+    try:
+        r = _get_json("https://api.kraken.com/0/public/Ticker?pair=XBTUSD")["result"]
+        t = next(iter(r.values()))
+        return _mid(t["b"][0], t["a"][0])
+    except Exception:
+        return None
+
+
+def _venue_bitstamp() -> float | None:
+    try:
+        d = _get_json("https://www.bitstamp.net/api/v2/ticker/btcusd/")
+        return _mid(d["bid"], d["ask"])
+    except Exception:
+        return None
+
+
+def _venue_gemini() -> float | None:
+    try:
+        d = _get_json("https://api.gemini.com/v1/pubticker/btcusd")
+        return _mid(d["bid"], d["ask"])
+    except Exception:
+        return None
+
+
+def fetch_brti_price() -> float | None:
+    """BRTI proxy: equal-weighted mid across BRTI's constituent venues.
+
+    Not the licensed CF Benchmarks BRTI fixing, but a close keyless approximation
+    of the index Kalshi settles crypto markets on. Averages whatever venues
+    respond; returns None only if all of them fail.
+    """
+    prices = [v for v in (
+        _venue_coinbase(),
+        _venue_kraken(),
+        _venue_bitstamp(),
+        _venue_gemini(),
+    ) if v is not None]
+    if not prices:
+        log.warning("fetch_brti_price failed: no venues responded")
+        return None
+    return round(sum(prices) / len(prices), 2)
+
+
+def fetch_kraken_price() -> float | None:
+    """Kraken BTC/USD mid — a single BRTI constituent, recorded as a second
+    venue line alongside Coinbase so the venue basis is visible on the chart."""
+    price = _venue_kraken()
+    if price is None:
+        log.warning("fetch_kraken_price failed")
+        return None
+    return round(price, 2)
+
+
 def dollars_to_cents(v) -> float | None:
     """Kalshi returns prices as strings like '0.3000' (USD). Convert to cents with 0.1c precision."""
     if v is None or v == "":
@@ -296,6 +377,8 @@ def _collect_market_snapshots(client: KalshiClient):
     now_ts = int(time.time())
     max_close = now_ts + config.LOOK_AHEAD_SECONDS
     btc_price = fetch_btc_price()
+    brti_price = fetch_brti_price()
+    kraken_price = fetch_kraken_price()
 
     for series in config.SNAPSHOT_SERIES_TICKERS:
         try:
@@ -335,6 +418,8 @@ def _collect_market_snapshots(client: KalshiClient):
                 no_ask=no_ask,
                 no_bid=no_bid,
                 btc_price=btc_price,
+                brti_price=brti_price,
+                kraken_price=kraken_price,
                 time_to_close_secs=time_to_close,
                 strike_str=str(strike) if strike is not None else None,
                 volume=volume,
