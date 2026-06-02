@@ -326,12 +326,12 @@ def backtest():
 
 _BT_COL = {
     "time_to_close":      "m.time_to_close_secs",
-    "distance_to_strike": "(b.coinbase_price - NULLIF(m.strike_str, '')::numeric)",
+    "distance_to_strike": "(COALESCE(b.consolidated_price, b.coinbase_price) - NULLIF(m.strike_str, '')::numeric)",
     "yes_ask":            "m.yes_ask",
     "yes_bid":            "m.yes_bid",
     "no_ask":             "m.no_ask",
     "no_bid":             "m.no_bid",
-    "btc_price":          "b.coinbase_price",
+    "btc_price":          "COALESCE(b.consolidated_price, b.coinbase_price)",
     "spread":             "(m.yes_ask - m.yes_bid)",
     "volume":             "m.volume",
     "open_interest":      "m.open_interest",
@@ -971,8 +971,9 @@ def snapshot_series():
     with _conn() as c:
         c.execute("""
             SELECT m.scanned_at, m.yes_bid, m.no_bid,
-                   b.coinbase_price AS btc_price, b.consolidated_price AS brti_price,
-                   b.kraken_price, b.bitstamp_price, b.gemini_price, m.strike_str
+                   COALESCE(b.consolidated_price, b.coinbase_price) AS btc_price,
+                   b.consolidated_price AS brti_price,
+                   b.coinbase_price, b.kraken_price, b.bitstamp_price, b.gemini_price, m.strike_str
             FROM market_snapshots m
             LEFT JOIN bitcoin_snapshots b ON b.scanned_at = m.scanned_at
             WHERE m.ticker = %s

@@ -504,8 +504,9 @@ def get_recent_market_snapshots(limit: int | None = None) -> list[dict]:
     query = f"""
         SELECT m.id, m.ticker, m.title, m.scanned_at, m.close_time,
                m.yes_ask, m.no_ask, m.yes_bid, m.no_bid,
-               b.coinbase_price AS btc_price, b.consolidated_price AS brti_price,
-               b.kraken_price, b.bitstamp_price, b.gemini_price,
+               COALESCE(b.consolidated_price, b.coinbase_price) AS btc_price,
+               b.consolidated_price AS brti_price,
+               b.coinbase_price, b.kraken_price, b.bitstamp_price, b.gemini_price,
                b.coinbase_volume, b.kraken_volume, b.bitstamp_volume, b.gemini_volume,
                m.time_to_close_secs, m.strike_str, m.volume, m.open_interest
         FROM market_snapshots m
@@ -524,8 +525,9 @@ def get_market_snapshots_for_ticker(ticker: str, limit: int | None = None) -> li
     query = f"""
         SELECT m.id, m.ticker, m.title, m.scanned_at, m.close_time,
                m.yes_ask, m.no_ask, m.yes_bid, m.no_bid,
-               b.coinbase_price AS btc_price, b.consolidated_price AS brti_price,
-               b.kraken_price, b.bitstamp_price, b.gemini_price,
+               COALESCE(b.consolidated_price, b.coinbase_price) AS btc_price,
+               b.consolidated_price AS brti_price,
+               b.coinbase_price, b.kraken_price, b.bitstamp_price, b.gemini_price,
                b.coinbase_volume, b.kraken_volume, b.bitstamp_volume, b.gemini_volume,
                m.time_to_close_secs, m.strike_str, m.volume, m.open_interest
         FROM market_snapshots m
@@ -551,8 +553,9 @@ def get_latest_snapshots_for_series(series_tickers: list[str], max_age_seconds: 
         SELECT DISTINCT ON (m.ticker)
                m.id, m.ticker, m.title, m.scanned_at, m.close_time,
                m.yes_ask, m.no_ask, m.yes_bid, m.no_bid,
-               b.coinbase_price AS btc_price, b.consolidated_price AS brti_price,
-               b.kraken_price, b.bitstamp_price, b.gemini_price,
+               COALESCE(b.consolidated_price, b.coinbase_price) AS btc_price,
+               b.consolidated_price AS brti_price,
+               b.coinbase_price, b.kraken_price, b.bitstamp_price, b.gemini_price,
                b.coinbase_volume, b.kraken_volume, b.bitstamp_volume, b.gemini_volume,
                m.time_to_close_secs, m.strike_str, m.volume, m.open_interest
         FROM market_snapshots m

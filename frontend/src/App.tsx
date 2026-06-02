@@ -67,8 +67,9 @@ export interface Snapshot {
   no_bid: number | null
   time_to_close_secs: number | null
   strike_str: string | null
-  btc_price: number | null
-  brti_price: number | null
+  btc_price: number | null      // consolidated multi-venue price (drives logic/display)
+  brti_price: number | null     // consolidated price (BRTI proxy); same as btc_price
+  coinbase_price: number | null // Coinbase-only venue, for the per-venue chart line
   kraken_price: number | null
   bitstamp_price: number | null
   gemini_price: number | null

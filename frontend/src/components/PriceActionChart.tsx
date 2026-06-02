@@ -17,8 +17,9 @@ interface SeriesData {
   scanned_at: string;
   yes_bid: number | null;
   no_bid: number | null;
-  btc_price: number | null;
-  brti_price: number | null;
+  btc_price: number | null;       // consolidated multi-venue price
+  brti_price: number | null;      // consolidated price (BRTI proxy)
+  coinbase_price: number | null;  // Coinbase-only venue line
   kraken_price: number | null;
   bitstamp_price: number | null;
   gemini_price: number | null;
@@ -75,6 +76,7 @@ export default function PriceActionChart({ ticker, globalSnapshots, openOrders =
           no_bid: latest.no_bid,
           btc_price: latest.btc_price,
           brti_price: latest.brti_price,
+          coinbase_price: latest.coinbase_price,
           kraken_price: latest.kraken_price,
           bitstamp_price: latest.bitstamp_price,
           gemini_price: latest.gemini_price,
@@ -93,11 +95,12 @@ export default function PriceActionChart({ ticker, globalSnapshots, openOrders =
   const strikeNum = strike != null ? parseFloat(strike) : null;
 
   // Consolidated = mean of whatever venue prices a row actually has. Computed
-  // per row rather than read from the stored brti_price column, so historical
-  // rows that only have Coinbase still get a value (= Coinbase) instead of a
-  // blank gap where the other venues didn't exist yet.
+  // per row from the individual venues (Coinbase/Kraken/Bitstamp/Gemini) rather
+  // than read from the stored consolidated column, so historical rows that only
+  // have Coinbase still get a value (= Coinbase) instead of a blank gap where
+  // the other venues didn't exist yet.
   const chartData = data.map(d => {
-    const venues = [d.btc_price, d.kraken_price, d.bitstamp_price, d.gemini_price]
+    const venues = [d.coinbase_price, d.kraken_price, d.bitstamp_price, d.gemini_price]
       .filter((p): p is number => p != null);
     const consolidated = venues.length
       ? Math.round((venues.reduce((a, b) => a + b, 0) / venues.length) * 100) / 100
@@ -107,7 +110,7 @@ export default function PriceActionChart({ ticker, globalSnapshots, openOrders =
 
   const btcDomain: [number, number] | ['auto', 'auto'] = (() => {
     const prices = data
-      .flatMap(d => [d.btc_price, d.kraken_price, d.bitstamp_price, d.gemini_price])
+      .flatMap(d => [d.coinbase_price, d.kraken_price, d.bitstamp_price, d.gemini_price])
       .filter((p): p is number => p != null);
     if (prices.length === 0) return ['auto', 'auto'];
     const candidates = strikeNum != null ? [...prices, strikeNum] : prices;
@@ -356,7 +359,7 @@ export default function PriceActionChart({ ticker, globalSnapshots, openOrders =
                 {btcView === 'consolidated'
                   ? <Line key="consolidated" type="monotone" dataKey="consolidated" name="Consolidated (avg available)" stroke={consolidatedSplit != null ? 'url(#consolidatedStrikeSplit)' : '#ffffff'} dot={false} strokeWidth={2.5} isAnimationActive={false} connectNulls />
                   : [
-                      <Line key="coinbase" type="monotone" dataKey="btc_price" name="Coinbase" stroke="#f7931a" dot={false} strokeWidth={2} isAnimationActive={false} connectNulls />,
+                      <Line key="coinbase" type="monotone" dataKey="coinbase_price" name="Coinbase" stroke="#f7931a" dot={false} strokeWidth={2} isAnimationActive={false} connectNulls />,
                       <Line key="kraken" type="monotone" dataKey="kraken_price" name="Kraken" stroke="#a855f7" dot={false} strokeWidth={2} isAnimationActive={false} connectNulls />,
                       <Line key="bitstamp" type="monotone" dataKey="bitstamp_price" name="Bitstamp" stroke="#86efac" dot={false} strokeWidth={2} isAnimationActive={false} connectNulls />,
                       <Line key="gemini" type="monotone" dataKey="gemini_price" name="Gemini" stroke="#38bdf8" dot={false} strokeWidth={2} isAnimationActive={false} connectNulls />,
