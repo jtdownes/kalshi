@@ -86,6 +86,7 @@ export default function Strategies({ settings, profiles, refresh }: Props) {
     loadingTrades: boolean
   } | null>(null)
   const [newStrategyDraft, setNewStrategyDraft] = useState<StrategyDraft | null>(null)
+  const [editingProfileId, setEditingProfileId] = useState<number | null>(null)
   const [renameModal,      setRenameModal]      = useState<{ profileId: number; name: string } | null>(null)
   const [saving,           setSaving]           = useState(false)
   const [activating,       setActivating]       = useState(false)
@@ -131,13 +132,23 @@ export default function Strategies({ settings, profiles, refresh }: Props) {
     if (err) { alert(err); return }
     setSaving(true)
     try {
-      const resp = await fetch('/api/profiles', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(newStrategyDraft),
-      })
+      let resp: Response
+      if (editingProfileId) {
+        resp = await fetch(`/api/profiles/${editingProfileId}`, {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(newStrategyDraft),
+        })
+      } else {
+        resp = await fetch('/api/profiles', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(newStrategyDraft),
+        })
+      }
       if (!resp.ok) throw new Error('Failed to save strategy')
       setNewStrategyDraft(null)
+      setEditingProfileId(null)
       await refresh()
     } catch (err: any) {
       alert(err.message)
@@ -422,6 +433,18 @@ export default function Strategies({ settings, profiles, refresh }: Props) {
                   {viewModal.tab === 'settings' ? (
                     <>
                       <button className="btn" onClick={() => setRenameModal({ profileId: viewModal.profile.id, name: viewModal.profile.name })}>Rename</button>
+                      {(viewModal.profile.order_count ?? 0) === 0 && (
+                        <button
+                          className="btn"
+                          onClick={() => {
+                            setNewStrategyDraft(profileToDraft(viewModal.profile))
+                            setEditingProfileId(viewModal.profile.id)
+                            setViewModal(null)
+                          }}
+                        >
+                          Edit
+                        </button>
+                      )}
                       <button
                         className={`btn${viewModal.profile.is_active ? '' : ' btn-active'}`}
                         disabled={activating}
@@ -454,8 +477,8 @@ export default function Strategies({ settings, profiles, refresh }: Props) {
             <section className="strategy-config-panel">
               <div className="strategy-section-head">
                 <div>
-                  <div className="stat-label">Create Strategy</div>
-                  <h3>New Strategy</h3>
+                          <div className="stat-label">{editingProfileId ? 'Edit Strategy' : 'Create Strategy'}</div>
+                          <h3>{editingProfileId ? 'Edit Strategy' : 'New Strategy'}</h3>
                 </div>
                 <p>Build conditional rules — every matching rule fires, so you can ladder multiple entries. Parameters are locked after creation; copy as a template to iterate.</p>
               </div>
@@ -512,9 +535,9 @@ export default function Strategies({ settings, profiles, refresh }: Props) {
                 <div className="strategy-form-actions field-wide">
                   <span>Parameters are locked after creation — copy as a template to try different rules.</span>
                   <div className="strategy-form-buttons">
-                    <button type="button" className="btn" onClick={() => setNewStrategyDraft(null)}>Cancel</button>
+                    <button type="button" className="btn" onClick={() => { setNewStrategyDraft(null); setEditingProfileId(null) }}>Cancel</button>
                     <button type="submit" className="btn btn-active" disabled={saving}>
-                      {saving ? 'Saving…' : 'Create and Activate'}
+                      {saving ? 'Saving…' : editingProfileId ? 'Save Changes' : 'Create and Activate'}
                     </button>
                   </div>
                 </div>
