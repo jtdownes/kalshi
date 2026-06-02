@@ -154,6 +154,10 @@ CREATE TABLE IF NOT EXISTS market_snapshots (
     kraken_price         REAL,
     bitstamp_price       REAL,
     gemini_price         REAL,
+    coinbase_volume      REAL,
+    kraken_volume        REAL,
+    bitstamp_volume      REAL,
+    gemini_volume        REAL,
     time_to_close_secs   INTEGER,
     strike_str           TEXT,
     volume               INTEGER,
@@ -185,6 +189,22 @@ DO $$
 BEGIN
     IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='market_snapshots' AND column_name='gemini_price') THEN
         ALTER TABLE market_snapshots ADD COLUMN gemini_price REAL;
+    END IF;
+END $$;
+
+DO $$
+BEGIN
+    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='market_snapshots' AND column_name='coinbase_volume') THEN
+        ALTER TABLE market_snapshots ADD COLUMN coinbase_volume REAL;
+    END IF;
+    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='market_snapshots' AND column_name='kraken_volume') THEN
+        ALTER TABLE market_snapshots ADD COLUMN kraken_volume REAL;
+    END IF;
+    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='market_snapshots' AND column_name='bitstamp_volume') THEN
+        ALTER TABLE market_snapshots ADD COLUMN bitstamp_volume REAL;
+    END IF;
+    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='market_snapshots' AND column_name='gemini_volume') THEN
+        ALTER TABLE market_snapshots ADD COLUMN gemini_volume REAL;
     END IF;
 END $$;
 
