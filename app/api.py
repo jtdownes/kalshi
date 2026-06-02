@@ -698,7 +698,7 @@ def snapshot_series():
     # We want them ascending for the chart
     with _conn() as c:
         c.execute("""
-            SELECT scanned_at, yes_bid, no_bid
+            SELECT scanned_at, yes_bid, no_bid, btc_price, strike_str
             FROM market_snapshots
             WHERE ticker = %s
             ORDER BY id DESC

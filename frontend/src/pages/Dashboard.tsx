@@ -229,7 +229,23 @@ export default function Dashboard({ orders, trades, openOrders, positions, snaps
                       >↗</a>
                     </span>
                   </td>
-                  <td className="cell-dim">{s.strike_str ?? '—'}</td>
+                  <td className="cell-dim">
+                    {(() => {
+                      const strike = s.strike_str != null ? parseFloat(s.strike_str) : null
+                      if (strike == null) return '—'
+                      const above = s.btc_price != null ? s.btc_price >= strike : null
+                      return (
+                        <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}>
+                          ${strike.toLocaleString()}
+                          {above != null && (
+                            <span style={{ fontSize: 10, fontWeight: 700, color: above ? '#00d4a0' : '#ff4444' }}>
+                              {above ? '▲' : '▼'}
+                            </span>
+                          )}
+                        </span>
+                      )
+                    })()}
+                  </td>
                   <td className="cell-dim">{s.btc_price != null ? `$${s.btc_price.toLocaleString()}` : '—'}</td>
                   <td>{fmtCents(s.yes_ask)}</td>
                   <td className="cell-dim">{fmtCents(s.yes_bid)}</td>
