@@ -318,6 +318,242 @@ def backtest():
     } for r in rows])
 
 
+# ── Strategy backtester ───────────────────────────────────────────────────────
+# Replays a rule list against historical 1-second snapshots: for each rule we
+# find the first snapshot per market where its conditions pass AND the entry
+# fills, then simulate the exit (limit-sell fill, or hold-to-settlement) and
+# tally P&L. One entry per (market, rule, side) — matches the live bot's dedup.
+
+_BT_COL = {
+    "time_to_close":      "time_to_close_secs",
+    "distance_to_strike": "(btc_price - NULLIF(strike_str, '')::numeric)",
+    "yes_ask":            "yes_ask",
+    "yes_bid":            "yes_bid",
+    "no_ask":             "no_ask",
+    "no_bid":             "no_bid",
+    "btc_price":          "btc_price",
+    "spread":             "(yes_ask - yes_bid)",
+    "volume":             "volume",
+    "open_interest":      "open_interest",
+}
+_BT_OP = {"lt": "<", "lte": "<=", "gt": ">", "gte": ">=", "eq": "="}
+
+
+def _bt_conditions_sql(conditions):
+    """Build an extra SQL clause + params from a rule's condition list."""
+    clauses, params = [], []
+    for c in conditions or []:
+        col = _BT_COL.get(c.get("field"))
+        if not col:
+            continue
+        op = c.get("op")
+        v  = c.get("value")
+        if v is None:
+            continue
+        if op == "between":
+            v2 = c.get("value2")
+            if v2 is None:
+                continue
+            lo, hi = (v, v2) if float(v) <= float(v2) else (v2, v)
+            clauses.append(f"{col} BETWEEN %s AND %s")
+            params.extend([lo, hi])
+        elif op in _BT_OP:
+            clauses.append(f"{col} {_BT_OP[op]} %s")
+            params.append(v)
+    clause = (" AND " + " AND ".join(clauses)) if clauses else ""
+    return clause, params
+
+
+def _bt_simulate_rule(cur, series_like, rule, side):
+    """Simulate one rule on one side. Returns a list of trade dicts, or None if
+    the rule is too incomplete to simulate (missing entry/exit price)."""
+    action = rule.get("action") or {}
+    entry  = action.get("entry") or {}
+    exit_  = action.get("exit")  or {"type": "hold"}
+    try:
+        qty = max(1, int(action.get("quantity", 1)))
+    except (TypeError, ValueError):
+        qty = 1
+
+    ask_col = "yes_ask" if side == "yes" else "no_ask"
+    bid_col = "yes_bid" if side == "yes" else "no_bid"
+
+    cond_clause, cond_params = _bt_conditions_sql(rule.get("conditions"))
+
+    if entry.get("type") == "ask":
+        entry_clause = f"{ask_col} IS NOT NULL AND {ask_col} > 0"
+        entry_params = []
+    else:
+        price = entry.get("price_cents")
+        if price is None:
+            return None
+        entry_clause = f"{ask_col} <= %s AND {ask_col} > 0"
+        entry_params = [price]
+
+    is_limit_sell = exit_.get("type") == "limit_sell"
+    sell_price = exit_.get("price_cents") if is_limit_sell else None
+    if is_limit_sell and sell_price is None:
+        return None
+
+    fills_cte = f"""
+        WITH fills AS (
+            SELECT DISTINCT ON (ticker)
+                ticker,
+                scanned_at         AS fill_time,
+                {ask_col}          AS fill_price,
+                time_to_close_secs AS ttc_at_fill
+            FROM market_snapshots
+            WHERE ticker LIKE %s
+              AND {entry_clause}
+              {cond_clause}
+            ORDER BY ticker, scanned_at
+        )"""
+    params = [series_like] + entry_params + cond_params
+
+    if is_limit_sell:
+        sql = fills_cte + f""",
+        exits AS (
+            SELECT f.ticker, MIN(s.scanned_at) AS exit_time
+            FROM fills f
+            JOIN market_snapshots s
+              ON s.ticker = f.ticker
+             AND s.scanned_at > f.fill_time
+             AND s.{bid_col} >= %s
+            GROUP BY f.ticker
+        )
+        SELECT f.ticker, f.fill_price, f.ttc_at_fill,
+               e.exit_time, NULL AS final_bid, NULL AS final_ask
+        FROM fills f
+        LEFT JOIN exits e ON e.ticker = f.ticker
+        """
+        params.append(sell_price)
+    else:
+        sql = fills_cte + f""",
+        finals AS (
+            SELECT DISTINCT ON (ticker)
+                ticker, {bid_col} AS final_bid, {ask_col} AS final_ask
+            FROM market_snapshots
+            WHERE ticker LIKE %s
+            ORDER BY ticker, scanned_at DESC
+        )
+        SELECT f.ticker, f.fill_price, f.ttc_at_fill,
+               NULL AS exit_time, fin.final_bid, fin.final_ask
+        FROM fills f
+        LEFT JOIN finals fin ON fin.ticker = f.ticker
+        """
+        params.append(series_like)
+
+    cur.execute(sql, params)
+    rows = cur.fetchall()
+
+    trades = []
+    for r in rows:
+        fill = float(r["fill_price"])
+        if is_limit_sell:
+            if r["exit_time"] is not None:
+                pnl = (float(sell_price) - fill) * qty
+                outcome = "sold"
+            else:
+                pnl = -fill * qty                 # conservative: full loss on no-sell
+                outcome = "expired"
+        else:
+            ref = r["final_bid"] if r["final_bid"] is not None else r["final_ask"]
+            resolved_yes = ref is not None and float(ref) >= 50
+            if side == "yes":
+                settle = 100 if resolved_yes else 0
+            else:
+                settle = 0 if resolved_yes else 100
+            pnl = (settle - fill) * qty
+            outcome = "won" if pnl > 0 else "lost"
+        trades.append({
+            "ticker":      r["ticker"],
+            "side":        side,
+            "fill_price":  round(fill, 1),
+            "ttc_at_fill": int(r["ttc_at_fill"]) if r["ttc_at_fill"] is not None else None,
+            "exit_kind":   "limit_sell" if is_limit_sell else "hold",
+            "exit_price":  float(sell_price) if is_limit_sell else None,
+            "pnl_cents":   round(pnl, 1),
+            "qty":         qty,
+            "outcome":     outcome,
+        })
+    return trades
+
+
+def _bt_aggregate(trades):
+    n = len(trades)
+    if n == 0:
+        return {
+            "trade_count": 0, "win_count": 0, "loss_count": 0, "win_rate": None,
+            "total_pnl_cents": 0, "total_cost_cents": 0, "roi_pct": None,
+            "avg_pnl_cents": None, "avg_fill_price": None,
+            "sold_count": 0, "expired_count": 0,
+        }
+    wins       = sum(1 for t in trades if t["pnl_cents"] > 0)
+    losses     = sum(1 for t in trades if t["pnl_cents"] < 0)
+    total_pnl  = sum(t["pnl_cents"] for t in trades)
+    total_cost = sum(t["fill_price"] * t["qty"] for t in trades)
+    return {
+        "trade_count":     n,
+        "win_count":       wins,
+        "loss_count":      losses,
+        "win_rate":        round(wins / n * 100, 1),
+        "total_pnl_cents":  round(total_pnl, 1),
+        "total_cost_cents": round(total_cost, 1),
+        "roi_pct":         round(total_pnl / total_cost * 100, 1) if total_cost else None,
+        "avg_pnl_cents":   round(total_pnl / n, 1),
+        "avg_fill_price":  round(sum(t["fill_price"] for t in trades) / n, 1),
+        "sold_count":      sum(1 for t in trades if t["outcome"] == "sold"),
+        "expired_count":   sum(1 for t in trades if t["outcome"] == "expired"),
+    }
+
+
+@app.post("/api/backtest/strategy")
+def backtest_strategy():
+    body   = request.get_json(silent=True) or {}
+    rules  = body.get("rules") or []
+    series = (body.get("series") or "KXBTC15M").strip().upper()
+    if not series.replace("_", "").isalnum():
+        return jsonify({"error": "invalid series"}), 400
+    series_like = f"{series}-%"
+
+    rule_results = []
+    all_trades   = []
+    with _conn() as cur:
+        for idx, rule in enumerate(rules):
+            if not rule.get("enabled", True):
+                continue
+            action = rule.get("action") or {}
+            side_spec = action.get("side", "yes")
+            sides = ("yes", "no") if side_spec == "both" else (side_spec,)
+
+            simulated_any = False
+            rule_trades = []
+            for side in sides:
+                if side not in ("yes", "no"):
+                    continue
+                t = _bt_simulate_rule(cur, series_like, rule, side)
+                if t is None:
+                    continue
+                simulated_any = True
+                rule_trades.extend(t)
+
+            if not simulated_any:
+                continue
+            rule_results.append({
+                "rule_id":   rule.get("id") or f"idx{idx}",
+                "rule_name": rule.get("name") or "",
+                **_bt_aggregate(rule_trades),
+            })
+            all_trades.extend(rule_trades)
+
+    sample = sorted(all_trades, key=lambda t: t["pnl_cents"], reverse=True)[:200]
+    return jsonify({
+        "summary": _bt_aggregate(all_trades),
+        "rules":   rule_results,
+        "trades":  sample,
+    })
+
+
 @app.get("/api/quotes")
 def quotes():
     tickers_param = request.args.get("tickers", "")
