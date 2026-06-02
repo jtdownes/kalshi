@@ -49,6 +49,7 @@ export default function PriceActionChart({ ticker, globalSnapshots, openOrders =
   const [data, setData] = useState<SeriesData[]>([]);
   const [loading, setLoading] = useState(false);
   const [showStrikeLabel, setShowStrikeLabel] = useState(false);
+  const [btcView, setBtcView] = useState<'consolidated' | 'individual'>('consolidated');
 
   useEffect(() => {
     if (!ticker) return;
@@ -93,7 +94,7 @@ export default function PriceActionChart({ ticker, globalSnapshots, openOrders =
 
   const btcDomain: [number, number] | ['auto', 'auto'] = (() => {
     const prices = data
-      .flatMap(d => [d.btc_price, d.kraken_price, d.bitstamp_price, d.gemini_price])
+      .flatMap(d => [d.btc_price, d.kraken_price, d.bitstamp_price, d.gemini_price, d.brti_price])
       .filter((p): p is number => p != null);
     if (prices.length === 0) return ['auto', 'auto'];
     const candidates = strikeNum != null ? [...prices, strikeNum] : prices;
@@ -249,7 +250,28 @@ export default function PriceActionChart({ ticker, globalSnapshots, openOrders =
 
           {/* ── BTC price chart ── */}
           <div style={{ ...chartStyle, height: 320 }}>
-            <div style={{ fontSize: 11, color: '#888', marginBottom: 4 }}>Bitcoin (USD)</div>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 }}>
+              <span style={{ fontSize: 11, color: '#888' }}>Bitcoin (USD)</span>
+              <div style={{ display: 'flex', borderRadius: 4, overflow: 'hidden', border: '1px solid #333' }}>
+                {(['consolidated', 'individual'] as const).map(v => (
+                  <button
+                    key={v}
+                    onClick={() => setBtcView(v)}
+                    style={{
+                      fontSize: 10,
+                      padding: '2px 8px',
+                      cursor: 'pointer',
+                      border: 'none',
+                      background: btcView === v ? '#374151' : 'transparent',
+                      color: btcView === v ? '#fff' : '#888',
+                      textTransform: 'capitalize',
+                    }}
+                  >
+                    {v}
+                  </button>
+                ))}
+              </div>
+            </div>
             <ResponsiveContainer width="100%" height="93%">
               <LineChart data={data} margin={{ top: 5, right: 10, left: 0, bottom: 5 }}>
                 <CartesianGrid strokeDasharray="3 3" stroke="#333" vertical={false} />
@@ -292,10 +314,14 @@ export default function PriceActionChart({ ticker, globalSnapshots, openOrders =
                   />
                 )}
 
-                <Line type="monotone" dataKey="btc_price" name="Coinbase" stroke="#f7931a" dot={false} strokeWidth={2} isAnimationActive={false} connectNulls />
-                <Line type="monotone" dataKey="kraken_price" name="Kraken" stroke="#a855f7" dot={false} strokeWidth={2} isAnimationActive={false} connectNulls />
-                <Line type="monotone" dataKey="bitstamp_price" name="Bitstamp" stroke="#86efac" dot={false} strokeWidth={2} isAnimationActive={false} connectNulls />
-                <Line type="monotone" dataKey="gemini_price" name="Gemini" stroke="#38bdf8" dot={false} strokeWidth={2} isAnimationActive={false} connectNulls />
+                {btcView === 'consolidated'
+                  ? <Line key="consolidated" type="monotone" dataKey="brti_price" name="Consolidated (4-venue avg)" stroke="#ffffff" dot={false} strokeWidth={2.5} isAnimationActive={false} connectNulls />
+                  : [
+                      <Line key="coinbase" type="monotone" dataKey="btc_price" name="Coinbase" stroke="#f7931a" dot={false} strokeWidth={2} isAnimationActive={false} connectNulls />,
+                      <Line key="kraken" type="monotone" dataKey="kraken_price" name="Kraken" stroke="#a855f7" dot={false} strokeWidth={2} isAnimationActive={false} connectNulls />,
+                      <Line key="bitstamp" type="monotone" dataKey="bitstamp_price" name="Bitstamp" stroke="#86efac" dot={false} strokeWidth={2} isAnimationActive={false} connectNulls />,
+                      <Line key="gemini" type="monotone" dataKey="gemini_price" name="Gemini" stroke="#38bdf8" dot={false} strokeWidth={2} isAnimationActive={false} connectNulls />,
+                    ]}
               </LineChart>
             </ResponsiveContainer>
           </div>
