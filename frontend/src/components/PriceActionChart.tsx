@@ -210,7 +210,7 @@ export default function PriceActionChart({ ticker, globalSnapshots, openOrders =
           <div style={{ ...chartStyle, height: 320 }}>
             <div style={{ fontSize: 11, color: '#888', marginBottom: 4 }}>Contract (¢)</div>
             <ResponsiveContainer width="100%" height="93%">
-              <LineChart data={data} margin={{ top: 5, right: 10, left: 0, bottom: 5 }}>
+              <LineChart data={data} margin={{ top: 5, right: 10, left: 0, bottom: 5 }} syncId="priceAction">
                 <CartesianGrid strokeDasharray="3 3" stroke="#333" vertical={false} />
                 <XAxis
                   dataKey="scanned_at"
@@ -226,7 +226,7 @@ export default function PriceActionChart({ ticker, globalSnapshots, openOrders =
                   domain={[0, 100]}
                   tickFormatter={(val) => `${val}¢`}
                   tick={{ fill: '#888' }}
-                  width={36}
+                  width={52}
                 />
                 <Tooltip
                   labelFormatter={fmtTime}
@@ -305,7 +305,7 @@ export default function PriceActionChart({ ticker, globalSnapshots, openOrders =
               </div>
             </div>
             <ResponsiveContainer width="100%" height="93%">
-              <LineChart data={chartData} margin={{ top: 5, right: 10, left: 0, bottom: 5 }}>
+              <LineChart data={chartData} margin={{ top: 5, right: 10, left: 0, bottom: 5 }} syncId="priceAction">
                 {btcView === 'consolidated' && consolidatedSplit != null && (
                   <defs>
                     <linearGradient id="consolidatedStrikeSplit" x1="0" y1="0" x2="0" y2="1">
