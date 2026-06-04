@@ -466,8 +466,12 @@ def _bt_simulate_rule(cur, series_like, rule, side):
     else:
         sql = fills_cte + f""",
         finals AS (
+            -- Settlement is ALWAYS read off the YES quote, never the side's own
+            -- quote: the window resolved YES iff the final yes price >= 50. Using
+            -- {bid_col}/{ask_col} here would invert every NO outcome (a winning
+            -- NO settles no_bid->~100, which would read as "resolved YES").
             SELECT DISTINCT ON (ticker)
-                ticker, {bid_col} AS final_bid, {ask_col} AS final_ask
+                ticker, yes_bid AS final_bid, yes_ask AS final_ask
             FROM market_snapshots
             WHERE ticker LIKE %s
             ORDER BY ticker, scanned_at DESC
