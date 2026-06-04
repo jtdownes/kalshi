@@ -175,6 +175,10 @@ body {
 }
 .table-wrap { overflow-x: auto; }
 
+/* Scrollable trade list inside the backtest panel — header stays pinned. */
+.table-wrap.bt-trades-scroll { max-height: 360px; overflow-y: auto; }
+.table-wrap.bt-trades-scroll thead th { position: sticky; top: 0; z-index: 1; background: #0d0d14; }
+
 table { width: 100%; border-collapse: collapse; }
 td, th { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 thead { background: #0d0d14; }
@@ -574,7 +578,7 @@ tbody tr:hover { background: rgba(255,255,255,0.025); }
 .strategy-modal {
   width: 100%;
   max-width: 640px;
-  max-height: 90vh;
+  max-height: 92vh;
   overflow-y: auto;
   border-radius: 12px;
 }
@@ -584,11 +588,11 @@ tbody tr:hover { background: rgba(255,255,255,0.025); }
 }
 
 .strategy-modal-view {
-  max-width: 640px;
+  max-width: 880px;
 }
 
 .strategy-modal-view-trades {
-  max-width: 820px;
+  max-width: 980px;
 }
 
 /* Read-only parameter grid inside view modal */
@@ -650,9 +654,17 @@ tbody tr:hover { background: rgba(255,255,255,0.025); }
 }
 
 .strategy-trades-table-wrap {
-  overflow-x: auto;
+  overflow: auto;
+  max-height: 56vh;
   border-radius: 8px;
   border: 1px solid #1f2637;
+}
+
+.strategy-trades-table thead th {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  background: #16161f;
 }
 
 .strategy-trades-table {
@@ -1003,7 +1015,7 @@ select optgroup {
 
 /* ── Rule builder ──────────────────────────────────────────────────────────── */
 .strategy-modal-builder {
-  max-width: 760px;
+  max-width: 900px;
 }
 
 .strategy-builder-form {

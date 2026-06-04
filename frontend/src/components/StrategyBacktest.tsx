@@ -220,6 +220,7 @@ export default function StrategyBacktest({ rules, series = 'KXBTC15M' }: Props) 
           )}
 
           <button
+            type="button"
             className="btn"
             onClick={() => setShowTrades(v => !v)}
             style={{ fontSize: 12, padding: '3px 10px', marginBottom: showTrades ? 10 : 0 }}
@@ -229,7 +230,7 @@ export default function StrategyBacktest({ rules, series = 'KXBTC15M' }: Props) 
 
           {showTrades && result!.trades.length > 0 && (
             <div className="table-panel">
-              <div className="table-wrap">
+              <div className="table-wrap bt-trades-scroll">
                 <table>
                   <thead>
                     <tr>

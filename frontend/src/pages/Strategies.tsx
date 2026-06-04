@@ -87,6 +87,9 @@ export default function Strategies({ settings, profiles, refresh }: Props) {
   } | null>(null)
   const [newStrategyDraft, setNewStrategyDraft] = useState<StrategyDraft | null>(null)
   const [editingProfileId, setEditingProfileId] = useState<number | null>(null)
+  // Limited edit: strategy already has orders, so only name / rule names /
+  // quantities may change — structure and caps stay locked.
+  const [limitedEdit,      setLimitedEdit]      = useState(false)
   const [renameModal,      setRenameModal]      = useState<{ profileId: number; name: string } | null>(null)
   const [saving,           setSaving]           = useState(false)
   const [activating,       setActivating]       = useState(false)
@@ -149,6 +152,7 @@ export default function Strategies({ settings, profiles, refresh }: Props) {
       if (!resp.ok) throw new Error('Failed to save strategy')
       setNewStrategyDraft(null)
       setEditingProfileId(null)
+      setLimitedEdit(false)
       await refresh()
     } catch (err: any) {
       alert(err.message)
@@ -244,7 +248,7 @@ export default function Strategies({ settings, profiles, refresh }: Props) {
             <div className="strategy-primary-actions">
               <button
                 className="btn btn-active"
-                onClick={() => setNewStrategyDraft(settingsToDraft(settings))}
+                onClick={() => { setEditingProfileId(null); setLimitedEdit(false); setNewStrategyDraft(settingsToDraft(settings)) }}
               >
                 New Strategy
               </button>
@@ -433,18 +437,19 @@ export default function Strategies({ settings, profiles, refresh }: Props) {
                   {viewModal.tab === 'settings' ? (
                     <>
                       <button className="btn" onClick={() => setRenameModal({ profileId: viewModal.profile.id, name: viewModal.profile.name })}>Rename</button>
-                      {(viewModal.profile.order_count ?? 0) === 0 && (
-                        <button
-                          className="btn"
-                          onClick={() => {
-                            setNewStrategyDraft(profileToDraft(viewModal.profile))
-                            setEditingProfileId(viewModal.profile.id)
-                            setViewModal(null)
-                          }}
-                        >
-                          Edit
-                        </button>
-                      )}
+                      <button
+                        className="btn"
+                        onClick={() => {
+                          setNewStrategyDraft(profileToDraft(viewModal.profile))
+                          setEditingProfileId(viewModal.profile.id)
+                          // Strategies that already traded can only have names /
+                          // quantities tweaked; zero-run ones are fully editable.
+                          setLimitedEdit((viewModal.profile.order_count ?? 0) > 0)
+                          setViewModal(null)
+                        }}
+                      >
+                        Edit
+                      </button>
                       <button
                         className={`btn${viewModal.profile.is_active ? '' : ' btn-active'}`}
                         disabled={activating}
@@ -455,7 +460,7 @@ export default function Strategies({ settings, profiles, refresh }: Props) {
                       >
                         {activating ? 'Updating…' : viewModal.profile.is_active ? 'Deactivate' : 'Activate'}
                       </button>
-                      <button className="btn" onClick={() => { setNewStrategyDraft({ ...profileToDraft(viewModal.profile), name: '' }); setViewModal(null) }}>Copy as Template</button>
+                      <button className="btn" onClick={() => { setNewStrategyDraft({ ...profileToDraft(viewModal.profile), name: '' }); setEditingProfileId(null); setLimitedEdit(false); setViewModal(null) }}>Copy as Template</button>
                       <button className="btn" onClick={switchToTrades}>View Trades</button>
                     </>
                   ) : (
@@ -471,8 +476,10 @@ export default function Strategies({ settings, profiles, refresh }: Props) {
       )}
 
       {/* ── New strategy modal ── */}
+      {/* Backdrop click is intentionally a no-op here: the builder holds unsaved
+          work, so it only closes via Cancel or Escape (handled above). */}
       {newStrategyDraft && (
-        <div className="strategy-modal-backdrop" onClick={() => setNewStrategyDraft(null)}>
+        <div className="strategy-modal-backdrop">
           <div className="strategy-modal strategy-modal-builder" onClick={e => e.stopPropagation()}>
             <section className="strategy-config-panel">
               <div className="strategy-section-head">
@@ -480,7 +487,9 @@ export default function Strategies({ settings, profiles, refresh }: Props) {
                           <div className="stat-label">{editingProfileId ? 'Edit Strategy' : 'Create Strategy'}</div>
                           <h3>{editingProfileId ? 'Edit Strategy' : 'New Strategy'}</h3>
                 </div>
-                <p>Build conditional rules — every matching rule fires, so you can ladder multiple entries. Parameters are locked after creation; copy as a template to iterate.</p>
+                <p>{limitedEdit
+                  ? 'This strategy has already placed orders, so its structure is locked to keep its history meaningful. You can still rename it, rename rules, and adjust order quantities. Copy as a template to change rules.'
+                  : 'Build conditional rules — every matching rule fires, so you can ladder multiple entries. Parameters are locked after creation; copy as a template to iterate.'}</p>
               </div>
 
               <form onSubmit={saveStrategy} className="strategy-builder-form">
@@ -498,6 +507,7 @@ export default function Strategies({ settings, profiles, refresh }: Props) {
                     <span>Market</span>
                     <select
                       value={newStrategyDraft.btc_series_tickers[0] ?? SUPPORTED_STRATEGY_MARKETS[0].value}
+                      disabled={limitedEdit}
                       onChange={e => updateDraft({ btc_series_tickers: [e.target.value] })}
                     >
                       {SUPPORTED_STRATEGY_MARKETS.map(option => (
@@ -507,24 +517,29 @@ export default function Strategies({ settings, profiles, refresh }: Props) {
                   </label>
                   <label className="field">
                     <span>Max Open Orders</span>
-                    <input type="number" min={1} value={newStrategyDraft.max_open_orders}
+                    <input type="number" min={1} value={newStrategyDraft.max_open_orders} disabled={limitedEdit}
                       onChange={e => updateDraft({ max_open_orders: parseInt(e.target.value) || 0 })} />
                   </label>
                   <label className="field">
                     <span>Daily Limit (¢)</span>
-                    <input type="number" min={0} value={newStrategyDraft.max_daily_spend_cents}
+                    <input type="number" min={0} value={newStrategyDraft.max_daily_spend_cents} disabled={limitedEdit}
                       onChange={e => updateDraft({ max_daily_spend_cents: parseInt(e.target.value) || 0 })} />
                   </label>
                 </div>
 
                 <div className="strategy-builder-rules-head">
                   <div className="stat-label">Rules</div>
-                  <small className="field-help">Safety caps above bound total exposure regardless of how many rules fire.</small>
+                  <small className="field-help">
+                    {limitedEdit
+                      ? 'Conditions and entry/exit are locked. Only rule names and quantities can change.'
+                      : 'Safety caps above bound total exposure regardless of how many rules fire.'}
+                  </small>
                 </div>
 
                 <RuleBuilder
                   rules={newStrategyDraft.rules}
                   onChange={rules => updateDraft({ rules })}
+                  lockStructure={limitedEdit}
                 />
 
                 <StrategyBacktest
@@ -533,9 +548,11 @@ export default function Strategies({ settings, profiles, refresh }: Props) {
                 />
 
                 <div className="strategy-form-actions field-wide">
-                  <span>Parameters are locked after creation — copy as a template to try different rules.</span>
+                  <span>{limitedEdit
+                    ? 'Only name, rule names, and quantities are editable here.'
+                    : 'Parameters are locked after creation — copy as a template to try different rules.'}</span>
                   <div className="strategy-form-buttons">
-                    <button type="button" className="btn" onClick={() => { setNewStrategyDraft(null); setEditingProfileId(null) }}>Cancel</button>
+                    <button type="button" className="btn" onClick={() => { setNewStrategyDraft(null); setEditingProfileId(null); setLimitedEdit(false) }}>Cancel</button>
                     <button type="submit" className="btn btn-active" disabled={saving}>
                       {saving ? 'Saving…' : editingProfileId ? 'Save Changes' : 'Create and Activate'}
                     </button>
