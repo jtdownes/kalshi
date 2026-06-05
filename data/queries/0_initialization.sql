@@ -360,6 +360,14 @@ CREATE TABLE IF NOT EXISTS weather_snapshots (
     min_temp_f  INTEGER,
     precip_in   REAL,
     issued      TEXT,
-    raw_excerpt TEXT
+    raw_excerpt TEXT,
+    source_url  TEXT
 );
 CREATE INDEX IF NOT EXISTS idx_weather_station_date ON weather_snapshots(station, obs_date);
+
+DO $$
+BEGIN
+    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='weather_snapshots' AND column_name='source_url') THEN
+        ALTER TABLE weather_snapshots ADD COLUMN source_url TEXT;
+    END IF;
+END $$;

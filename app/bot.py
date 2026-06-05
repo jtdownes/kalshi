@@ -222,7 +222,8 @@ def weather_loop():
                     station=obs["station"], scanned_at=datetime.utcnow().isoformat(),
                     obs_date=obs["obs_date"], max_temp_f=obs["max_temp_f"],
                     min_temp_f=obs["min_temp_f"], precip_in=obs["precip_in"],
-                    issued=obs["issued"], raw_excerpt=obs["raw_excerpt"])
+                    issued=obs["issued"], raw_excerpt=obs["raw_excerpt"],
+                    source_url=obs.get("url"))
                 log.info("WEATHER  %s  %s  high=%s°F low=%s°F",
                          obs["station"], obs["obs_date"], obs["max_temp_f"], obs["min_temp_f"])
             except Exception as e:

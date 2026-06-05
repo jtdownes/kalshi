@@ -540,14 +540,14 @@ def save_market_snapshot(ticker: str, title: str, close_time: str,
 
 # ── Weather observations (NWS CLI settlement temps) ───────────────────────────
 def save_weather_snapshot(station, scanned_at, obs_date, max_temp_f, min_temp_f,
-                          precip_in, issued, raw_excerpt):
+                          precip_in, issued, raw_excerpt, source_url=None):
     with _lock, _conn() as conn:
         cur = conn.cursor()
         cur.execute("""
             INSERT INTO weather_snapshots
-              (station, scanned_at, obs_date, max_temp_f, min_temp_f, precip_in, issued, raw_excerpt)
-            VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
-        """, (station, scanned_at, obs_date, max_temp_f, min_temp_f, precip_in, issued, raw_excerpt))
+              (station, scanned_at, obs_date, max_temp_f, min_temp_f, precip_in, issued, raw_excerpt, source_url)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
+        """, (station, scanned_at, obs_date, max_temp_f, min_temp_f, precip_in, issued, raw_excerpt, source_url))
         conn.commit()
 
 
@@ -567,7 +567,7 @@ def get_recent_weather_snapshots(limit: int = 100) -> list[dict]:
     with _lock, _conn() as conn:
         cur = conn.cursor(cursor_factory=psycopg2.extras.DictCursor)
         cur.execute("""
-            SELECT station, scanned_at, obs_date, max_temp_f, min_temp_f, precip_in, issued
+            SELECT station, scanned_at, obs_date, max_temp_f, min_temp_f, precip_in, issued, source_url
             FROM weather_snapshots ORDER BY scanned_at DESC LIMIT %s
         """, (limit,))
         return [dict(r) for r in cur.fetchall()]
