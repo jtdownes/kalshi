@@ -73,16 +73,26 @@ export default function Dashboard({ orders, trades, openOrders, positions, snaps
 
   const activeProfile = profiles.find(p => p.id === settings?.active_profile_id)
   const history = orders.filter(o => o.status !== 'resting').slice(0, historyLimit)
+  // The dashboard tracks the active strategy's market(s) only. Other scanned
+  // series (e.g. weather, which polls on its own slower cadence) would otherwise
+  // churn the live table and flip the auto-selected chart on every weather tick.
+  const trackedKey = (settings?.btc_series_tickers ?? []).join(',')
+  const dashSnapshots = useMemo(() => {
+    const series = trackedKey ? trackedKey.split(',') : []
+    if (series.length === 0) return snapshots
+    return snapshots.filter(s => series.some(ser => s.ticker.startsWith(ser + '-')))
+  }, [snapshots, trackedKey])
+
   const marketSnapshots = useMemo(() => {
     const latestByTicker = new Map<string, Snapshot>()
-    for (const snapshot of snapshots) {
+    for (const snapshot of dashSnapshots) {
       if (!latestByTicker.has(snapshot.ticker)) latestByTicker.set(snapshot.ticker, snapshot)
     }
     return Array.from(latestByTicker.values())
-  }, [snapshots])
+  }, [dashSnapshots])
 
-  // Auto-select the most-recently-scanned ticker unless the user has pinned one
-  const mostRecentTicker = snapshots.length > 0 ? snapshots[0].ticker : null
+  // Auto-select the most-recently-scanned tracked ticker unless the user pinned one
+  const mostRecentTicker = dashSnapshots.length > 0 ? dashSnapshots[0].ticker : null
   useEffect(() => {
     if (!pinnedTicker && mostRecentTicker) setSelectedTicker(mostRecentTicker)
   }, [mostRecentTicker, pinnedTicker])
@@ -178,8 +188,6 @@ export default function Dashboard({ orders, trades, openOrders, positions, snaps
           </div>
           <div className="strategy-metrics">
             <div><span>Max Bid</span><strong>{settings.max_entry_cents}¢</strong></div>
-            <div><span>Daily Limit</span><strong>{centsToUSD(settings.max_daily_spend_cents)}</strong></div>
-            <div><span>Max Orders</span><strong>{settings.max_open_orders}</strong></div>
             <div><span>Mode</span><strong>{settings.proactive_mode ? 'Proactive' : 'Reactive'}</strong></div>
           </div>
         </section>
@@ -264,7 +272,7 @@ export default function Dashboard({ orders, trades, openOrders, positions, snaps
       {/* Market Chart */}
       {selectedTicker && (
         <div style={{ marginTop: 8, marginLeft: 18, marginRight: 18 }}>
-          <PriceActionChart ticker={selectedTicker} globalSnapshots={snapshots} openOrders={openOrders} historyOrders={orders} />
+          <PriceActionChart ticker={selectedTicker} globalSnapshots={dashSnapshots} openOrders={openOrders} historyOrders={orders} />
         </div>
       )}
 
