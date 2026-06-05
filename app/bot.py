@@ -382,9 +382,11 @@ def _scan(client: KalshiClient, settings: dict):
                 log.error("place_order failed on %s %s: %s", side, ticker, e)
 
 
+_last_series_fetch: dict[str, float] = {}  # series_ticker -> last poll epoch (per-series cadence)
+
+
 def _collect_market_snapshots(client: KalshiClient):
     now_ts = int(time.time())
-    max_close = now_ts + config.LOOK_AHEAD_SECONDS
 
     # Bitcoin price/volume is global per tick: fetch once, write a single
     # bitcoin_snapshots row, and stamp every market_snapshots row in this pass
@@ -404,9 +406,30 @@ def _collect_market_snapshots(client: KalshiClient):
         gemini_volume=venues["gemini_volume"],
     )
 
-    for series in config.SNAPSHOT_SERIES_TICKERS:
+    # Series to scan come from the DB (editable on the Markets page); fall back to
+    # the static config list if the table is empty/unavailable. Each series carries
+    # its own look-ahead (how far out a market may close and still be captured —
+    # 15-min BTC ~1200s, daily weather ~26h) and poll interval (slow markets don't
+    # need 1s resolution), so we skip a series until its interval has elapsed.
+    try:
+        series_cfgs = db.get_scanned_series(enabled_only=True)
+    except Exception as e:
+        log.error("scanned_series read failed, using config fallback: %s", e)
+        series_cfgs = []
+    if not series_cfgs:
+        series_cfgs = [{"series_ticker": s, "look_ahead_seconds": config.LOOK_AHEAD_SECONDS,
+                        "interval_seconds": config.SNAPSHOT_INTERVAL_SECONDS}
+                       for s in config.SNAPSHOT_SERIES_TICKERS]
+
+    for cfg in series_cfgs:
+        series = cfg["series_ticker"]
+        interval = cfg.get("interval_seconds") or config.SNAPSHOT_INTERVAL_SECONDS
+        if now_ts - _last_series_fetch.get(series, 0) < interval:
+            continue
+        _last_series_fetch[series] = now_ts
+        series_max_close = now_ts + (cfg.get("look_ahead_seconds") or config.LOOK_AHEAD_SECONDS)
         try:
-            data = client.get_markets(status="open", max_close_ts=max_close, limit=200, series_ticker=series)
+            data = client.get_markets(status="open", max_close_ts=series_max_close, limit=200, series_ticker=series)
         except KalshiError as e:
             log.error("snapshot get_markets failed for %s: %s", series, e)
             continue

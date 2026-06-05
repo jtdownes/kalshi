@@ -328,3 +328,21 @@ CREATE INDEX IF NOT EXISTS idx_snaps_ticker   ON market_snapshots(ticker);
 -- Supports per-window resolution lookups (close_time = X ORDER BY scanned_at DESC)
 -- used by the live momentum signal and the backtest's prior-window CTEs.
 CREATE INDEX IF NOT EXISTS idx_snaps_close_scanned ON market_snapshots(close_time, scanned_at);
+
+-- ── Scanned series ────────────────────────────────────────────────────────────
+-- Which Kalshi series the snapshot scanner polls, editable from the Markets page.
+-- look_ahead_seconds bounds how far out a market can close and still be captured
+-- (15-min BTC ~1200s; daily weather/econ markets need ~26h). interval_seconds
+-- lets slow markets (weather moves on hourly forecasts) poll less often than BTC.
+CREATE TABLE IF NOT EXISTS scanned_series (
+    series_ticker       TEXT PRIMARY KEY,
+    label               TEXT,
+    look_ahead_seconds  INTEGER NOT NULL DEFAULT 1200,
+    interval_seconds    INTEGER NOT NULL DEFAULT 1,
+    enabled             BOOLEAN NOT NULL DEFAULT TRUE,
+    added_at            TEXT NOT NULL
+);
+-- Seed the existing BTC series so behaviour is unchanged on first run.
+INSERT INTO scanned_series (series_ticker, label, look_ahead_seconds, interval_seconds, enabled, added_at)
+VALUES ('KXBTC15M', 'Bitcoin 15-Minute', 1200, 1, TRUE, '1970-01-01T00:00:00')
+ON CONFLICT (series_ticker) DO NOTHING;

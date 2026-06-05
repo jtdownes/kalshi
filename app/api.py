@@ -605,6 +605,74 @@ def backtest_strategy():
     })
 
 
+# ── Scanned series management (drives the snapshot scanner; edited on /markets) ──
+def _parse_close_ts(ct: str | None) -> int | None:
+    if not ct:
+        return None
+    try:
+        from datetime import datetime
+        return int(datetime.fromisoformat(ct.replace("Z", "+00:00")).timestamp())
+    except (ValueError, TypeError):
+        return None
+
+
+@app.get("/api/scanned-series")
+def scanned_series_list():
+    return jsonify(database.get_scanned_series())
+
+
+@app.post("/api/scanned-series")
+def scanned_series_add():
+    body = request.get_json(silent=True) or {}
+    series = (body.get("series_ticker") or "").strip().upper()
+    if not series or not series.replace("_", "").isalnum():
+        return jsonify({"error": "invalid series ticker"}), 400
+
+    # Validate against Kalshi: the series must exist and have open markets.
+    try:
+        data = KalshiClient().get_markets(series_ticker=series, status="open", limit=200)
+    except Exception as e:
+        return jsonify({"error": f"could not reach Kalshi: {e}"}), 502
+    markets = data.get("markets", []) or []
+    if not markets:
+        return jsonify({"error": f"no open markets found for series '{series}'"}), 404
+
+    # Auto-size the look-ahead to actually cover this series' markets unless the
+    # caller specified one. Daily markets close ~24h out; 15-min markets ~minutes.
+    now_ts = int(time.time())
+    closes = [c for c in (_parse_close_ts(m.get("close_time") or m.get("expiration_time")) for m in markets) if c]
+    farthest = max(closes) if closes else now_ts + 1200
+    suggested = min(max(farthest - now_ts + 3600, 600), 7 * 86400)
+
+    try:
+        look_ahead = int(body.get("look_ahead_seconds") or suggested)
+        interval   = max(1, int(body.get("interval_seconds") or 1))
+    except (TypeError, ValueError):
+        return jsonify({"error": "look_ahead_seconds / interval_seconds must be integers"}), 400
+    label = (body.get("label") or markets[0].get("title") or series)[:120]
+
+    row = database.add_scanned_series(series, label, look_ahead, interval)
+    row["market_count"] = len(markets)
+    row["sample_title"] = markets[0].get("title", "")
+    return jsonify(row), 201
+
+
+@app.patch("/api/scanned-series/<series>")
+def scanned_series_toggle(series):
+    body = request.get_json(silent=True) or {}
+    enabled = bool(body.get("enabled", True))
+    if not database.set_scanned_series_enabled(series.upper(), enabled):
+        return jsonify({"error": "series not found"}), 404
+    return jsonify({"series_ticker": series.upper(), "enabled": enabled})
+
+
+@app.delete("/api/scanned-series/<series>")
+def scanned_series_delete(series):
+    if not database.remove_scanned_series(series.upper()):
+        return jsonify({"error": "series not found"}), 404
+    return jsonify({"ok": True})
+
+
 @app.get("/api/quotes")
 def quotes():
     tickers_param = request.args.get("tickers", "")

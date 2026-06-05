@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react'
 import type { Snapshot, Order } from '../App'
 import { fmtCents, fmtDur, fmtTime, fmtUnixTime, kalshiMarketUrl } from '../App'
 import PriceActionChart from '../components/PriceActionChart'
+import ScannedMarkets from '../components/ScannedMarkets'
 
 
 interface TickerSummary {
@@ -75,6 +76,8 @@ export default function Snapshots({ snapshots, orders = [], openOrders = [] }: P
 
   return (
     <div className="snapshots-view">
+      <ScannedMarkets />
+
       <section className="table-panel">
         <div className="snapshot-panel-head">
           <span className="section-toggle-label">Live Markets</span>
