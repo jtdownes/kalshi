@@ -70,21 +70,10 @@ def evaluate_market(market: dict, settings: dict | None = None,
 
 def can_place_order(price_cents: int, settings: dict | None = None,
                     profile_id: int | None = None, quantity: int = 1) -> tuple[bool, str]:
-    """Check per-profile safety limits before placing any single order."""
-    if settings is None:
-        settings = {}
+    """Gate before placing any single order.
 
-    max_open_orders = settings.get("max_open_orders", config.MAX_OPEN_ORDERS)
-    max_daily_spend = settings.get("max_daily_spend_cents", config.MAX_DAILY_SPEND_CENTS)
-
-    resting = db.count_resting_orders(profile_id=profile_id)
-    if resting >= max_open_orders:
-        return False, f"max open orders reached ({resting}/{max_open_orders})"
-
-    cost = price_cents * quantity
-    spent = db.get_today_spend_cents(profile_id=profile_id)
-    if spent + cost > max_daily_spend:
-        return False, (f"daily spend limit reached "
-                       f"({spent}+{cost} > {max_daily_spend}¢)")
-
+    The max-open-orders and daily-spend caps were removed — orders are bounded
+    only by the rules that fire (and Kalshi's own balance check). The function is
+    kept (callers depend on its signature) but always allows.
+    """
     return True, "ok"

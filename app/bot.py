@@ -627,9 +627,7 @@ def main():
     log.info("API base       : %s", config.KALSHI_API_BASE)
     log.info("Proactive mode : %s", config.PROACTIVE_MODE)
     log.info("Entry range    : %d-%d\u00a2", config.MIN_ENTRY_CENTS, config.MAX_ENTRY_CENTS)
-    log.info("Daily limit    : %d\u00a2 ($%.2f)", config.MAX_DAILY_SPEND_CENTS,
-             config.MAX_DAILY_SPEND_CENTS / 100)
-    log.info("Max open orders: %d", config.MAX_OPEN_ORDERS)
+    log.info("Order caps     : none (max-open / daily-spend limits removed)")
     log.info("BTC series     : %s", config.BTC_SERIES_TICKERS or "auto-detect")
     log.info("Snapshot series: %s", config.SNAPSHOT_SERIES_TICKERS or "none")
     log.info("=" * 60)

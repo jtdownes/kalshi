@@ -257,8 +257,6 @@ export default function Strategies({ settings, profiles, refresh }: Props) {
           <div className="strategy-metrics-wrap">
             <div className="strategy-metrics strategy-metrics-compact">
               <div><span>Rules</span><strong>{activeRuleCount}</strong></div>
-              <div><span>Daily Limit</span><strong>{centsToUSD(settings.max_daily_spend_cents)}</strong></div>
-              <div><span>Max Open</span><strong>{settings.max_open_orders}</strong></div>
             </div>
           </div>
         </section>
@@ -303,10 +301,6 @@ export default function Strategies({ settings, profiles, refresh }: Props) {
               </div>
 
               <div className="strategy-ticket-band">
-                <div className="strategy-ticket-metric">
-                  <span>Daily Spend Ceiling</span>
-                  <strong>{centsToUSD(p.max_daily_spend_cents)}</strong>
-                </div>
                 <div className="strategy-ticket-metric">
                   <span>Rules</span>
                   <strong>{ruleCount}</strong>
@@ -379,10 +373,6 @@ export default function Strategies({ settings, profiles, refresh }: Props) {
 
               {viewModal.tab === 'settings' ? (
                 <>
-                  <div className="strategy-caps-readonly">
-                    <div><span>Max Open Orders</span><strong>{viewModal.profile.max_open_orders}</strong></div>
-                    <div><span>Daily Limit</span><strong>{centsToUSD(viewModal.profile.max_daily_spend_cents)}</strong></div>
-                  </div>
                   <RuleBuilder rules={viewModal.profile.rules ?? []} onChange={() => {}} readOnly />
                   <StrategyBacktest
                     rules={viewModal.profile.rules ?? []}
@@ -514,16 +504,6 @@ export default function Strategies({ settings, profiles, refresh }: Props) {
                         <option key={option.value} value={option.value}>{option.label}</option>
                       ))}
                     </select>
-                  </label>
-                  <label className="field">
-                    <span>Max Open Orders</span>
-                    <input type="number" min={1} value={newStrategyDraft.max_open_orders} disabled={limitedEdit}
-                      onChange={e => updateDraft({ max_open_orders: parseInt(e.target.value) || 0 })} />
-                  </label>
-                  <label className="field">
-                    <span>Daily Limit (¢)</span>
-                    <input type="number" min={0} value={newStrategyDraft.max_daily_spend_cents} disabled={limitedEdit}
-                      onChange={e => updateDraft({ max_daily_spend_cents: parseInt(e.target.value) || 0 })} />
                   </label>
                 </div>
 
