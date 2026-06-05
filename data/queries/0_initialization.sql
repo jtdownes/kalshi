@@ -346,3 +346,20 @@ CREATE TABLE IF NOT EXISTS scanned_series (
 INSERT INTO scanned_series (series_ticker, label, look_ahead_seconds, interval_seconds, enabled, added_at)
 VALUES ('KXBTC15M', 'Bitcoin 15-Minute', 1200, 1, TRUE, '1970-01-01T00:00:00')
 ON CONFLICT (series_ticker) DO NOTHING;
+
+-- ── Weather observations ──────────────────────────────────────────────────────
+-- Time-stamped snapshots of NWS CLI products (the official observed daily high
+-- that Kalshi settles KXHIGH<city> markets on). The morning-after "YESTERDAY
+-- MAXIMUM" for an obs_date is the settlement value; intraday reads are kept too.
+CREATE TABLE IF NOT EXISTS weather_snapshots (
+    id          SERIAL PRIMARY KEY,
+    station     TEXT NOT NULL,
+    scanned_at  TEXT NOT NULL,
+    obs_date    TEXT,
+    max_temp_f  INTEGER,
+    min_temp_f  INTEGER,
+    precip_in   REAL,
+    issued      TEXT,
+    raw_excerpt TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_weather_station_date ON weather_snapshots(station, obs_date);

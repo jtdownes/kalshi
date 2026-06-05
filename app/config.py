@@ -32,6 +32,14 @@ _snapshot_series_raw = os.environ.get("SNAPSHOT_SERIES_TICKERS", "KXBTC15M")
 SNAPSHOT_SERIES_TICKERS = [s.strip() for s in _snapshot_series_raw.split(",") if s.strip()]
 SNAPSHOT_INTERVAL_SECONDS = int(os.environ.get("SNAPSHOT_INTERVAL_SECONDS", "1"))
 
+# ── Weather (NWS CLI settlement temps) ────────────────────────────────────────
+# Stations as "site:issuedby" pairs (NWS office : station), comma-separated.
+# e.g. "LOX:LAX,OKX:NYC". LOX/LAX = Los Angeles (settles KXHIGHLAX).
+_weather_raw = os.environ.get("WEATHER_STATIONS", "LOX:LAX")
+WEATHER_STATIONS = [tuple(p.split(":", 1)) for p in _weather_raw.split(",")
+                    if ":" in p]
+WEATHER_INTERVAL_SECONDS = int(os.environ.get("WEATHER_INTERVAL_SECONDS", str(15 * 60)))
+
 # ── Timing ────────────────────────────────────────────────────────────────────
 LOOK_AHEAD_SECONDS = int(os.environ.get("LOOK_AHEAD_SECONDS", str(20 * 60)))
 MIN_SECONDS_TO_CLOSE = int(os.environ.get("MIN_SECONDS_TO_CLOSE", "60"))

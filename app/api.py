@@ -616,6 +616,12 @@ def _parse_close_ts(ct: str | None) -> int | None:
         return None
 
 
+@app.get("/api/weather")
+def weather_list():
+    limit = min(int(request.args.get("limit", 100)), 500)
+    return jsonify(database.get_recent_weather_snapshots(limit))
+
+
 @app.get("/api/scanned-series")
 def scanned_series_list():
     return jsonify(database.get_scanned_series())

@@ -19,6 +19,7 @@ from datetime import datetime, timezone
 
 import config
 import database as db
+import weather
 from kalshi_client import KalshiClient, KalshiError
 from strategy import evaluate_market, can_place_order
 
@@ -194,6 +195,39 @@ def market_data_loop(client: KalshiClient):
         except Exception:
             log.exception("Unhandled error in market data collector")
         time.sleep(config.SNAPSHOT_INTERVAL_SECONDS)
+
+
+def weather_loop():
+    """Poll NWS CLI products for the official observed daily high (settlement
+    source for KXHIGH<city> markets) and store a row whenever the report changes."""
+    if not config.WEATHER_STATIONS:
+        log.info("Weather collector idle (no WEATHER_STATIONS configured)")
+        return
+    log.info("Weather collector started  (interval=%ds, stations=%s)",
+             config.WEATHER_INTERVAL_SECONDS, config.WEATHER_STATIONS)
+    while True:
+        for site, station in config.WEATHER_STATIONS:
+            try:
+                obs = weather.fetch_cli(site, station)
+                if obs.get("max_temp_f") is None and obs.get("obs_date") is None:
+                    log.warning("weather %s/%s: unparseable report", site, station)
+                    continue
+                # Dedup: only store when the report actually changed.
+                last = db.get_latest_weather_snapshot(obs["station"])
+                if last and (last["obs_date"], last["max_temp_f"], last["min_temp_f"],
+                             last["issued"]) == (obs["obs_date"], obs["max_temp_f"],
+                                                 obs["min_temp_f"], obs["issued"]):
+                    continue
+                db.save_weather_snapshot(
+                    station=obs["station"], scanned_at=datetime.utcnow().isoformat(),
+                    obs_date=obs["obs_date"], max_temp_f=obs["max_temp_f"],
+                    min_temp_f=obs["min_temp_f"], precip_in=obs["precip_in"],
+                    issued=obs["issued"], raw_excerpt=obs["raw_excerpt"])
+                log.info("WEATHER  %s  %s  high=%s°F low=%s°F",
+                         obs["station"], obs["obs_date"], obs["max_temp_f"], obs["min_temp_f"])
+            except Exception as e:
+                log.error("weather fetch failed for %s/%s: %s", site, station, e)
+        time.sleep(config.WEATHER_INTERVAL_SECONDS)
 
 
 def _place_limit_sell_exit(client: KalshiClient, entry_order: dict):
@@ -647,10 +681,12 @@ def main():
     scanner = threading.Thread(target=scan_loop, args=(client,), daemon=True, name="scanner")
     monitor = threading.Thread(target=order_monitor_loop, args=(client,), daemon=True, name="monitor")
     ws_fills = threading.Thread(target=ws_fills_thread, args=(client,), daemon=True, name="ws-fills")
+    weather_collector = threading.Thread(target=weather_loop, daemon=True, name="weather")
     market_data.start()
     scanner.start()
     monitor.start()
     ws_fills.start()
+    weather_collector.start()
 
     try:
         while True:
