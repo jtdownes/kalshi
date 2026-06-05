@@ -21,6 +21,27 @@ CLI_URL = "https://forecast.weather.gov/product.php?site={site}&product=CLI&issu
 _MONTHS = {m: i for i, m in enumerate(
     ["JANUARY", "FEBRUARY", "MARCH", "APRIL", "MAY", "JUNE", "JULY", "AUGUST",
      "SEPTEMBER", "OCTOBER", "NOVEMBER", "DECEMBER"], start=1)}
+_MON_ABBR = {name[:3]: num for name, num in _MONTHS.items()}
+
+# IEM archives each NWS text product under a unique id and serves a permalink.
+IEM_PERMALINK = "https://mesonet.agron.iastate.edu/p.php?pid={pid}"
+
+
+def _product_id(text: str) -> str | None:
+    """Build the IEM product id from the CLI's WMO/AWIPS header, e.g.
+    'CDUS46 KLOX 050841 / CLILAX' issued JUN 2026 -> 202606050841-KLOX-CDUS46-CLILAX.
+    Lets us link each report to its exact, date-unique product page."""
+    m = re.search(r"\n\s*([A-Z]{4}\d{2})\s+(K[A-Z]{3})\s+(\d{6})\s*\n\s*([A-Z0-9]{4,6})\s*\n", text)
+    if not m:
+        return None
+    wmo, office, ddhhmm, awips = m.groups()
+    mi = re.search(r"\b([A-Z]{3})\s+\d{1,2}\s+(\d{4})\b", text)   # month + year from issuance line
+    if not mi:
+        return None
+    mon = _MON_ABBR.get(mi.group(1).upper())
+    if not mon:
+        return None
+    return f"{mi.group(2)}{mon:02d}{ddhhmm}-{office}-{wmo}-{awips}"
 
 
 def _fetch_text(url: str, timeout: int = 15) -> str:
@@ -76,11 +97,15 @@ def fetch_cli(site: str, issuedby: str) -> dict:
     `site` is the issuing office (e.g. LOX); `issuedby` is the station (e.g. LAX).
     Returns the parsed dict plus station/url and a short raw excerpt for audit.
     """
-    url = CLI_URL.format(site=site, issuedby=issuedby)
-    text = _fetch_text(url)
+    page_url = CLI_URL.format(site=site, issuedby=issuedby)
+    text = _fetch_text(page_url)
     out = parse_cli(text)
     out["station"] = issuedby
-    out["url"] = url
+    # Prefer a date-unique permalink (this exact product); fall back to the live
+    # station page if the header can't be parsed.
+    pid = _product_id(text)
+    out["product_id"] = pid
+    out["url"] = IEM_PERMALINK.format(pid=pid) if pid else page_url
     ti = text.upper().find("TEMPERATURE")
     out["raw_excerpt"] = (text[ti:ti + 240] if ti != -1 else text[:240]).strip()
     return out

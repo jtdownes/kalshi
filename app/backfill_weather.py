@@ -1,14 +1,13 @@
 #!/usr/bin/env python3
-"""Backfill historical observed daily highs (the Kalshi weather settlement value).
+"""Backfill historical observed daily highs from IEM's parsed-CLI archive.
 
-Source: ACIS (data.rcc-acis.org), which returns the same station daily max the NWS
-CLI reports — verified to match exactly (LAX 2026-06-04 = 72F in both). Idempotent:
-only fills (station, obs_date) pairs not already in weather_snapshots, so it never
-double-counts the live CLI rows. Each row links to the official CLI product page.
+IEM parses the SAME NWS CLI product Kalshi settles on, and exposes high/low/precip
+plus a unique product id per date — so each backfilled row links to its exact
+report (unlike the live station page, which only shows today). Replaces any prior
+ACIS backfill (which lacked precip / text / a per-date link). Idempotent: never
+touches a (station, obs_date) that already exists (e.g. a live CLI row).
 """
 import os
-import sys
-import json
 from datetime import date, timedelta
 
 import requests
@@ -18,12 +17,23 @@ import config
 import weather
 
 DAYS = int(os.environ.get("BACKFILL_DAYS", "60"))
-ACIS = "http://data.rcc-acis.org/StnData"
+IEM = "https://mesonet.agron.iastate.edu/json/cli.py"
 
 
-def _num(v):
+def _int(v):
     try:
         return int(round(float(v)))
+    except (TypeError, ValueError):
+        return None
+
+
+def _precip(v):
+    if v in (None, "M"):
+        return None
+    if v == "T":
+        return 0.0
+    try:
+        return float(v)
     except (TypeError, ValueError):
         return None
 
@@ -35,39 +45,52 @@ def main():
     cur = conn.cursor()
     edate = date.today()
     sdate = edate - timedelta(days=DAYS)
-    print(f"backfilling {sdate}..{edate} for {config.WEATHER_STATIONS}")
+    years = sorted({sdate.year, edate.year})
+
+    # Replace any earlier ACIS backfill with the richer IEM rows.
+    cur.execute("DELETE FROM weather_snapshots WHERE issued = 'ACIS backfill'")
+    print(f"removed {cur.rowcount} old ACIS rows; backfilling {sdate}..{edate} from IEM")
 
     for site, station in config.WEATHER_STATIONS:
-        url = weather.CLI_URL.format(site=site, issuedby=station)
+        sid = f"K{station}"
         rows = []
-        for sid in (f"K{station}", station):          # try ICAO then bare code
-            params = {"sid": sid, "sdate": sdate.isoformat(), "edate": edate.isoformat(),
-                      "elems": "maxt,mint", "output": "json"}
+        for yr in years:
             try:
-                r = requests.get(ACIS, params={"params": json.dumps(params)}, timeout=30)
-                rows = r.json().get("data", []) or []
+                r = requests.get(IEM, params={"station": sid, "year": str(yr), "fmt": "json"}, timeout=30)
+                rows += r.json().get("results", []) or []
             except Exception as e:
-                print(f"  {station}: ACIS error for sid={sid}: {e}"); rows = []
-            if rows:
-                break
+                print(f"  {station}: IEM error for {yr}: {e}")
         ins = skip = 0
         for row in rows:
-            d = row[0]
-            maxt = _num(row[1]) if len(row) > 1 else None
-            mint = _num(row[2]) if len(row) > 2 else None
+            d = row.get("valid")
+            if not d or not (sdate.isoformat() <= d <= edate.isoformat()):
+                continue
+            maxt = _int(row.get("high"))
             if maxt is None:
                 continue
             cur.execute("SELECT 1 FROM weather_snapshots WHERE station=%s AND obs_date=%s LIMIT 1",
                         (station, d))
             if cur.fetchone():
                 skip += 1; continue
+            pid = row.get("product")
+            url = weather.IEM_PERMALINK.format(pid=pid) if pid else \
+                weather.CLI_URL.format(site=site, issuedby=station)
+            # real issuance time from the product id (YYYYMMDDHHMM...)
+            issued = "IEM CLI archive"
+            if pid and pid[:12].isdigit():
+                t = pid
+                issued = f"{t[:4]}-{t[4:6]}-{t[6:8]} {t[8:10]}:{t[10:12]}Z"
+            excerpt = (f"high {row.get('high')}F at {row.get('high_time')}, "
+                       f"low {row.get('low')}F at {row.get('low_time')}, "
+                       f"precip {row.get('precip')} in")
             cur.execute("""
                 INSERT INTO weather_snapshots
                   (station, scanned_at, obs_date, max_temp_f, min_temp_f, precip_in, issued, raw_excerpt, source_url)
                 VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
-            """, (station, d + "T12:00:00", d, maxt, mint, None, "ACIS backfill", None, url))
+            """, (station, d + "T12:00:00", d, maxt, _int(row.get("low")),
+                  _precip(row.get("precip")), issued, excerpt, url))
             ins += 1
-        print(f"  {station}: {len(rows)} days, inserted={ins}, skipped(existing)={skip}")
+        print(f"  {station} ({sid}): inserted={ins}, skipped(existing)={skip}")
     print("DONE")
 
 
