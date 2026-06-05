@@ -178,6 +178,37 @@ export default function PriceActionChart({ ticker, globalSnapshots, openOrders =
     );
   };
 
+  const BtcTooltip = ({ active, payload, label }: {
+    active?: boolean;
+    payload?: Array<{ value: number; name: string; color: string }>;
+    label?: string;
+  }) => {
+    if (!active || !payload || payload.length === 0) return null;
+    return (
+      <div style={{ backgroundColor: '#1a1a1a', border: '1px solid #444', color: '#eee', borderRadius: 4, padding: '6px 10px', fontSize: 11 }}>
+        <div style={{ color: '#aaa', marginBottom: 4 }}>{label != null ? fmtTime(label) : ''}</div>
+        {payload.map((p, i) => {
+          if (p.value == null) return null;
+          const dist = strikeNum != null ? p.value - strikeNum : null;
+          const swatch = p.color && !p.color.startsWith('url')
+            ? p.color
+            : (dist != null ? (dist >= 0 ? ABOVE : BELOW) : '#eee');
+          return (
+            <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 6, lineHeight: 1.5 }}>
+              <span style={{ display: 'inline-block', width: 12, height: 2, background: swatch, flexShrink: 0 }} />
+              <span style={{ color: swatch }}>{p.name}: ${p.value.toLocaleString()}</span>
+              {dist != null && (
+                <span style={{ color: dist >= 0 ? ABOVE : BELOW }}>
+                  ({dist >= 0 ? '+' : '−'}${Math.abs(Math.round(dist)).toLocaleString()} to strike)
+                </span>
+              )}
+            </div>
+          );
+        })}
+      </div>
+    );
+  };
+
   const chartStyle = {
     background: 'rgba(255,255,255,0.03)',
     padding: '16px',
@@ -332,12 +363,7 @@ export default function PriceActionChart({ ticker, globalSnapshots, openOrders =
                   tick={<BtcTick />}
                   width={52}
                 />
-                <Tooltip
-                  labelFormatter={fmtTime}
-                  contentStyle={{ backgroundColor: '#1a1a1a', borderColor: '#444', color: '#eee', borderRadius: '4px' }}
-                  itemStyle={{ fontSize: 11 }}
-                  formatter={(val: number, name: string) => [`$${val.toLocaleString()}`, name]}
-                />
+                <Tooltip content={<BtcTooltip />} />
                 <Legend verticalAlign="top" height={24} iconType="plainline" iconSize={12} wrapperStyle={{ fontSize: 11 }} />
 
                 {/* Strike price line */}
