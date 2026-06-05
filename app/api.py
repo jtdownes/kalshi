@@ -477,9 +477,11 @@ def _bt_simulate_rule(cur, series_like, rule, side):
             ORDER BY ticker, scanned_at DESC
         )
         SELECT f.ticker, f.fill_price, f.ttc_at_fill,
-               NULL AS exit_time, fin.final_bid, fin.final_ask
+               NULL AS exit_time, fin.final_bid, fin.final_ask,
+               ms.result AS official
         FROM fills f
         LEFT JOIN finals fin ON fin.ticker = f.ticker
+        LEFT JOIN market_settlements ms ON ms.ticker = f.ticker
         """
         params.append(series_like)
 
@@ -497,8 +499,17 @@ def _bt_simulate_rule(cur, series_like, rule, side):
                 pnl = -fill * qty                 # conservative: full loss on no-sell
                 outcome = "expired"
         else:
-            ref = r["final_bid"] if r["final_bid"] is not None else r["final_ask"]
-            resolved_yes = ref is not None and float(ref) >= 50
+            # Prefer Kalshi's official settlement (market.result, backfilled into
+            # market_settlements). Our last-snapshot yes>=50 heuristic disagreed
+            # with the real settlement index on ~2.3% of windows — all near-the-
+            # money, exactly where a thin-margin favorite play lives. Fall back to
+            # the heuristic only when no official result is on file yet.
+            official = r.get("official") if hasattr(r, "get") else r["official"]
+            if official in ("yes", "no"):
+                resolved_yes = official == "yes"
+            else:
+                ref = r["final_bid"] if r["final_bid"] is not None else r["final_ask"]
+                resolved_yes = ref is not None and float(ref) >= 50
             if side == "yes":
                 settle = 100 if resolved_yes else 0
             else:
