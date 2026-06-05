@@ -105,9 +105,17 @@ interface Props {
   rules: StrategyRule[]
   onChange: (rules: StrategyRule[]) => void
   readOnly?: boolean
+  /**
+   * Limited-edit mode: rule names and quantities stay editable, but the rule
+   * structure (conditions, side, entry/exit, add/remove/reorder) is locked.
+   * Used when editing a strategy that already has historical orders.
+   */
+  lockStructure?: boolean
 }
 
-export default function RuleBuilder({ rules, onChange, readOnly = false }: Props) {
+export default function RuleBuilder({ rules, onChange, readOnly = false, lockStructure = false }: Props) {
+  // Structural controls are locked in both read-only and limited-edit modes.
+  const structLocked = readOnly || lockStructure
   const patchRule = (i: number, patch: Partial<StrategyRule>) =>
     onChange(rules.map((r, idx) => (idx === i ? { ...r, ...patch } : r)))
 
@@ -124,6 +132,19 @@ export default function RuleBuilder({ rules, onChange, readOnly = false }: Props
 
   const addRule = () => onChange([...rules, defaultRule()])
   const removeRule = (i: number) => onChange(rules.filter((_, idx) => idx !== i))
+  const duplicateRule = (i: number) => {
+    const src = rules[i]
+    const clone: StrategyRule = {
+      ...src,
+      id: newId(),
+      name: src.name ? `${src.name} (copy)` : '',
+      conditions: src.conditions.map(c => ({ ...c })),
+      action: { ...src.action, entry: { ...src.action.entry }, exit: { ...src.action.exit } },
+    }
+    const next = [...rules]
+    next.splice(i + 1, 0, clone)
+    onChange(next)
+  }
   const moveRule = (i: number, dir: -1 | 1) => {
     const j = i + dir
     if (j < 0 || j >= rules.length) return
@@ -152,7 +173,7 @@ export default function RuleBuilder({ rules, onChange, readOnly = false }: Props
                 disabled={readOnly}
                 onChange={e => patchRule(ri, { name: e.target.value })}
               />
-              {!readOnly && (
+              {!structLocked && (
                 <div className="rule-head-actions">
                   <label className="rule-enable" title="Enable / disable this rule">
                     <input
@@ -166,6 +187,8 @@ export default function RuleBuilder({ rules, onChange, readOnly = false }: Props
                     onClick={() => moveRule(ri, -1)} title="Move up">↑</button>
                   <button type="button" className="rule-icon-btn" disabled={ri === rules.length - 1}
                     onClick={() => moveRule(ri, 1)} title="Move down">↓</button>
+                  <button type="button" className="rule-icon-btn"
+                    onClick={() => duplicateRule(ri)} title="Duplicate rule">⧉</button>
                   <button type="button" className="rule-icon-btn rule-icon-danger"
                     onClick={() => removeRule(ri)} title="Delete rule">✕</button>
                 </div>
@@ -181,13 +204,13 @@ export default function RuleBuilder({ rules, onChange, readOnly = false }: Props
                 const unit = timeUnitOf(c.value)
                 return (
                   <div key={ci} className="rule-cond-row">
-                    <select className="rule-input rule-field" value={c.field} disabled={readOnly}
+                    <select className="rule-input rule-field" value={c.field} disabled={structLocked}
                       onChange={e => patchCondition(ri, ci, { field: e.target.value as RuleField })}>
                       {FIELD_ORDER.map(f => (
                         <option key={f} value={f}>{FIELD_META[f].label}</option>
                       ))}
                     </select>
-                    <select className="rule-input rule-op" value={c.op} disabled={readOnly}
+                    <select className="rule-input rule-op" value={c.op} disabled={structLocked}
                       onChange={e => patchCondition(ri, ci, { op: e.target.value as RuleOp })}>
                       {OP_ORDER.map(o => (
                         <option key={o} value={o}>{OP_LABELS[o]}</option>
@@ -195,7 +218,7 @@ export default function RuleBuilder({ rules, onChange, readOnly = false }: Props
                     </select>
                     <div className="rule-value-wrap">
                       <input className="rule-input rule-value" type="number" placeholder="value"
-                        disabled={readOnly}
+                        disabled={structLocked}
                         value={isTime ? secsToDisplay(c.value, unit) : (c.value ?? '')}
                         onChange={e => {
                           const raw = e.target.value
@@ -207,7 +230,7 @@ export default function RuleBuilder({ rules, onChange, readOnly = false }: Props
                         <>
                           <span className="rule-and">and</span>
                           <input className="rule-input rule-value" type="number" placeholder="value"
-                            disabled={readOnly}
+                            disabled={structLocked}
                             value={isTime ? secsToDisplay(c.value2, unit) : (c.value2 ?? '')}
                             onChange={e => {
                               const raw = e.target.value
@@ -218,7 +241,7 @@ export default function RuleBuilder({ rules, onChange, readOnly = false }: Props
                         </>
                       )}
                       {isTime ? (
-                        <select className="rule-unit" value={unit} disabled={readOnly}
+                        <select className="rule-unit" value={unit} disabled={structLocked}
                           onChange={e => {
                             const nextUnit = e.target.value as 'min' | 'sec'
                             // reinterpret the displayed number in the new unit
@@ -236,7 +259,7 @@ export default function RuleBuilder({ rules, onChange, readOnly = false }: Props
                         meta.unit && <span className="rule-unit-static">{meta.unit}</span>
                       )}
                     </div>
-                    {!readOnly && (
+                    {!structLocked && (
                       <button type="button" className="rule-icon-btn rule-icon-danger"
                         disabled={rule.conditions.length === 1}
                         onClick={() => removeCondition(ri, ci)} title="Remove condition">−</button>
@@ -244,7 +267,7 @@ export default function RuleBuilder({ rules, onChange, readOnly = false }: Props
                   </div>
                 )
               })}
-              {!readOnly && (
+              {!structLocked && (
                 <button type="button" className="rule-add-cond" onClick={() => addCondition(ri)}>
                   + Add condition
                 </button>
@@ -257,7 +280,7 @@ export default function RuleBuilder({ rules, onChange, readOnly = false }: Props
               <div className="rule-action-grid">
                 <label className="rule-action-field">
                   <span>Buy side</span>
-                  <select className="rule-input" value={a.side} disabled={readOnly}
+                  <select className="rule-input" value={a.side} disabled={structLocked}
                     onChange={e => patchRule(ri, { action: { ...a, side: e.target.value as RuleAction['side'] } })}>
                     <option value="yes">YES</option>
                     <option value="no">NO</option>
@@ -266,7 +289,7 @@ export default function RuleBuilder({ rules, onChange, readOnly = false }: Props
                 </label>
                 <label className="rule-action-field">
                   <span>Entry price</span>
-                  <select className="rule-input" value={a.entry.type} disabled={readOnly}
+                  <select className="rule-input" value={a.entry.type} disabled={structLocked}
                     onChange={e => patchRule(ri, {
                       action: { ...a, entry: { ...a.entry, type: e.target.value as 'limit' | 'ask' } },
                     })}>
@@ -277,7 +300,7 @@ export default function RuleBuilder({ rules, onChange, readOnly = false }: Props
                 {a.entry.type === 'limit' && (
                   <label className="rule-action-field">
                     <span>Limit (¢)</span>
-                    <input className="rule-input" type="number" min={1} max={99} disabled={readOnly}
+                    <input className="rule-input" type="number" min={1} max={99} disabled={structLocked}
                       value={a.entry.price_cents ?? ''}
                       onChange={e => patchRule(ri, {
                         action: { ...a, entry: { ...a.entry, price_cents: e.target.value === '' ? null : parseInt(e.target.value, 10) } },
@@ -292,7 +315,7 @@ export default function RuleBuilder({ rules, onChange, readOnly = false }: Props
                 </label>
                 <label className="rule-action-field">
                   <span>After fill</span>
-                  <select className="rule-input" value={a.exit.type} disabled={readOnly}
+                  <select className="rule-input" value={a.exit.type} disabled={structLocked}
                     onChange={e => patchRule(ri, {
                       action: { ...a, exit: { ...a.exit, type: e.target.value as 'hold' | 'limit_sell' } },
                     })}>
@@ -303,7 +326,7 @@ export default function RuleBuilder({ rules, onChange, readOnly = false }: Props
                 {a.exit.type === 'limit_sell' && (
                   <label className="rule-action-field">
                     <span>Sell (¢)</span>
-                    <input className="rule-input" type="number" min={1} max={99} disabled={readOnly}
+                    <input className="rule-input" type="number" min={1} max={99} disabled={structLocked}
                       value={a.exit.price_cents ?? ''}
                       onChange={e => patchRule(ri, {
                         action: { ...a, exit: { ...a.exit, price_cents: e.target.value === '' ? null : parseInt(e.target.value, 10) } },
@@ -316,7 +339,7 @@ export default function RuleBuilder({ rules, onChange, readOnly = false }: Props
                   <input
                     type="checkbox"
                     checked={!!a.cancel_sibling_on_fill}
-                    disabled={readOnly}
+                    disabled={structLocked}
                     onChange={e => patchRule(ri, { action: { ...a, cancel_sibling_on_fill: e.target.checked } })}
                   />
                   <span>
@@ -332,7 +355,7 @@ export default function RuleBuilder({ rules, onChange, readOnly = false }: Props
         )
       })}
 
-      {!readOnly && (
+      {!structLocked && (
         <button type="button" className="btn rule-add-btn" onClick={addRule}>
           + Add Rule
         </button>
