@@ -19,3 +19,10 @@ frontend/node_modules/
 package-lock.json
 frontend/package-lock.json
 tmp_commit_message.txt
+
+# Build artifacts
+frontend/dist/
+
+# Scratch analysis outputs (from app/*.py research scripts)
+app/*_out.txt
+app/*.done
