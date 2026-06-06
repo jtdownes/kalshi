@@ -179,7 +179,7 @@ export default function StrategyBacktest({ rules, series = 'KXBTC15M' }: Props) 
             <Stat label="Trades" value={s!.trade_count.toLocaleString()} sub={s!.sold_count ? `${s!.sold_count.toLocaleString()} sold` : undefined} />
             <Stat
               label="Avg P&L"
-              value={s!.avg_pnl_cents != null ? `${s!.avg_pnl_cents > 0 ? '+' : ''}${s!.avg_pnl_cents}¢` : '—'}
+              value={s!.avg_pnl_cents != null ? `${s!.avg_pnl_cents > 0 ? '+' : ''}${centsToUSD(s!.avg_pnl_cents)}` : '—'}
               color={pnlColor(s!.avg_pnl_cents)}
             />
             <Stat label="Avg Fill" value={s!.avg_fill_price != null ? `${s!.avg_fill_price}¢` : '—'} />
@@ -208,7 +208,7 @@ export default function StrategyBacktest({ rules, series = 'KXBTC15M' }: Props) 
                         <td>{r.trade_count.toLocaleString()}</td>
                         <td style={{ color: (r.win_rate ?? 0) >= 50 ? '#00d4a0' : '#94a3b8' }}>{r.win_rate ?? '—'}%</td>
                         <td className="cell-dim">{r.avg_fill_price ?? '—'}¢</td>
-                        <td style={{ color: pnlColor(r.avg_pnl_cents) }}>{r.avg_pnl_cents != null ? `${r.avg_pnl_cents > 0 ? '+' : ''}${r.avg_pnl_cents}¢` : '—'}</td>
+                        <td style={{ color: pnlColor(r.avg_pnl_cents) }}>{r.avg_pnl_cents != null ? `${r.avg_pnl_cents > 0 ? '+' : ''}${centsToUSD(r.avg_pnl_cents)}` : '—'}</td>
                         <td style={{ color: pnlColor(r.roi_pct) }}>{r.roi_pct != null ? `${r.roi_pct}%` : '—'}</td>
                         <td style={{ color: pnlColor(r.total_pnl_cents) }}>{r.total_pnl_cents >= 0 ? '+' : ''}{centsToUSD(r.total_pnl_cents)}</td>
                       </tr>
