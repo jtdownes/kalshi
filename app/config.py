@@ -21,6 +21,11 @@ MAX_ENTRY_CENTS = int(os.environ.get("MAX_ENTRY_CENTS", "2"))
 
 PROACTIVE_MODE = os.environ.get("PROACTIVE_MODE", "true").lower() == "true"
 
+# Lookback window (seconds) for the "craziness" rule fields — realized BTC
+# volatility, range, drift, strike-crossings, buffer ratio. These are derived
+# from the bitcoin_snapshots series over the trailing CRAZINESS_LOOKBACK_SECONDS.
+CRAZINESS_LOOKBACK_SECONDS = int(os.environ.get("CRAZINESS_LOOKBACK_SECONDS", "180"))
+
 MAX_OPEN_ORDERS      = int(os.environ.get("MAX_OPEN_ORDERS", "20"))
 MAX_DAILY_SPEND_CENTS = int(os.environ.get("MAX_DAILY_SPEND_CENTS", "200"))
 LIMIT_SELL_PRICE_CENTS = os.environ.get("LIMIT_SELL_PRICE_CENTS")

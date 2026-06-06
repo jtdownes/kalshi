@@ -337,8 +337,68 @@ _BT_COL = {
     "open_interest":      "m.open_interest",
     "prior_resolution":   "pr.res",
     "prev2_resolution":   "p2r.res",
+    # "Craziness" fields are windowed aggregates over the trailing BTC series,
+    # supplied by the `craze` CTE (built only when a rule references them).
+    "btc_volatility":     "cz.btc_volatility",
+    "btc_range":          "cz.btc_range",
+    "btc_drift":          "cz.btc_drift",
+    "strike_crossings":   "cz.strike_crossings",
+    "buffer_ratio":       "cz.buffer_ratio",
 }
 _BT_OP = {"lt": "<", "lte": "<=", "gt": ">", "gte": ">=", "eq": "="}
+_BT_CRAZE_FIELDS = {"btc_volatility", "btc_range", "btc_drift",
+                    "strike_crossings", "buffer_ratio"}
+
+
+def _bt_craze_cte(series_like, window_secs, need_cross):
+    """Build the `craze` CTE: per-(ticker, scanned_at) windowed BTC stats over the
+    trailing `window_secs`, matching the live engine's craziness fields. The window
+    is per-ticker (a ticker's 1s snapshots are the global BTC series during its
+    life), so early rows see a shorter window — slightly stricter than live, fine.
+    Returns (cte_sql, params)."""
+    px     = "COALESCE(b.consolidated_price, b.coinbase_price)"
+    strike = "NULLIF(m.strike_str, '')::numeric"
+    win    = (f"PARTITION BY ticker ORDER BY scanned_at::timestamp "
+              f"RANGE BETWEEN INTERVAL '{int(window_secs)} seconds' PRECEDING AND CURRENT ROW")
+
+    if need_cross:
+        # strike_crossings needs a lag() to flag sign changes before the range-sum,
+        # so the base price/strike select is wrapped one extra level.
+        inner = f"""
+            SELECT ticker, scanned_at, px, strike, above_int,
+                   CASE WHEN above_int <> lag(above_int)
+                            OVER (PARTITION BY ticker ORDER BY scanned_at::timestamp)
+                        THEN 1 ELSE 0 END AS cross_flag
+            FROM (
+                SELECT m.ticker, m.scanned_at, {px} AS px, {strike} AS strike,
+                       CASE WHEN {px} > {strike} THEN 1 ELSE 0 END AS above_int
+                FROM market_snapshots m
+                LEFT JOIN bitcoin_snapshots b ON b.scanned_at = m.scanned_at
+                WHERE m.ticker LIKE %s
+            ) z
+        """
+        cross_col = "COALESCE(sum(cross_flag) OVER w, 0) AS strike_crossings,"
+    else:
+        inner = f"""
+            SELECT m.ticker, m.scanned_at, {px} AS px, {strike} AS strike
+            FROM market_snapshots m
+            LEFT JOIN bitcoin_snapshots b ON b.scanned_at = m.scanned_at
+            WHERE m.ticker LIKE %s
+        """
+        cross_col = ""
+
+    cte = f"""
+        craze AS (
+            SELECT ticker, scanned_at,
+                   stddev_pop(px) OVER w                       AS btc_volatility,
+                   (max(px) OVER w - min(px) OVER w)           AS btc_range,
+                   (px - first_value(px) OVER w)               AS btc_drift,
+                   {cross_col}
+                   (abs(px - strike) / NULLIF(stddev_pop(px) OVER w, 0)) AS buffer_ratio
+            FROM ( {inner} ) zz
+            WINDOW w AS ({win})
+        )"""
+    return cte, [series_like]
 
 
 def _bt_conditions_sql(conditions):
@@ -427,6 +487,14 @@ def _bt_simulate_rule(cur, series_like, rule, side):
         cte_defs.append(_res_cte("prev2_res", 1800))
         cte_params.append(series_like)
         join_parts.append("LEFT JOIN prev2_res  p2r ON p2r.ct = m.close_time")
+    if fields_used & _BT_CRAZE_FIELDS:
+        craze_sql, craze_params = _bt_craze_cte(
+            series_like, config.CRAZINESS_LOOKBACK_SECONDS,
+            need_cross="strike_crossings" in fields_used)
+        cte_defs.append(craze_sql)
+        cte_params.extend(craze_params)
+        join_parts.append(
+            "LEFT JOIN craze cz ON cz.ticker = m.ticker AND cz.scanned_at = m.scanned_at")
 
     fills_def = f"""
         fills AS (

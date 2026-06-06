@@ -42,6 +42,15 @@ FIELDS = (
     "open_interest",
     "prior_resolution",   # 1=YES 0=NO: result of previous sequential 15-min window
     "prev2_resolution",   # 1=YES 0=NO: result 2 windows back
+    # ── "Craziness" fields: derived from the trailing BTC price series. They
+    # measure how wild the tape has been near this contract's strike, so a rule
+    # can refuse to enter when a fixed dollar buffer is meaningless. Available
+    # only when the engine is fed recent prices (extra["recent_btc_prices"]).
+    "btc_volatility",     # USD: std dev of BTC over the lookback window
+    "btc_range",          # USD: high − low of BTC over the lookback window
+    "btc_drift",          # USD signed: last − first (momentum direction/size)
+    "strike_crossings",   # count: times BTC crossed this strike in the window
+    "buffer_ratio",       # |distance_to_strike| / btc_volatility (vol-units of buffer)
 )
 
 OPS = ("lt", "lte", "gt", "gte", "eq", "between")
@@ -98,6 +107,34 @@ def compute_fields(market: dict, time_to_close: int | None = None,
             v = extra.get(k)
             if v is not None:
                 result[k] = float(v)
+
+        # Derive the "craziness" fields from the trailing BTC price series.
+        # Per-market (strike_crossings / buffer_ratio need this contract's
+        # strike), so they're computed here rather than passed in extra.
+        recent = extra.get("recent_btc_prices")
+        if recent and len(recent) >= 2:
+            n = len(recent)
+            mean = sum(recent) / n
+            vol = (sum((p - mean) ** 2 for p in recent) / n) ** 0.5
+            result["btc_volatility"] = vol
+            result["btc_range"]      = max(recent) - min(recent)
+            result["btc_drift"]      = recent[-1] - recent[0]
+
+            if strike is not None:
+                crossings = 0
+                prev_sign = None
+                for p in recent:
+                    d = p - strike
+                    if d == 0:
+                        continue
+                    sign = d > 0
+                    if prev_sign is not None and sign != prev_sign:
+                        crossings += 1
+                    prev_sign = sign
+                result["strike_crossings"] = float(crossings)
+
+            if distance is not None and vol > 0:
+                result["buffer_ratio"] = abs(distance) / vol
     return result
 
 

@@ -37,14 +37,26 @@ def evaluate_market(market: dict, settings: dict | None = None,
     # a needless DB hit on every market every scan tick.
     extra = {}
     close_time = market.get("close_time")
-    needs_prior = any(
-        c.get("field") in ("prior_resolution", "prev2_resolution")
+    referenced = {
+        c.get("field")
         for r in rule_list for c in (r.get("conditions") or [])
-    )
+    }
+    needs_prior = bool(referenced & {"prior_resolution", "prev2_resolution"})
     if needs_prior and close_time and "-" in ticker:
         series_prefix = ticker.split("-", 1)[0]  # series id only, e.g. "KXBTC15M"
         try:
             extra = db.get_prior_resolutions_for_close(series_prefix, str(close_time))
+        except Exception:
+            pass
+
+    # "Craziness" fields need the trailing BTC price series. Fetch it once per
+    # market only when a rule actually references one of them.
+    CRAZINESS = {"btc_volatility", "btc_range", "btc_drift",
+                 "strike_crossings", "buffer_ratio"}
+    if referenced & CRAZINESS:
+        try:
+            extra["recent_btc_prices"] = db.get_recent_btc_prices(
+                config.CRAZINESS_LOOKBACK_SECONDS)
         except Exception:
             pass
 

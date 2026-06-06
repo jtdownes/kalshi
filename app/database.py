@@ -665,6 +665,26 @@ def get_market_snapshots_for_ticker(ticker: str, limit: int | None = None) -> li
         rows = cur.fetchall()
     return [dict(r) for r in rows]
 
+def get_recent_btc_prices(window_seconds: int = 180) -> list[float]:
+    """Consolidated BTC prices over the trailing `window_seconds`, oldest first.
+
+    Feeds the 'craziness' rule fields (realized volatility, range, drift,
+    strike-crossings, buffer ratio). Returns [] when no snapshots exist in
+    the window. Falls back to coinbase_price when the consolidated mid is null.
+    """
+    query = """
+        SELECT COALESCE(consolidated_price, coinbase_price) AS price
+        FROM bitcoin_snapshots
+        WHERE scanned_at::timestamp >= ((CURRENT_TIMESTAMP AT TIME ZONE 'UTC') - (%s || ' seconds')::interval)
+        ORDER BY scanned_at ASC
+    """
+    with _lock, _conn() as conn:
+        cur = conn.cursor(cursor_factory=psycopg2.extras.DictCursor)
+        cur.execute(query, (str(int(window_seconds)),))
+        rows = cur.fetchall()
+    return [float(r["price"]) for r in rows if r["price"] is not None]
+
+
 def get_latest_snapshots_for_series(series_tickers: list[str], max_age_seconds: int = 15) -> list[dict]:
     if not series_tickers:
         return []

@@ -18,6 +18,11 @@ const FIELD_META: Record<RuleField, { label: string; unit: Unit }> = {
   open_interest:      { label: 'Open interest',           unit: '' },
   prior_resolution:   { label: 'Prior window (1=YES 0=NO)',  unit: '' },
   prev2_resolution:   { label: '2nd prior window (1=YES 0=NO)', unit: '' },
+  btc_volatility:     { label: 'BTC volatility (recent σ)',  unit: '$' },
+  btc_range:          { label: 'BTC range (recent hi−lo)',   unit: '$' },
+  btc_drift:          { label: 'BTC drift (recent net move)', unit: '$' },
+  strike_crossings:   { label: 'Strike crossings (recent)',  unit: '' },
+  buffer_ratio:       { label: 'Buffer ÷ volatility',        unit: '' },
 }
 const FIELD_ORDER = Object.keys(FIELD_META) as RuleField[]
 
