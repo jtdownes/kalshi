@@ -182,6 +182,7 @@ def scan_loop(client: KalshiClient):
             active_profiles = db.get_active_profiles()
             for profile in active_profiles:
                 _scan(client, profile)
+            _check_stop_losses(client)
         except Exception:
             log.exception("Unhandled error in scanner")
         time.sleep(1)
@@ -280,6 +281,66 @@ def _place_limit_sell_exit(client: KalshiClient, entry_order: dict):
     )
 
 
+def _place_stop_exit(client: KalshiClient, entry_order: dict, sell_price: int):
+    """Stop triggered: market-sell the position now by crossing into the current
+    bid. Saved as an `exit` order so the normal fill monitor closes the parent at
+    the sale price; we stamp exit_order_kalshi_id on the parent to block re-fires."""
+    sell_price = max(1, min(99, int(sell_price)))
+
+    # Re-read under the lock-free race window: another tick may have placed it.
+    current = db.get_order_by_kalshi_order_id(entry_order["kalshi_order_id"]) or entry_order
+    if current.get("exit_order_kalshi_id") or current.get("closed_at"):
+        return
+
+    exit_oid = str(uuid.uuid4())
+    try:
+        resp = client.place_order(
+            entry_order["market_ticker"], entry_order["side"], sell_price,
+            exit_oid, count=entry_order.get("count") or 1, action="sell",
+        )
+    except KalshiError as e:
+        log.error("stop-loss sell failed on %s %s: %s",
+                  entry_order["side"], entry_order["market_ticker"], e)
+        return
+
+    exit_order_id = resp.get("order", {}).get("order_id")
+    db.save_order(
+        client_order_id=exit_oid,
+        market_ticker=entry_order["market_ticker"],
+        side=entry_order["side"],
+        entry_price_cents=sell_price,
+        kalshi_order_id=exit_order_id,
+        market_close_time=entry_order.get("market_close_time"),
+        profile_id=entry_order.get("profile_id"),
+        order_role="exit",
+        parent_kalshi_order_id=entry_order["kalshi_order_id"],
+        exit_strategy="stop_loss",
+        exit_target_cents=sell_price,
+        count=entry_order.get("count") or 1,
+    )
+    db.update_order(entry_order["kalshi_order_id"], exit_order_kalshi_id=exit_order_id)
+    log.info("STOP HIT %-6s %-50s  bid<=%s¢  sell@%d¢  id=%s",
+             entry_order["side"], entry_order["market_ticker"],
+             entry_order.get("stop_loss_cents"), sell_price, exit_order_id)
+
+
+def _check_stop_losses(client: KalshiClient):
+    """Every scan tick: for each filled position carrying a stop, exit the moment
+    the side's freshest bid is at/through the stop. Uses the latest snapshot bid
+    (1s cadence) so this needs no extra API polling to decide."""
+    positions = db.get_open_stop_orders()
+    for pos in positions:
+        snap = db.get_latest_snapshot_for_ticker(pos["market_ticker"])
+        if not snap:
+            continue
+        bid = snap.get("yes_bid") if pos["side"] == "yes" else snap.get("no_bid")
+        if bid is None or bid <= 0:
+            continue
+        if bid > pos["stop_loss_cents"]:
+            continue
+        _place_stop_exit(client, pos, round(float(bid)))
+
+
 def _cancel_sibling_legs(client: KalshiClient, order: dict):
     """
     OCO: when one entry leg of a rule fills, cancel the other resting legs from
@@ -312,13 +373,16 @@ def _handle_filled_order(client: KalshiClient, order: dict, filled_at: str = Non
     db.update_order(order["kalshi_order_id"], status="filled", filled_at=filled_at)
 
     if order.get("order_role") == "exit":
+        is_stop = order.get("exit_strategy") == "stop_loss"
         db.close_entry_order_with_exit(
             order["parent_kalshi_order_id"],
             order["entry_price_cents"],
             closed_at=filled_at,
+            close_reason="stop_loss" if is_stop else "limit_sell",
         )
         log.info(
-            "EXIT HIT %-6s %-50s  %d¢",
+            "%s %-6s %-50s  %d¢",
+            "STOP OUT" if is_stop else "EXIT HIT",
             order["side"],
             order["market_ticker"],
             order["entry_price_cents"],
@@ -394,6 +458,16 @@ def _scan(client: KalshiClient, settings: dict):
                 exit_strategy = "hold_to_expiration"
                 exit_target_cents = None
 
+            # Optional stop-loss (independent of the hold/limit-sell exit): the
+            # bot market-sells when the side's bid trades at/through this level.
+            stop_loss_cents = exit_spec.get("stop_cents")
+            try:
+                stop_loss_cents = int(stop_loss_cents) if stop_loss_cents not in (None, "") else None
+            except (TypeError, ValueError):
+                stop_loss_cents = None
+            if stop_loss_cents is not None and not (1 <= stop_loss_cents <= 99):
+                stop_loss_cents = None
+
             client_oid = str(uuid.uuid4())
             try:
                 resp = client.place_order(ticker, side, price_cents, client_oid, count=quantity)
@@ -412,6 +486,7 @@ def _scan(client: KalshiClient, settings: dict):
                     cancel_sibling_on_fill=spec.get("oco", False),
                     exit_strategy=exit_strategy,
                     exit_target_cents=exit_target_cents,
+                    stop_loss_cents=stop_loss_cents,
                 )
             except KalshiError as e:
                 log.error("place_order failed on %s %s: %s", side, ticker, e)

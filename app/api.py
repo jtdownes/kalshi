@@ -457,6 +457,18 @@ def _bt_simulate_rule(cur, series_like, rule, side):
     if is_limit_sell and sell_price is None:
         return None
 
+    # Optional stop-loss (applies to hold exits): sell the moment the side's bid
+    # trades at/through stop_cents, capping the loss instead of riding to 0. Exit
+    # proceeds use the actual bid at the trigger, so a gap-through fills below the
+    # stop — no free lunch.
+    stop_cents = exit_.get("stop_cents")
+    try:
+        stop_cents = int(stop_cents) if stop_cents not in (None, "") else None
+    except (TypeError, ValueError):
+        stop_cents = None
+    if stop_cents is not None and not (1 <= stop_cents <= 99):
+        stop_cents = None
+
     # Cross-window resolution CTEs are expensive full-series scans; only build
     # them when a condition actually references the corresponding field. Each
     # window resolves on its FINAL snapshot (yes_bid, else yes_ask, >= 50) — the
@@ -525,13 +537,29 @@ def _bt_simulate_rule(cur, series_like, rule, side):
              AND s.{bid_col} >= %s
             GROUP BY f.ticker
         )
-        SELECT f.ticker, f.fill_price, f.ttc_at_fill,
+        SELECT f.ticker, f.fill_time, f.fill_price, f.ttc_at_fill,
                e.exit_time, NULL AS final_bid, NULL AS final_ask
         FROM fills f
         LEFT JOIN exits e ON e.ticker = f.ticker
         """
         params.append(sell_price)
     else:
+        # First snapshot after fill where the side's bid hits the stop; the bid
+        # there is the realized exit price (gap-through fills below the stop).
+        stop_cte, stop_sel, stop_join = "", "NULL", ""
+        if stop_cents is not None:
+            stop_cte = f""",
+        stops AS (
+            SELECT DISTINCT ON (s.ticker) s.ticker, s.{bid_col} AS stop_bid
+            FROM fills f
+            JOIN market_snapshots s
+              ON s.ticker = f.ticker
+             AND s.scanned_at > f.fill_time
+             AND s.{bid_col} <= %s AND s.{bid_col} > 0
+            ORDER BY s.ticker, s.scanned_at
+        )"""
+            stop_sel  = "st.stop_bid"
+            stop_join = "LEFT JOIN stops st ON st.ticker = f.ticker"
         sql = fills_cte + f""",
         finals AS (
             -- Settlement is ALWAYS read off the YES quote, never the side's own
@@ -543,15 +571,18 @@ def _bt_simulate_rule(cur, series_like, rule, side):
             FROM market_snapshots
             WHERE ticker LIKE %s
             ORDER BY ticker, scanned_at DESC
-        )
-        SELECT f.ticker, f.fill_price, f.ttc_at_fill,
+        ){stop_cte}
+        SELECT f.ticker, f.fill_time, f.fill_price, f.ttc_at_fill,
                NULL AS exit_time, fin.final_bid, fin.final_ask,
-               ms.result AS official
+               ms.result AS official, {stop_sel} AS stop_bid
         FROM fills f
         LEFT JOIN finals fin ON fin.ticker = f.ticker
         LEFT JOIN market_settlements ms ON ms.ticker = f.ticker
+        {stop_join}
         """
         params.append(series_like)
+        if stop_cents is not None:
+            params.append(stop_cents)
 
     cur.execute(sql, params)
     rows = cur.fetchall()
@@ -559,6 +590,8 @@ def _bt_simulate_rule(cur, series_like, rule, side):
     trades = []
     for r in rows:
         fill = float(r["fill_price"])
+        settle_win = None      # would the held-to-expiration position have profited?
+        stopped = False
         if is_limit_sell:
             if r["exit_time"] is not None:
                 pnl = (float(sell_price) - fill) * qty
@@ -582,11 +615,20 @@ def _bt_simulate_rule(cur, series_like, rule, side):
                 settle = 100 if resolved_yes else 0
             else:
                 settle = 0 if resolved_yes else 100
-            pnl = (settle - fill) * qty
-            outcome = "won" if pnl > 0 else "lost"
+            settle_win = (settle - fill) > 0
+            stop_bid = r["stop_bid"] if r["stop_bid"] is not None else None
+            if stop_bid is not None:
+                # Stopped out before settlement: realized exit at the trigger bid.
+                pnl = (float(stop_bid) - fill) * qty
+                outcome = "stopped"
+                stopped = True
+            else:
+                pnl = (settle - fill) * qty
+                outcome = "won" if pnl > 0 else "lost"
         trades.append({
             "ticker":      r["ticker"],
             "side":        side,
+            "fill_time":   r["fill_time"],
             "fill_price":  round(fill, 1),
             "ttc_at_fill": int(r["ttc_at_fill"]) if r["ttc_at_fill"] is not None else None,
             "exit_kind":   "limit_sell" if is_limit_sell else "hold",
@@ -594,6 +636,8 @@ def _bt_simulate_rule(cur, series_like, rule, side):
             "pnl_cents":   round(pnl, 1),
             "qty":         qty,
             "outcome":     outcome,
+            "stopped":     stopped,
+            "settle_win":  settle_win,
         })
     return trades
 

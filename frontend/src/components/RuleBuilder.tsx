@@ -99,10 +99,13 @@ export function ruleSummary(rule: StrategyRule): string {
   const exitTxt = a.exit.type === 'limit_sell'
     ? `, sell @ ${a.exit.price_cents ?? '?'}¢`
     : ''
+  const stopTxt = a.exit.stop_cents != null
+    ? `, stop @ ${a.exit.stop_cents}¢`
+    : ''
   const ocoTxt = a.side === 'both' && a.cancel_sibling_on_fill
     ? ' (first fill cancels the other)'
     : ''
-  return `IF ${conds} → buy ${sideTxt} ${entryTxt} ×${a.quantity}${exitTxt}${ocoTxt}`
+  return `IF ${conds} → buy ${sideTxt} ${entryTxt} ×${a.quantity}${exitTxt}${stopTxt}${ocoTxt}`
 }
 
 // ── Component ─────────────────────────────────────────────────────────────────
@@ -338,6 +341,15 @@ export default function RuleBuilder({ rules, onChange, readOnly = false, lockStr
                       })} />
                   </label>
                 )}
+                <label className="rule-action-field">
+                  <span>Stop loss (¢)</span>
+                  <input className="rule-input" type="number" min={1} max={99} disabled={structLocked}
+                    placeholder="off"
+                    value={a.exit.stop_cents ?? ''}
+                    onChange={e => patchRule(ri, {
+                      action: { ...a, exit: { ...a.exit, stop_cents: e.target.value === '' ? null : parseInt(e.target.value, 10) } },
+                    })} />
+                </label>
               </div>
               {a.side === 'both' && (
                 <label className="rule-oco">

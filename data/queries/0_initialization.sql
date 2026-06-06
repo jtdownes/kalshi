@@ -139,6 +139,15 @@ BEGIN
     END IF;
 END $$;
 
+-- Stop-loss trigger (cents) on the side's bid. When set on a filled entry, the
+-- bot market-sells the position the moment the bid trades at/through this level.
+DO $$
+BEGIN
+    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='orders' AND column_name='stop_loss_cents') THEN
+        ALTER TABLE orders ADD COLUMN stop_loss_cents INTEGER;
+    END IF;
+END $$;
+
 CREATE TABLE IF NOT EXISTS market_snapshots (
     id                   SERIAL PRIMARY KEY,
     ticker               TEXT NOT NULL,

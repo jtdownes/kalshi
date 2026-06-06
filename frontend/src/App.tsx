@@ -95,7 +95,7 @@ export interface RuleCondition {
   value2?: number | null
 }
 export interface RuleEntry { type: 'limit' | 'ask'; price_cents?: number | null }
-export interface RuleExit  { type: 'hold' | 'limit_sell'; price_cents?: number | null }
+export interface RuleExit  { type: 'hold' | 'limit_sell'; price_cents?: number | null; stop_cents?: number | null }
 export interface RuleAction {
   side: 'yes' | 'no' | 'both'
   entry: RuleEntry

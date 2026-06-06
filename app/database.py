@@ -282,7 +282,8 @@ def save_order(client_order_id: str, market_ticker: str, side: str,
                parent_kalshi_order_id: str = None,
                exit_strategy: str = 'hold_to_expiration',
                exit_target_cents: int = None, count: int = 1,
-               entry_rule_id: str = None, cancel_sibling_on_fill: bool = False):
+               entry_rule_id: str = None, cancel_sibling_on_fill: bool = False,
+               stop_loss_cents: int = None):
     now = datetime.utcnow().isoformat()
     query = """
         INSERT OR IGNORE INTO orders
@@ -291,14 +292,15 @@ def save_order(client_order_id: str, market_ticker: str, side: str,
            distance_to_strike_at_placement, market_close_time,
            time_to_close_at_placement, profile_id, order_role,
            parent_kalshi_order_id, exit_strategy, exit_target_cents,
-           entry_rule_id, cancel_sibling_on_fill)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+           entry_rule_id, cancel_sibling_on_fill, stop_loss_cents)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     """
     params = (client_order_id, kalshi_order_id, market_ticker, side,
               entry_price_cents, count, now, btc_price, distance_to_strike,
               market_close_time, time_to_close_seconds, profile_id,
               order_role, parent_kalshi_order_id, exit_strategy,
-              exit_target_cents, entry_rule_id, cancel_sibling_on_fill)
+              exit_target_cents, entry_rule_id, cancel_sibling_on_fill,
+              stop_loss_cents)
 
     with _lock, _conn() as conn:
         _execute(conn, query, params)
@@ -462,6 +464,40 @@ def get_filled_without_outcome() -> list[dict]:
         cur.execute(query)
         rows = cur.fetchall()
     return [dict(r) for r in rows]
+
+def get_open_stop_orders() -> list[dict]:
+    """Filled entry positions with a stop-loss set that haven't been closed or
+    had an exit placed yet. `exit_order_kalshi_id IS NULL` is the re-trigger
+    guard: once the stop sell is placed we stamp that id so the next tick skips
+    it."""
+    query = """
+        SELECT kalshi_order_id, market_ticker, side, entry_price_cents,
+               count, market_close_time, stop_loss_cents, exit_strategy,
+               exit_target_cents, profile_id
+        FROM orders
+        WHERE order_role = 'entry'
+          AND status = 'filled'
+          AND stop_loss_cents IS NOT NULL
+          AND closed_at IS NULL
+          AND exit_order_kalshi_id IS NULL
+    """
+    with _lock, _conn() as conn:
+        cur = conn.cursor(cursor_factory=psycopg2.extras.DictCursor)
+        cur.execute(query)
+        rows = cur.fetchall()
+    return [dict(r) for r in rows]
+
+def get_latest_snapshot_for_ticker(ticker: str) -> dict | None:
+    """Most recent market_snapshots row for one ticker (freshest bid/ask)."""
+    query = """
+        SELECT ticker, yes_ask, yes_bid, no_ask, no_bid, scanned_at, time_to_close_secs
+        FROM market_snapshots WHERE ticker = %s ORDER BY scanned_at DESC LIMIT 1
+    """
+    with _lock, _conn() as conn:
+        cur = conn.cursor(cursor_factory=psycopg2.extras.DictCursor)
+        cur.execute(query, (ticker,))
+        row = cur.fetchone()
+    return dict(row) if row else None
 
 def get_order_by_kalshi_order_id(kalshi_order_id: str) -> dict | None:
     query = "SELECT * FROM orders WHERE kalshi_order_id = %s"
