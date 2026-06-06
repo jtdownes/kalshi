@@ -472,7 +472,7 @@ export default function Dashboard({ orders, trades, openOrders, positions, snaps
             <thead>
               <tr>
                 <th>Market</th>
-                <th>Orders</th>
+                <th>Qty</th>
                 <th>Entry Cost</th>
                 <th>Exit Proceeds</th>
                 <th>Status</th>
@@ -505,7 +505,7 @@ export default function Dashboard({ orders, trades, openOrders, positions, snaps
                           </a>
                         </span>
                       </td>
-                      <td className="cell-dim">{t.order_count}</td>
+                      <td className="cell-dim">{t.total_count}</td>
                       <td className="cell-dim">{centsToUSD(t.total_entry_cost_cents ?? 0)}</td>
                       <td className="cell-dim">{t.total_close_proceeds_cents != null && t.total_close_proceeds_cents > 0 ? centsToUSD(t.total_close_proceeds_cents) : '—'}</td>
                       <td><StatusBadge status={t.status} outcome={t.outcome} /></td>

@@ -450,7 +450,7 @@ def get_sibling_resting_entries(market_ticker: str, entry_rule_id: str,
 def get_filled_without_outcome() -> list[dict]:
     query = """
         SELECT kalshi_order_id, market_ticker, side, entry_price_cents,
-               market_close_time
+               count, market_close_time
         FROM orders
         WHERE order_role = 'entry'
           AND status = 'filled'

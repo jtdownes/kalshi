@@ -571,8 +571,9 @@ def _resolve_outcomes(client: KalshiClient):
                 continue
             side    = order["side"]
             outcome = "win" if result == side else "loss"
-            payout  = 100 if outcome == "win" else 0
-            net     = payout - order["entry_price_cents"]
+            count   = order.get("count") or 1
+            payout  = (100 if outcome == "win" else 0) * count
+            net     = payout - order["entry_price_cents"] * count
             db.update_order(order["kalshi_order_id"],
                             outcome=outcome, payout_cents=payout, net_profit_cents=net)
             log.info("OUTCOME  %-4s  %-50s  %s  net=%+d\u00a2",

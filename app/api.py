@@ -891,6 +891,8 @@ def trades():
             o.market_ticker,
             COUNT(*)                                                                 AS order_count,
             COUNT(*) FILTER (WHERE o.closed_at IS NOT NULL)                          AS closed_order_count,
+            COALESCE(SUM(o.count) FILTER (WHERE o.status = 'filled'
+                                              AND o.order_role = 'entry'), 0)        AS total_count,
             MIN(o.placed_at)                                                         AS placed_at,
             MIN(CASE WHEN o.status = 'filled' THEN o.filled_at END)                  AS first_entry_filled_at,
             MAX(CASE WHEN o.status = 'filled' THEN o.filled_at END)                  AS last_entry_filled_at,

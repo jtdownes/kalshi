@@ -39,6 +39,7 @@ export interface Trade {
   market_ticker: string
   order_count: number
   closed_order_count: number
+  total_count: number
   placed_at: string
   filled_at: string | null
   first_entry_filled_at: string | null
