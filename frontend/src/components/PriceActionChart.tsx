@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useId, useState } from 'react';
 import {
   LineChart,
   Line,
@@ -51,6 +51,11 @@ export default function PriceActionChart({ ticker, globalSnapshots, openOrders =
   const [loading, setLoading] = useState(false);
   const [showStrikeLabel, setShowStrikeLabel] = useState(false);
   const [btcView, setBtcView] = useState<'consolidated' | 'individual'>('consolidated');
+  // Unique per instance: multiple PriceActionCharts can render at once (e.g.
+  // the selected-ticker chart + an expanded-row chart). A shared SVG gradient
+  // id would make every url(#id) resolve to the first one in the DOM, so one
+  // chart's green/red strike split would bleed onto the others.
+  const gradientId = `consolidatedStrikeSplit-${useId()}`;
 
   useEffect(() => {
     if (!ticker) return;
@@ -339,7 +344,7 @@ export default function PriceActionChart({ ticker, globalSnapshots, openOrders =
               <LineChart data={chartData} margin={{ top: 5, right: 10, left: 0, bottom: 5 }} syncId="priceAction">
                 {btcView === 'consolidated' && consolidatedSplit != null && (
                   <defs>
-                    <linearGradient id="consolidatedStrikeSplit" x1="0" y1="0" x2="0" y2="1">
+                    <linearGradient id={gradientId} x1="0" y1="0" x2="0" y2="1">
                       <stop offset="0" stopColor={ABOVE} />
                       <stop offset={consolidatedSplit} stopColor={ABOVE} />
                       <stop offset={consolidatedSplit} stopColor={BELOW} />
@@ -383,7 +388,7 @@ export default function PriceActionChart({ ticker, globalSnapshots, openOrders =
                 )}
 
                 {btcView === 'consolidated'
-                  ? <Line key="consolidated" type="monotone" dataKey="consolidated" name="Consolidated (avg available)" stroke={consolidatedSplit != null ? 'url(#consolidatedStrikeSplit)' : '#ffffff'} dot={false} strokeWidth={2.5} isAnimationActive={false} connectNulls />
+                  ? <Line key="consolidated" type="monotone" dataKey="consolidated" name="Consolidated (avg available)" stroke={consolidatedSplit != null ? `url(#${gradientId})` : '#ffffff'} dot={false} strokeWidth={2.5} isAnimationActive={false} connectNulls />
                   : [
                       <Line key="coinbase" type="monotone" dataKey="coinbase_price" name="Coinbase" stroke="#f7931a" dot={false} strokeWidth={2} isAnimationActive={false} connectNulls />,
                       <Line key="kraken" type="monotone" dataKey="kraken_price" name="Kraken" stroke="#a855f7" dot={false} strokeWidth={2} isAnimationActive={false} connectNulls />,
