@@ -1178,9 +1178,12 @@ def delete_profile(profile_id: int):
 def snapshot_series():
     ticker = request.args.get("ticker", "").strip().upper()
     try:
-        limit = min(int(request.args.get("limit", 300)), 1000)
+        # One ticker == one full market window (a 15M market is ~450-500
+        # snapshots), so default to the max cap to return the whole window
+        # rather than truncating off the start.
+        limit = min(int(request.args.get("limit", 1000)), 1000)
     except ValueError:
-        limit = 300
+        limit = 1000
 
     if not ticker:
         return jsonify({"error": "ticker required"}), 400
