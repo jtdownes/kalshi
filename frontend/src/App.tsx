@@ -5,7 +5,6 @@ import Strategies from './pages/Strategies'
 import Snapshots from './pages/Snapshots'
 import MarketsClimate from './pages/MarketsClimate'
 import MarketsCrypto from './pages/MarketsCrypto'
-import Backtest from './pages/Backtest'
 import Analytics from './pages/Analytics'
 
 // ── Types ────────────────────────────────────────────────────────────────────────────────
@@ -352,9 +351,6 @@ export default function App() {
               </NavLink>
             </div>
           </div>
-          <NavLink to="/backtest" className={({ isActive }) => isActive ? 'nav-link nav-link-active' : 'nav-link'}>
-            Backtest
-          </NavLink>
           <NavLink to="/analytics" className={({ isActive }) => isActive ? 'nav-link nav-link-active' : 'nav-link'}>
             Analytics
           </NavLink>
@@ -421,7 +417,6 @@ export default function App() {
           path="/markets/crypto"
           element={<MarketsCrypto snapshots={snapshots} orders={orders} openOrders={orders.filter(o => o.status === 'resting')} />}
         />
-        <Route path="/backtest" element={<Backtest />} />
         <Route path="/analytics" element={<Analytics />} />
       </Routes>
     </div>
