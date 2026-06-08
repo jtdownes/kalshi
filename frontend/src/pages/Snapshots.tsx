@@ -22,9 +22,10 @@ interface Props {
   snapshots: Snapshot[]
   orders?: Order[]
   openOrders?: Order[]
+  filterFn?: (ticker: string, title: string) => boolean
 }
 
-export default function Snapshots({ snapshots, orders = [], openOrders = [] }: Props) {
+export default function Snapshots({ snapshots, orders = [], openOrders = [], filterFn }: Props) {
   const [allTickers, setAllTickers] = useState<TickerSummary[]>([])
   const [selectedTicker, setSelectedTicker] = useState<string | null>(null)
   const [expandedTicker, setExpandedTicker] = useState<string | null>(null)
@@ -33,6 +34,11 @@ export default function Snapshots({ snapshots, orders = [], openOrders = [] }: P
   const [expandedError, setExpandedError] = useState<string | null>(null)
 
   // Fetch all distinct tickers from the DB for the historical panel
+  const filteredAllTickers = useMemo(() => {
+    if (!filterFn) return allTickers
+    return allTickers.filter(t => filterFn(t.ticker, t.title || ''))
+  }, [allTickers, filterFn])
+
   useEffect(() => {
     fetch('/api/snapshots/tickers')
       .then(r => r.json())
@@ -45,8 +51,10 @@ export default function Snapshots({ snapshots, orders = [], openOrders = [] }: P
     for (const snapshot of snapshots) {
       if (!latestByTicker.has(snapshot.ticker)) latestByTicker.set(snapshot.ticker, snapshot)
     }
-    return Array.from(latestByTicker.values())
-  }, [snapshots])
+    let result = Array.from(latestByTicker.values())
+    if (filterFn) result = result.filter(s => filterFn(s.ticker, s.title || ''))
+    return result
+  }, [snapshots, filterFn])
 
   function toggleExpanded(ticker: string) {
     if (expandedTicker === ticker) {
@@ -158,7 +166,9 @@ export default function Snapshots({ snapshots, orders = [], openOrders = [] }: P
             <tbody>
               {allTickers.length === 0 ? (
                 <tr><td colSpan={10} className="cell-empty">Loading markets…</td></tr>
-              ) : allTickers.map(t => (
+              ) : filteredAllTickers.length === 0 ? (
+                <tr><td colSpan={10} className="cell-empty">No markets for this filter</td></tr>
+              ) : filteredAllTickers.map(t => (
                 <>
                   <tr
                     key={t.ticker}

@@ -3,6 +3,8 @@ import { Routes, Route, NavLink } from 'react-router-dom'
 import Dashboard from './pages/Dashboard'
 import Strategies from './pages/Strategies'
 import Snapshots from './pages/Snapshots'
+import MarketsClimate from './pages/MarketsClimate'
+import MarketsCrypto from './pages/MarketsCrypto'
 import Backtest from './pages/Backtest'
 import Analytics from './pages/Analytics'
 
@@ -334,9 +336,22 @@ export default function App() {
           <NavLink to="/strategies" className={({ isActive }) => isActive ? 'nav-link nav-link-active' : 'nav-link'}>
             Strategies
           </NavLink>
-          <NavLink to="/markets" className={({ isActive }) => isActive ? 'nav-link nav-link-active' : 'nav-link'}>
-            Markets
-          </NavLink>
+          <div className="nav-dropdown">
+            <NavLink to="/markets" end className={({ isActive }) => isActive ? 'nav-link nav-link-active' : 'nav-link'}>
+              Markets ▾
+            </NavLink>
+            <div className="nav-dropdown-menu">
+              <NavLink to="/markets" end className={({ isActive }) => isActive ? 'nav-dropdown-item nav-dropdown-item-active' : 'nav-dropdown-item'}>
+                All Markets
+              </NavLink>
+              <NavLink to="/markets/crypto" className={({ isActive }) => isActive ? 'nav-dropdown-item nav-dropdown-item-active' : 'nav-dropdown-item'}>
+                Crypto (BTC)
+              </NavLink>
+              <NavLink to="/markets/climate" className={({ isActive }) => isActive ? 'nav-dropdown-item nav-dropdown-item-active' : 'nav-dropdown-item'}>
+                Climate
+              </NavLink>
+            </div>
+          </div>
           <NavLink to="/backtest" className={({ isActive }) => isActive ? 'nav-link nav-link-active' : 'nav-link'}>
             Backtest
           </NavLink>
@@ -397,6 +412,14 @@ export default function App() {
         <Route
           path="/markets"
           element={<Snapshots snapshots={snapshots} orders={orders} openOrders={orders.filter(o => o.status === 'resting')} />}
+        />
+        <Route
+          path="/markets/climate"
+          element={<MarketsClimate snapshots={snapshots} orders={orders} openOrders={orders.filter(o => o.status === 'resting')} />}
+        />
+        <Route
+          path="/markets/crypto"
+          element={<MarketsCrypto snapshots={snapshots} orders={orders} openOrders={orders.filter(o => o.status === 'resting')} />}
         />
         <Route path="/backtest" element={<Backtest />} />
         <Route path="/analytics" element={<Analytics />} />
