@@ -5,7 +5,6 @@ import Strategies from './pages/Strategies'
 import Snapshots from './pages/Snapshots'
 import MarketsClimate from './pages/MarketsClimate'
 import MarketsCrypto from './pages/MarketsCrypto'
-import Analytics from './pages/Analytics'
 import type { Position, Order, Trade, Snapshot, Settings, Profile, Quotes } from './types'
 import { fmtTime } from './utils'
 export type { Position, Order, Trade, Snapshot, Settings, Profile, Quotes }
@@ -151,9 +150,6 @@ export default function App() {
               </NavLink>
             </div>
           </div>
-          <NavLink to="/analytics" className={({ isActive }) => isActive ? 'nav-link nav-link-active' : 'nav-link'}>
-            Analytics
-          </NavLink>
         </nav>
         <div className="header-right">
           {error && <span style={{ color: '#ff4444', fontSize: 12 }}>{error}</span>}
@@ -217,7 +213,6 @@ export default function App() {
           path="/markets/crypto"
           element={<MarketsCrypto snapshots={snapshots} orders={orders} openOrders={orders.filter(o => o.status === 'resting')} />}
         />
-        <Route path="/analytics" element={<Analytics />} />
       </Routes>
     </div>
   )

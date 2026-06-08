@@ -13,7 +13,6 @@ from routes.trading import trading_bp
 from routes.backtest import backtest_bp
 from routes.markets import markets_bp
 from routes.profiles import profiles_bp
-from routes.analytics import analytics_bp
 
 database.init_db()
 ws_worker.start()
@@ -32,7 +31,6 @@ app.register_blueprint(trading_bp)
 app.register_blueprint(backtest_bp)
 app.register_blueprint(markets_bp)
 app.register_blueprint(profiles_bp)
-app.register_blueprint(analytics_bp)
 
 
 @app.before_request
