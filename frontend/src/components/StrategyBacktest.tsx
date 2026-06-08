@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, Fragment } from 'react'
-import type { StrategyRule, Order } from '../App'
-import { centsToUSD, kalshiMarketUrl } from '../App'
+import type { StrategyRule, Order } from '../types'
+import { centsToUSD, kalshiMarketUrl } from '../utils'
 import PriceActionChart from './PriceActionChart'
 
 interface Metrics {

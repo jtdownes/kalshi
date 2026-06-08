@@ -1,6 +1,6 @@
 import type {
   StrategyRule, RuleCondition, RuleField, RuleOp, RuleAction,
-} from '../App'
+} from '../types'
 
 // ── Field / operator metadata ────────────────────────────────────────────────
 type Unit = 'time' | '¢' | '$' | ''

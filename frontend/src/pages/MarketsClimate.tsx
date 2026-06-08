@@ -1,4 +1,4 @@
-import type { Snapshot, Order } from '../App'
+import type { Snapshot, Order } from '../types'
 import Snapshots from './Snapshots'
 
 interface Props {

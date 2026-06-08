@@ -11,7 +11,8 @@ import {
   ReferenceLine,
   ReferenceDot,
 } from 'recharts';
-import { fmtTime, Snapshot, Order } from '../App';
+import { fmtTime } from '../utils';
+import type { Snapshot, Order } from '../types';
 
 interface SeriesData {
   scanned_at: string;

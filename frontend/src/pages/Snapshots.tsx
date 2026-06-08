@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
-import type { Snapshot, Order } from '../App'
-import { fmtCents, fmtDur, fmtTime, fmtUnixTime, kalshiMarketUrl } from '../App'
+import type { Snapshot, Order } from '../types'
+import { fmtCents, fmtDur, fmtTime, fmtUnixTime, kalshiMarketUrl } from '../utils'
 import PriceActionChart from '../components/PriceActionChart'
 import ScannedMarkets from '../components/ScannedMarkets'
 

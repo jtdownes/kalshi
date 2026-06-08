@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react'
-import type { Settings, Profile, StrategyRule } from '../App'
-import { centsToUSD, fmtTime, fmtTickers } from '../App'
+import type { Settings, Profile, StrategyRule } from '../types'
+import { centsToUSD, fmtTime, fmtTickers } from '../utils'
 import RuleBuilder, { defaultRule, ruleSummary } from '../components/RuleBuilder'
 import StrategyBacktest from '../components/StrategyBacktest'
 

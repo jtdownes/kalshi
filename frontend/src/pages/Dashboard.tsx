@@ -1,8 +1,8 @@
 import { Fragment, useEffect, useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import type { Order, Trade, Position, Snapshot, Settings, Profile, Quotes } from '../App'
+import type { Order, Trade, Position, Snapshot, Settings, Profile, Quotes } from '../types'
 import PriceActionChart from '../components/PriceActionChart'
-import { centsToUSD, fmtCents, fmtPnL, fmtTime, fmtUnixTime, fmtDur, kalshiMarketUrl } from '../App'
+import { centsToUSD, fmtCents, fmtPnL, fmtTime, fmtUnixTime, fmtDur, kalshiMarketUrl } from '../utils'
 
 const DEFAULT_HISTORY_LIMIT = 10
 const HISTORY_LIMIT_STORAGE_KEY = 'kalshi-order-history-limit'
