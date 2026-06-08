@@ -49,7 +49,7 @@ FIELDS = (
     "btc_volatility",     # USD: std dev of BTC over the lookback window
     "btc_range",          # USD: high − low of BTC over the lookback window
     "btc_drift",          # USD signed: last − first (momentum direction/size)
-    "strike_crossings",   # count: times BTC crossed this strike in the window
+    "strike_crossings",   # count: times BTC crossed this strike over the whole market life
     "buffer_ratio",       # |distance_to_strike| / btc_volatility (vol-units of buffer)
 )
 
@@ -108,9 +108,9 @@ def compute_fields(market: dict, time_to_close: int | None = None,
             if v is not None:
                 result[k] = float(v)
 
-        # Derive the "craziness" fields from the trailing BTC price series.
-        # Per-market (strike_crossings / buffer_ratio need this contract's
-        # strike), so they're computed here rather than passed in extra.
+        # Rate-of-change "craziness" fields from the trailing BTC price series.
+        # Per-market (buffer_ratio needs this contract's strike), so computed
+        # here rather than passed in extra.
         recent = extra.get("recent_btc_prices")
         if recent and len(recent) >= 2:
             n = len(recent)
@@ -120,21 +120,26 @@ def compute_fields(market: dict, time_to_close: int | None = None,
             result["btc_range"]      = max(recent) - min(recent)
             result["btc_drift"]      = recent[-1] - recent[0]
 
-            if strike is not None:
-                crossings = 0
-                prev_sign = None
-                for p in recent:
-                    d = p - strike
-                    if d == 0:
-                        continue
-                    sign = d > 0
-                    if prev_sign is not None and sign != prev_sign:
-                        crossings += 1
-                    prev_sign = sign
-                result["strike_crossings"] = float(crossings)
-
             if distance is not None and vol > 0:
                 result["buffer_ratio"] = abs(distance) / vol
+
+        # strike_crossings counts EVERY strike crossing over the whole market
+        # life (open -> now), not a trailing window — a 15-min market that has
+        # whipsawed the strike 5 times is choppy even if the last 3 min are calm.
+        # Uses the full-market series when supplied; falls back to `recent`.
+        cross_series = extra.get("market_btc_prices") or recent
+        if strike is not None and cross_series and len(cross_series) >= 2:
+            crossings = 0
+            prev_sign = None
+            for p in cross_series:
+                d = p - strike
+                if d == 0:
+                    continue
+                sign = d > 0
+                if prev_sign is not None and sign != prev_sign:
+                    crossings += 1
+                prev_sign = sign
+            result["strike_crossings"] = float(crossings)
     return result
 
 

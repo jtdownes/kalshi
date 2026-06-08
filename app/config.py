@@ -21,10 +21,18 @@ MAX_ENTRY_CENTS = int(os.environ.get("MAX_ENTRY_CENTS", "2"))
 
 PROACTIVE_MODE = os.environ.get("PROACTIVE_MODE", "true").lower() == "true"
 
-# Lookback window (seconds) for the "craziness" rule fields — realized BTC
-# volatility, range, drift, strike-crossings, buffer ratio. These are derived
-# from the bitcoin_snapshots series over the trailing CRAZINESS_LOOKBACK_SECONDS.
+# Trailing lookback window (seconds) for the "craziness" rule fields that are
+# inherently rate-of-change measures — realized BTC volatility, range, drift,
+# buffer ratio. Derived from the bitcoin_snapshots series over the trailing
+# CRAZINESS_LOOKBACK_SECONDS. NOTE: strike_crossings does NOT use this window —
+# it counts every strike crossing over the *entire* market life (open -> now),
+# bounded by MARKET_DURATION_SECONDS below.
 CRAZINESS_LOOKBACK_SECONDS = int(os.environ.get("CRAZINESS_LOOKBACK_SECONDS", "180"))
+
+# Length of one market window (seconds). KXBTC15M = 15 min. Used to bound the
+# strike_crossings count to this market's own life so pre-open chop on the
+# global BTC series isn't counted against it.
+MARKET_DURATION_SECONDS = int(os.environ.get("MARKET_DURATION_SECONDS", "900"))
 
 MAX_OPEN_ORDERS      = int(os.environ.get("MAX_OPEN_ORDERS", "20"))
 MAX_DAILY_SPEND_CENTS = int(os.environ.get("MAX_DAILY_SPEND_CENTS", "200"))

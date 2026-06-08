@@ -49,14 +49,29 @@ def evaluate_market(market: dict, settings: dict | None = None,
         except Exception:
             pass
 
-    # "Craziness" fields need the trailing BTC price series. Fetch it once per
-    # market only when a rule actually references one of them.
-    CRAZINESS = {"btc_volatility", "btc_range", "btc_drift",
-                 "strike_crossings", "buffer_ratio"}
-    if referenced & CRAZINESS:
+    # Trailing-window craziness fields (vol/range/drift/buffer_ratio) need the
+    # recent BTC series. Fetch once per market only when a rule references one.
+    CRAZINESS_TRAILING = {"btc_volatility", "btc_range", "btc_drift",
+                          "buffer_ratio"}
+    if referenced & CRAZINESS_TRAILING:
         try:
             extra["recent_btc_prices"] = db.get_recent_btc_prices(
                 config.CRAZINESS_LOOKBACK_SECONDS)
+        except Exception:
+            pass
+
+    # strike_crossings spans the WHOLE market life, not a trailing window. Bound
+    # the BTC fetch to this market's age (open -> now) so crossings from before
+    # the market opened aren't counted: age = duration - time_to_close.
+    if "strike_crossings" in referenced:
+        ttc = time_to_close if time_to_close is not None else market.get("time_to_close_secs")
+        try:
+            if ttc is not None:
+                age = config.MARKET_DURATION_SECONDS - int(ttc)
+            else:
+                age = config.MARKET_DURATION_SECONDS
+            age = max(2, min(age, config.MARKET_DURATION_SECONDS))
+            extra["market_btc_prices"] = db.get_recent_btc_prices(age)
         except Exception:
             pass
 

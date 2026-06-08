@@ -351,15 +351,22 @@ _BT_CRAZE_FIELDS = {"btc_volatility", "btc_range", "btc_drift",
 
 
 def _bt_craze_cte(series_like, window_secs, need_cross):
-    """Build the `craze` CTE: per-(ticker, scanned_at) windowed BTC stats over the
-    trailing `window_secs`, matching the live engine's craziness fields. The window
-    is per-ticker (a ticker's 1s snapshots are the global BTC series during its
-    life), so early rows see a shorter window — slightly stricter than live, fine.
+    """Build the `craze` CTE: per-(ticker, scanned_at) BTC stats matching the live
+    engine's craziness fields. vol/range/drift/buffer_ratio use a trailing
+    `window_secs` window (`w`); strike_crossings uses the whole-market window
+    (`wfull`, all of this ticker's rows so far) to mirror live's open->now count.
+    Null-price ticks are excluded so the series matches live's get_recent_btc_prices
+    (which drops them) — a BTC-feed gap can't fabricate a phantom crossing.
     Returns (cte_sql, params)."""
     px     = "COALESCE(b.consolidated_price, b.coinbase_price)"
     strike = "NULLIF(m.strike_str, '')::numeric"
     win    = (f"PARTITION BY ticker ORDER BY scanned_at::timestamp "
               f"RANGE BETWEEN INTERVAL '{int(window_secs)} seconds' PRECEDING AND CURRENT ROW")
+    # strike_crossings counts over the whole market life (all rows of this
+    # ticker so far), matching the live engine's open->now span — NOT a trailing
+    # window like the rate-of-change stats above.
+    win_full = ("PARTITION BY ticker ORDER BY scanned_at::timestamp "
+                "ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW")
 
     if need_cross:
         # strike_crossings needs a lag() to flag sign changes before the range-sum,
@@ -375,9 +382,10 @@ def _bt_craze_cte(series_like, window_secs, need_cross):
                 FROM market_snapshots m
                 LEFT JOIN bitcoin_snapshots b ON b.scanned_at = m.scanned_at
                 WHERE m.ticker LIKE %s
+                  AND COALESCE(b.consolidated_price, b.coinbase_price) IS NOT NULL
             ) z
         """
-        cross_col = "COALESCE(sum(cross_flag) OVER w, 0) AS strike_crossings,"
+        cross_col = "COALESCE(sum(cross_flag) OVER wfull, 0) AS strike_crossings,"
     else:
         inner = f"""
             SELECT m.ticker, m.scanned_at, {px} AS px, {strike} AS strike
@@ -396,7 +404,7 @@ def _bt_craze_cte(series_like, window_secs, need_cross):
                    {cross_col}
                    (abs(px - strike) / NULLIF(stddev_pop(px) OVER w, 0)) AS buffer_ratio
             FROM ( {inner} ) zz
-            WINDOW w AS ({win})
+            WINDOW w AS ({win}){(", wfull AS (" + win_full + ")") if need_cross else ""}
         )"""
     return cte, [series_like]
 
