@@ -22,7 +22,7 @@ services:
     container_name: kalshi-api
     restart: unless-stopped
     env_file: .env
-    command: python -u /app/api.py
+    command: python -u /app/app.py
     networks:
       - downes-capital-network
     volumes:

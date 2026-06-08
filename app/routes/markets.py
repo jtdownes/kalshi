@@ -1,0 +1,145 @@
+"""
+Markets routes: snapshots, scanned-series management, weather.
+"""
+
+import time
+from datetime import datetime
+
+from flask import Blueprint, jsonify, request
+
+import database
+from database.core import cursor_conn
+from kalshi_client import KalshiClient
+
+markets_bp = Blueprint('markets', __name__)
+
+
+def _parse_close_ts(ct: str | None) -> int | None:
+    if not ct:
+        return None
+    try:
+        return int(datetime.fromisoformat(ct.replace("Z", "+00:00")).timestamp())
+    except (ValueError, TypeError):
+        return None
+
+
+@markets_bp.get("/api/weather")
+def weather_list():
+    limit = min(int(request.args.get("limit", 100)), 500)
+    return jsonify(database.get_recent_weather_snapshots(limit))
+
+
+@markets_bp.get("/api/scanned-series")
+def scanned_series_list():
+    return jsonify(database.get_scanned_series())
+
+
+@markets_bp.post("/api/scanned-series")
+def scanned_series_add():
+    body   = request.get_json(silent=True) or {}
+    series = (body.get("series_ticker") or "").strip().upper()
+    if not series or not series.replace("_", "").isalnum():
+        return jsonify({"error": "invalid series ticker"}), 400
+
+    try:
+        data = KalshiClient().get_markets(series_ticker=series, status="open", limit=200)
+    except Exception as e:
+        return jsonify({"error": f"could not reach Kalshi: {e}"}), 502
+    markets = data.get("markets", []) or []
+    if not markets:
+        return jsonify({"error": f"no open markets found for series '{series}'"}), 404
+
+    now_ts  = int(time.time())
+    closes  = [c for c in (_parse_close_ts(m.get("close_time") or m.get("expiration_time")) for m in markets) if c]
+    farthest = max(closes) if closes else now_ts + 1200
+    suggested = min(max(farthest - now_ts + 3600, 600), 7 * 86400)
+
+    try:
+        look_ahead = int(body.get("look_ahead_seconds") or suggested)
+        interval   = max(1, int(body.get("interval_seconds") or 1))
+    except (TypeError, ValueError):
+        return jsonify({"error": "look_ahead_seconds / interval_seconds must be integers"}), 400
+    label = (body.get("label") or markets[0].get("title") or series)[:120]
+
+    row = database.add_scanned_series(series, label, look_ahead, interval)
+    row["market_count"] = len(markets)
+    row["sample_title"] = markets[0].get("title", "")
+    return jsonify(row), 201
+
+
+@markets_bp.patch("/api/scanned-series/<series>")
+def scanned_series_toggle(series):
+    body    = request.get_json(silent=True) or {}
+    enabled = bool(body.get("enabled", True))
+    if not database.set_scanned_series_enabled(series.upper(), enabled):
+        return jsonify({"error": "series not found"}), 404
+    return jsonify({"series_ticker": series.upper(), "enabled": enabled})
+
+
+@markets_bp.delete("/api/scanned-series/<series>")
+def scanned_series_delete(series):
+    if not database.remove_scanned_series(series.upper()):
+        return jsonify({"error": "series not found"}), 404
+    return jsonify({"ok": True})
+
+
+@markets_bp.get("/api/snapshots")
+def snapshots():
+    limit_param = request.args.get("limit")
+    limit  = int(limit_param) if limit_param else None
+    ticker = (request.args.get("ticker") or "").strip().upper()
+    if ticker:
+        return jsonify(database.get_market_snapshots_for_ticker(ticker, limit))
+    return jsonify(database.get_recent_market_snapshots(limit))
+
+
+@markets_bp.get("/api/snapshots/tickers")
+def snapshot_tickers():
+    """One summary row per distinct ticker, ordered by most recent scan."""
+    with cursor_conn() as c:
+        c.execute("""
+            SELECT ticker, title, strike_str,
+                   yes_ask, yes_bid, no_ask,
+                   volume, open_interest, time_to_close_secs,
+                   scanned_at
+            FROM (
+                SELECT DISTINCT ON (ticker)
+                       ticker, title, strike_str,
+                       yes_ask, yes_bid, no_ask,
+                       volume, open_interest, time_to_close_secs,
+                       scanned_at
+                FROM market_snapshots
+                ORDER BY ticker, id DESC
+            ) latest
+            ORDER BY scanned_at DESC
+        """)
+        rows = c.fetchall()
+    return jsonify([dict(r) for r in rows])
+
+
+@markets_bp.get("/api/snapshots/series")
+def snapshot_series():
+    ticker = request.args.get("ticker", "").strip().upper()
+    try:
+        limit = min(int(request.args.get("limit", 1000)), 1000)
+    except ValueError:
+        limit = 1000
+
+    if not ticker:
+        return jsonify({"error": "ticker required"}), 400
+
+    with cursor_conn() as c:
+        c.execute("""
+            SELECT m.scanned_at, m.yes_bid, m.no_bid,
+                   COALESCE(b.consolidated_price, b.coinbase_price) AS btc_price,
+                   b.consolidated_price AS brti_price,
+                   b.coinbase_price, b.kraken_price, b.bitstamp_price, b.gemini_price, m.strike_str
+            FROM market_snapshots m
+            LEFT JOIN bitcoin_snapshots b ON b.scanned_at = m.scanned_at
+            WHERE m.ticker = %s
+            ORDER BY m.id DESC
+            LIMIT %s
+        """, (ticker, limit))
+        rows = c.fetchall()
+
+    return jsonify([dict(r) for r in reversed(rows)])
