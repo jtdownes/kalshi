@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import type { StrategyRule, Profile } from '../types'
 import RuleBuilder, { defaultRule } from '../components/RuleBuilder'
 import StrategyBacktest from '../components/StrategyBacktest'
@@ -7,13 +7,37 @@ const SUPPORTED_MARKETS = [
   { value: 'KXBTC15M', label: 'Bitcoin 15 Minute' },
 ] as const
 
+const RULES_STORAGE_KEY = 'simulator.rules.v1'
+
+// Restore the rules the user was last editing so a refresh doesn't wipe them.
+function loadStoredRules(): StrategyRule[] {
+  try {
+    const raw = localStorage.getItem(RULES_STORAGE_KEY)
+    if (!raw) return [defaultRule()]
+    const parsed = JSON.parse(raw)
+    if (Array.isArray(parsed) && parsed.length > 0) return parsed
+  } catch {
+    /* corrupt/unavailable storage — fall through to a fresh rule */
+  }
+  return [defaultRule()]
+}
+
 interface Props {
   profiles: Profile[]
 }
 
 export default function Simulator({ profiles }: Props) {
-  const [rules, setRules] = useState<StrategyRule[]>([defaultRule()])
+  const [rules, setRules] = useState<StrategyRule[]>(loadStoredRules)
   const [series, setSeries] = useState<string>('KXBTC15M')
+
+  // Persist rules on every change so they survive a page refresh.
+  useEffect(() => {
+    try {
+      localStorage.setItem(RULES_STORAGE_KEY, JSON.stringify(rules))
+    } catch {
+      /* storage full/unavailable — non-fatal, just won't persist */
+    }
+  }, [rules])
 
   const handleLoadFrom = (e: React.ChangeEvent<HTMLSelectElement>) => {
     const profileId = Number(e.target.value)
