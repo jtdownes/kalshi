@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef } from 'react'
 import type { StrategyRule, Snapshot } from '../types'
 import { centsToUSD } from '../utils'
+import type { TtcWindow } from '../utils'
 import SimulatorExecutions, { type SimTrade } from './SimulatorExecutions'
 
 interface Metrics {
@@ -57,9 +58,11 @@ interface Props {
   // When set, scope the run to the most-recent N markets and include a
   // "skipped" row for every scoped market no rule filled (simulator feed).
   marketLimit?: number
+  // Time-to-close windows to shade on each execution chart.
+  ttcWindows?: TtcWindow[]
 }
 
-export default function StrategyBacktest({ rules, series = 'KXBTC15M', globalSnapshots = [], defaultShowExecutions = false, marketLimit }: Props) {
+export default function StrategyBacktest({ rules, series = 'KXBTC15M', globalSnapshots = [], defaultShowExecutions = false, marketLimit, ttcWindows }: Props) {
   const [result, setResult] = useState<Result | null>(null)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -212,7 +215,7 @@ export default function StrategyBacktest({ rules, series = 'KXBTC15M', globalSna
           </button>
 
           {showTrades && (
-            <SimulatorExecutions trades={result!.trades} globalSnapshots={globalSnapshots} />
+            <SimulatorExecutions trades={result!.trades} globalSnapshots={globalSnapshots} ttcWindows={ttcWindows} />
           )}
         </div>
       )}

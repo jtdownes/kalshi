@@ -130,7 +130,7 @@ def snapshot_series():
 
     with cursor_conn() as c:
         c.execute("""
-            SELECT m.scanned_at, m.yes_bid, m.no_bid,
+            SELECT m.scanned_at, m.yes_bid, m.no_bid, m.time_to_close_secs,
                    COALESCE(b.consolidated_price, b.coinbase_price) AS btc_price,
                    b.consolidated_price AS brti_price,
                    b.coinbase_price, b.kraken_price, b.bitstamp_price, b.gemini_price, m.strike_str

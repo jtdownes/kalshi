@@ -1,6 +1,7 @@
 import { Fragment, useState } from 'react'
 import type { Snapshot, Order } from '../types'
 import { fmtDur, fmtTime, kalshiMarketUrl } from '../utils'
+import type { TtcWindow } from '../utils'
 import PriceActionChart from './PriceActionChart'
 
 // One row of the simulator feed: either a simulated fill, or a "skipped" market
@@ -76,9 +77,10 @@ function markersFor(t: SimTrade): Order[] {
 interface Props {
   trades: SimTrade[]
   globalSnapshots?: Snapshot[]
+  ttcWindows?: TtcWindow[]
 }
 
-export default function SimulatorExecutions({ trades, globalSnapshots = [] }: Props) {
+export default function SimulatorExecutions({ trades, globalSnapshots = [], ttcWindows = [] }: Props) {
   const [expanded, setExpanded] = useState<string | null>(null)
 
   const filledCount = trades.filter(t => t.outcome !== 'skipped').length
@@ -145,6 +147,7 @@ export default function SimulatorExecutions({ trades, globalSnapshots = [] }: Pr
                           ticker={t.ticker}
                           globalSnapshots={globalSnapshots}
                           historyOrders={markersFor(t)}
+                          ttcWindows={ttcWindows}
                         />
                       </td>
                     </tr>

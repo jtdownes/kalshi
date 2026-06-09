@@ -1,7 +1,8 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import type { StrategyRule, Profile } from '../types'
 import RuleBuilder, { defaultRule } from '../components/RuleBuilder'
 import StrategyBacktest from '../components/StrategyBacktest'
+import { ttcWindowsFromRules } from '../utils'
 
 const SUPPORTED_MARKETS = [
   { value: 'KXBTC15M', label: 'Bitcoin 15 Minute' },
@@ -38,6 +39,8 @@ export default function Simulator({ profiles }: Props) {
       /* storage full/unavailable — non-fatal, just won't persist */
     }
   }, [rules])
+
+  const ttcWindows = useMemo(() => ttcWindowsFromRules(rules), [rules])
 
   const handleLoadFrom = (e: React.ChangeEvent<HTMLSelectElement>) => {
     const profileId = Number(e.target.value)
@@ -94,7 +97,7 @@ export default function Simulator({ profiles }: Props) {
 
       <div style={{ padding: '0 18px 32px' }}>
         <RuleBuilder rules={rules} onChange={setRules} />
-        <StrategyBacktest rules={rules} series={series} defaultShowExecutions marketLimit={500} />
+        <StrategyBacktest rules={rules} series={series} defaultShowExecutions marketLimit={500} ttcWindows={ttcWindows} />
       </div>
     </div>
   )

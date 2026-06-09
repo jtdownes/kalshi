@@ -10,14 +10,17 @@ import {
   Legend,
   ReferenceLine,
   ReferenceDot,
+  ReferenceArea,
 } from 'recharts';
 import { fmtTime } from '../utils';
 import type { Snapshot, Order } from '../types';
+import type { TtcWindow } from '../utils';
 
 interface SeriesData {
   scanned_at: string;
   yes_bid: number | null;
   no_bid: number | null;
+  time_to_close_secs: number | null;
   btc_price: number | null;       // consolidated multi-venue price
   brti_price: number | null;      // consolidated price (BRTI proxy)
   coinbase_price: number | null;  // Coinbase-only venue line
@@ -32,6 +35,8 @@ interface Props {
   globalSnapshots: Snapshot[];
   openOrders?: Order[];
   historyOrders?: Order[];
+  // Time-to-close windows where a rule allowed entry; shaded grey on the charts.
+  ttcWindows?: TtcWindow[];
 }
 
 function closestTs(data: SeriesData[], isoStr: string): string | null {
@@ -47,7 +52,7 @@ function closestTs(data: SeriesData[], isoStr: string): string | null {
 const fmtBtc = (val: number) =>
   val >= 1000 ? `$${(val / 1000).toFixed(2)}k` : `$${val.toFixed(0)}`;
 
-export default function PriceActionChart({ ticker, globalSnapshots, openOrders = [], historyOrders = [] }: Props) {
+export default function PriceActionChart({ ticker, globalSnapshots, openOrders = [], historyOrders = [], ttcWindows = [] }: Props) {
   const [data, setData] = useState<SeriesData[]>([]);
   const [loading, setLoading] = useState(false);
   const [showStrikeLabel, setShowStrikeLabel] = useState(false);
@@ -80,6 +85,7 @@ export default function PriceActionChart({ ticker, globalSnapshots, openOrders =
           scanned_at: latest.scanned_at,
           yes_bid: latest.yes_bid,
           no_bid: latest.no_bid,
+          time_to_close_secs: latest.time_to_close_secs,
           btc_price: latest.btc_price,
           brti_price: latest.brti_price,
           coinbase_price: latest.coinbase_price,
@@ -99,6 +105,37 @@ export default function PriceActionChart({ ticker, globalSnapshots, openOrders =
 
   const strike = data.find(d => d.strike_str != null)?.strike_str ?? null;
   const strikeNum = strike != null ? parseFloat(strike) : null;
+
+  // Map each allowed time-to-close window onto the x-axis. ttc decreases over a
+  // market's life, so the eligible rows form one contiguous span — shade from
+  // its first to its last scanned_at.
+  const ttcBands = ttcWindows.map(w => {
+    let x1: string | null = null;
+    let x2: string | null = null;
+    for (const d of data) {
+      const ttc = d.time_to_close_secs;
+      if (ttc == null) continue;
+      if (w.minTtc != null && ttc < w.minTtc) continue;
+      if (w.maxTtc != null && ttc > w.maxTtc) continue;
+      if (x1 == null) x1 = d.scanned_at;
+      x2 = d.scanned_at;
+    }
+    return x1 != null && x2 != null ? { x1, x2 } : null;
+  }).filter((b): b is { x1: string; x2: string } => b != null);
+
+  const bandEls = ttcBands.map((b, i) => (
+    <ReferenceArea
+      key={`ttc-${i}`}
+      x1={b.x1}
+      x2={b.x2}
+      fill="#94a3b8"
+      fillOpacity={0.12}
+      stroke="#94a3b8"
+      strokeOpacity={0.25}
+      ifOverflow="extendDomain"
+      label={i === 0 ? { value: 'entry window', position: 'insideTopRight', fill: '#94a3b8', fontSize: 9 } : undefined}
+    />
+  ));
 
   // Consolidated = mean of whatever venue prices a row actually has. Computed
   // per row from the individual venues (Coinbase/Kraken/Bitstamp/Gemini) rather
@@ -249,6 +286,7 @@ export default function PriceActionChart({ ticker, globalSnapshots, openOrders =
             <ResponsiveContainer width="100%" height="93%">
               <LineChart data={data} margin={{ top: 5, right: 10, left: 0, bottom: 5 }} syncId="priceAction">
                 <CartesianGrid strokeDasharray="3 3" stroke="#333" vertical={false} />
+                {bandEls}
                 <XAxis
                   dataKey="scanned_at"
                   tickFormatter={fmtTime}
@@ -354,6 +392,7 @@ export default function PriceActionChart({ ticker, globalSnapshots, openOrders =
                   </defs>
                 )}
                 <CartesianGrid strokeDasharray="3 3" stroke="#333" vertical={false} />
+                {bandEls}
                 <XAxis
                   dataKey="scanned_at"
                   tickFormatter={fmtTime}
