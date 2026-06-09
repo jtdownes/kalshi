@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback } from 'react'
 import { Routes, Route, NavLink } from 'react-router-dom'
 import Dashboard from './pages/Dashboard'
 import Strategies from './pages/Strategies'
+import Simulator from './pages/Simulator'
 import Snapshots from './pages/Snapshots'
 import MarketsClimate from './pages/MarketsClimate'
 import MarketsCrypto from './pages/MarketsCrypto'
@@ -134,6 +135,9 @@ export default function App() {
           <NavLink to="/strategies" className={({ isActive }) => isActive ? 'nav-link nav-link-active' : 'nav-link'}>
             Strategies
           </NavLink>
+          <NavLink to="/simulator" className={({ isActive }) => isActive ? 'nav-link nav-link-active' : 'nav-link'}>
+            Simulator
+          </NavLink>
           <div className="nav-dropdown">
             <NavLink to="/markets" end className={({ isActive }) => isActive ? 'nav-link nav-link-active' : 'nav-link'}>
               Markets ▾
@@ -200,6 +204,10 @@ export default function App() {
               refresh={refresh}
             />
           }
+        />
+        <Route
+          path="/simulator"
+          element={<Simulator profiles={profiles} />}
         />
         <Route
           path="/markets"
