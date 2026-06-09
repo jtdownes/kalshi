@@ -216,11 +216,12 @@ def _bt_simulate_rule(cur, series_like, rule, side):
         """
         params.append(sell_price)
     else:
-        stop_cte, stop_sel, stop_join = "", "NULL", ""
+        stop_cte, stop_sel, stop_time_sel, stop_join = "", "NULL", "NULL", ""
         if stop_cents is not None:
             stop_cte = f""",
         stops AS (
-            SELECT DISTINCT ON (s.ticker) s.ticker, s.{bid_col} AS stop_bid
+            SELECT DISTINCT ON (s.ticker) s.ticker, s.{bid_col} AS stop_bid,
+                   s.scanned_at AS stop_time
             FROM fills f
             JOIN market_snapshots s
               ON s.ticker = f.ticker
@@ -228,7 +229,8 @@ def _bt_simulate_rule(cur, series_like, rule, side):
              AND s.{bid_col} <= %s AND s.{bid_col} > 0
             ORDER BY s.ticker, s.scanned_at
         )"""
-            stop_sel  = "st.stop_bid"
+            stop_sel      = "st.stop_bid"
+            stop_time_sel = "st.stop_time"
             stop_join = "LEFT JOIN stops st ON st.ticker = f.ticker"
         sql = fills_cte + f""",
         finals AS (
@@ -240,7 +242,8 @@ def _bt_simulate_rule(cur, series_like, rule, side):
         ){stop_cte}
         SELECT f.ticker, f.fill_time, f.fill_price, f.ttc_at_fill,
                NULL AS exit_time, fin.final_bid, fin.final_ask,
-               ms.result AS official, {stop_sel} AS stop_bid
+               ms.result AS official, {stop_sel} AS stop_bid,
+               {stop_time_sel} AS stop_time
         FROM fills f
         LEFT JOIN finals fin ON fin.ticker = f.ticker
         LEFT JOIN market_settlements ms ON ms.ticker = f.ticker
@@ -258,10 +261,14 @@ def _bt_simulate_rule(cur, series_like, rule, side):
         fill = float(r["fill_price"])
         settle_win = None
         stopped = False
+        exit_time  = None
+        exit_price = None
         if is_limit_sell:
             if r["exit_time"] is not None:
                 pnl = (float(sell_price) - fill) * qty
                 outcome = "sold"
+                exit_time  = r["exit_time"]
+                exit_price = float(sell_price)
             else:
                 pnl = -fill * qty
                 outcome = "expired"
@@ -279,6 +286,8 @@ def _bt_simulate_rule(cur, series_like, rule, side):
                 pnl = (float(stop_bid) - fill) * qty
                 outcome = "stopped"
                 stopped = True
+                exit_time  = r["stop_time"]
+                exit_price = float(stop_bid)
             else:
                 pnl = (settle - fill) * qty
                 outcome = "won" if pnl > 0 else "lost"
@@ -289,7 +298,8 @@ def _bt_simulate_rule(cur, series_like, rule, side):
             "fill_price":  round(fill, 1),
             "ttc_at_fill": int(r["ttc_at_fill"]) if r["ttc_at_fill"] is not None else None,
             "exit_kind":   "limit_sell" if is_limit_sell else "hold",
-            "exit_price":  float(sell_price) if is_limit_sell else None,
+            "exit_price":  round(exit_price, 1) if exit_price is not None else None,
+            "exit_time":   exit_time,
             "pnl_cents":   round(pnl, 1),
             "qty":         qty,
             "outcome":     outcome,
@@ -366,9 +376,11 @@ def backtest_strategy():
             })
             all_trades.extend(rule_trades)
 
-    sample = sorted(all_trades, key=lambda t: t["pnl_cents"], reverse=True)[:200]
+    # Every execution, newest-first — the simulator renders these as a
+    # clickable historical feed (no top-N-by-P&L sampling).
+    executions = sorted(all_trades, key=lambda t: t["fill_time"] or "", reverse=True)
     return jsonify({
         "summary": _bt_aggregate(all_trades),
         "rules":   rule_results,
-        "trades":  sample,
+        "trades":  executions,
     })

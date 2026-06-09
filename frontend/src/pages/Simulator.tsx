@@ -70,7 +70,7 @@ export default function Simulator({ profiles }: Props) {
 
       <div style={{ padding: '0 18px 32px' }}>
         <RuleBuilder rules={rules} onChange={setRules} />
-        <StrategyBacktest rules={rules} series={series} />
+        <StrategyBacktest rules={rules} series={series} defaultShowExecutions />
       </div>
     </div>
   )

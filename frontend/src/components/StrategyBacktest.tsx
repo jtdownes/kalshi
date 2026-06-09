@@ -1,7 +1,7 @@
-import { useState, useEffect, useRef, Fragment } from 'react'
-import type { StrategyRule, Order } from '../types'
-import { centsToUSD, kalshiMarketUrl } from '../utils'
-import PriceActionChart from './PriceActionChart'
+import { useState, useEffect, useRef } from 'react'
+import type { StrategyRule, Snapshot } from '../types'
+import { centsToUSD } from '../utils'
+import SimulatorExecutions, { type SimTrade } from './SimulatorExecutions'
 
 interface Metrics {
   trade_count: number
@@ -22,46 +22,10 @@ interface RuleResult extends Metrics {
   rule_name: string
 }
 
-interface Trade {
-  ticker: string
-  side: 'yes' | 'no'
-  fill_time: string | null
-  fill_price: number
-  ttc_at_fill: number | null
-  exit_kind: 'limit_sell' | 'hold'
-  exit_price: number | null
-  pnl_cents: number
-  qty: number
-  outcome: 'sold' | 'expired' | 'won' | 'lost' | 'stopped'
-  stopped?: boolean
-  settle_win?: boolean | null
-}
-
 interface Result {
   summary: Metrics
   rules: RuleResult[]
-  trades: Trade[]
-}
-
-const OUTCOME_COLOR: Record<string, string> = {
-  sold: '#00d4a0',
-  won: '#00d4a0',
-  expired: '#ff4444',
-  lost: '#ff4444',
-  stopped: '#fbbf24',
-}
-const OUTCOME_LABEL: Record<string, string> = {
-  sold: 'Sold',
-  won: 'Won',
-  expired: 'Expired',
-  lost: 'Lost',
-  stopped: 'Stopped',
-}
-
-function fmtTtc(secs: number | null): string {
-  if (secs == null) return '—'
-  if (secs < 60) return `${secs}s`
-  return `${Math.floor(secs / 60)}m ${secs % 60}s`
+  trades: SimTrade[]
 }
 
 function pnlColor(c: number | null | undefined): string | undefined {
@@ -88,14 +52,15 @@ function Stat({ label, value, color, sub }: { label: string; value: string; colo
 interface Props {
   rules: StrategyRule[]
   series?: string
+  globalSnapshots?: Snapshot[]
+  defaultShowExecutions?: boolean
 }
 
-export default function StrategyBacktest({ rules, series = 'KXBTC15M' }: Props) {
+export default function StrategyBacktest({ rules, series = 'KXBTC15M', globalSnapshots = [], defaultShowExecutions = false }: Props) {
   const [result, setResult] = useState<Result | null>(null)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
-  const [showTrades, setShowTrades] = useState(false)
-  const [openTrade, setOpenTrade] = useState<number | null>(null)
+  const [showTrades, setShowTrades] = useState(defaultShowExecutions)
   const reqId = useRef(0)
 
   const rulesKey = JSON.stringify(rules)
@@ -232,68 +197,11 @@ export default function StrategyBacktest({ rules, series = 'KXBTC15M' }: Props) 
             onClick={() => setShowTrades(v => !v)}
             style={{ fontSize: 12, padding: '3px 10px', marginBottom: showTrades ? 10 : 0 }}
           >
-            {showTrades ? 'Hide' : 'Show'} top trades ({result!.trades.length})
+            {showTrades ? 'Hide' : 'Show'} executions ({result!.trades.length})
           </button>
 
-          {showTrades && result!.trades.length > 0 && (
-            <div className="table-panel">
-              <div className="table-wrap bt-trades-scroll">
-                <table>
-                  <thead>
-                    <tr>
-                      <th>Market</th>
-                      <th>Side</th>
-                      <th>Fill</th>
-                      <th>TTC at Fill</th>
-                      <th>Exit</th>
-                      <th>P&L</th>
-                      <th>Outcome</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {result!.trades.map((t, i) => (
-                      <Fragment key={`${t.ticker}-${t.side}-${i}`}>
-                      <tr onClick={() => setOpenTrade(openTrade === i ? null : i)}
-                          style={{ cursor: 'pointer', background: openTrade === i ? 'rgba(59,130,246,0.08)' : undefined }}>
-                        <td className="cell-ticker">
-                          <span style={{ color: '#64748b', marginRight: 6 }}>{openTrade === i ? '▾' : '▸'}</span>
-                          <a href={kalshiMarketUrl(t.ticker)} target="_blank" rel="noreferrer" onClick={e => e.stopPropagation()} style={{ color: 'inherit', textDecoration: 'none' }}>{t.ticker}</a>
-                        </td>
-                        <td style={{ color: t.side === 'yes' ? '#3b82f6' : '#a78bfa', fontWeight: 600 }}>{t.side.toUpperCase()}</td>
-                        <td className="cell-dim">{t.fill_price}¢{t.qty > 1 ? ` ×${t.qty}` : ''}</td>
-                        <td className="cell-dim">{fmtTtc(t.ttc_at_fill)}</td>
-                        <td className="cell-dim">{t.exit_kind === 'limit_sell' ? `sell ${t.exit_price}¢` : 'hold'}</td>
-                        <td style={{ color: pnlColor(t.pnl_cents) }}>{t.pnl_cents > 0 ? '+' : ''}{t.pnl_cents}¢</td>
-                        <td>
-                          <span style={{ fontSize: 11, fontWeight: 600, padding: '2px 7px', borderRadius: 10, background: OUTCOME_COLOR[t.outcome] + '22', color: OUTCOME_COLOR[t.outcome] }}>
-                            {OUTCOME_LABEL[t.outcome]}
-                          </span>
-                        </td>
-                      </tr>
-                      {openTrade === i && (
-                        <tr>
-                          <td colSpan={7} style={{ padding: 8, background: 'rgba(0,0,0,0.25)' }}>
-                            <PriceActionChart
-                              ticker={t.ticker}
-                              globalSnapshots={[]}
-                              historyOrders={t.fill_time ? [{
-                                market_ticker: t.ticker,
-                                side: t.side,
-                                entry_price_cents: t.fill_price,
-                                filled_at: t.fill_time,
-                                placed_at: t.fill_time,
-                                status: 'filled',
-                              } as unknown as Order] : []}
-                            />
-                          </td>
-                        </tr>
-                      )}
-                      </Fragment>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            </div>
+          {showTrades && (
+            <SimulatorExecutions trades={result!.trades} globalSnapshots={globalSnapshots} />
           )}
         </>
       )}
