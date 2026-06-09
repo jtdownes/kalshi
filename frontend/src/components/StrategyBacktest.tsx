@@ -54,9 +54,12 @@ interface Props {
   series?: string
   globalSnapshots?: Snapshot[]
   defaultShowExecutions?: boolean
+  // When set, scope the run to the most-recent N markets and include a
+  // "skipped" row for every scoped market no rule filled (simulator feed).
+  marketLimit?: number
 }
 
-export default function StrategyBacktest({ rules, series = 'KXBTC15M', globalSnapshots = [], defaultShowExecutions = false }: Props) {
+export default function StrategyBacktest({ rules, series = 'KXBTC15M', globalSnapshots = [], defaultShowExecutions = false, marketLimit }: Props) {
   const [result, setResult] = useState<Result | null>(null)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -74,7 +77,7 @@ export default function StrategyBacktest({ rules, series = 'KXBTC15M', globalSna
         const resp = await fetch('/api/backtest/strategy', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ rules, series }),
+          body: JSON.stringify({ rules, series, market_limit: marketLimit }),
         })
         if (!resp.ok) throw new Error('Backtest failed')
         const data: Result = await resp.json()
@@ -87,10 +90,11 @@ export default function StrategyBacktest({ rules, series = 'KXBTC15M', globalSna
     }, 550)
     return () => clearTimeout(timer)
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [rulesKey, series])
+  }, [rulesKey, series, marketLimit])
 
   const s = result?.summary
   const hasFills = !!s && s.trade_count > 0
+  const hasFeed = !!result && result.trades.length > 0
 
   return (
     <div style={{ marginTop: 14 }}>
@@ -99,7 +103,8 @@ export default function StrategyBacktest({ rules, series = 'KXBTC15M', globalSna
         {loading && <span style={{ fontSize: 11, color: '#64748b' }}>Simulating…</span>}
         {!loading && hasFills && (
           <span style={{ fontSize: 11, color: '#64748b' }}>
-            {s!.trade_count.toLocaleString()} simulated trades across history
+            {s!.trade_count.toLocaleString()} simulated trades
+            {marketLimit ? ` across the last ${marketLimit} markets` : ' across history'}
           </span>
         )}
       </div>
@@ -114,16 +119,17 @@ export default function StrategyBacktest({ rules, series = 'KXBTC15M', globalSna
         padding: '8px 12px',
         marginBottom: 10,
       }}>
-        Replays these rules against every 1-second snapshot we have recorded. An entry counts as filled the first time
+        Replays these rules against {marketLimit ? `the last ${marketLimit} markets` : 'every 1-second snapshot we have recorded'}. An entry counts as filled the first time
         a market's ask reaches your price while the conditions hold. Limit-sell exits fill when the bid later reaches your
         sell price; positions that never sell before the contract closes are counted as a <strong style={{ color: '#94a3b8' }}>full loss</strong> (conservative).
+        {marketLimit ? ' Markets no rule matched are listed as Skipped.' : ''}
       </div>
 
       {error && (
         <div style={{ fontSize: 12, color: '#ff4444', padding: '8px 0' }}>{error}</div>
       )}
 
-      {!error && !hasFills && !loading && (
+      {!error && !hasFeed && !loading && (
         <div style={{ fontSize: 12, color: '#475569', padding: '10px 0' }}>
           No historical fills yet — add an entry price (and a limit-sell or hold exit) to a rule to simulate it.
         </div>
@@ -191,19 +197,24 @@ export default function StrategyBacktest({ rules, series = 'KXBTC15M', globalSna
             </div>
           )}
 
+        </>
+      )}
+
+      {hasFeed && (
+        <div style={{ marginTop: hasFills ? 10 : 0 }}>
           <button
             type="button"
             className="btn"
             onClick={() => setShowTrades(v => !v)}
             style={{ fontSize: 12, padding: '3px 10px', marginBottom: showTrades ? 10 : 0 }}
           >
-            {showTrades ? 'Hide' : 'Show'} executions ({result!.trades.length})
+            {showTrades ? 'Hide' : 'Show'} {marketLimit ? 'markets' : 'executions'} ({result!.trades.length})
           </button>
 
           {showTrades && (
             <SimulatorExecutions trades={result!.trades} globalSnapshots={globalSnapshots} />
           )}
-        </>
+        </div>
       )}
     </div>
   )

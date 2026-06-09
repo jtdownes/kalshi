@@ -107,9 +107,12 @@ def _bt_conditions_sql(conditions):
     return clause, params
 
 
-def _bt_simulate_rule(cur, series_like, rule, side):
+def _bt_simulate_rule(cur, series_like, rule, side, tickers=None):
     """Simulate one rule on one side. Returns a list of trade dicts, or None if
-    the rule is incomplete (missing required entry/exit price)."""
+    the rule is incomplete (missing required entry/exit price).
+
+    When `tickers` is given, only those markets are considered (used to scope
+    the simulation to the most-recent N markets)."""
     action = rule.get("action") or {}
     entry  = action.get("entry") or {}
     exit_  = action.get("exit")  or {"type": "hold"}
@@ -180,6 +183,11 @@ def _bt_simulate_rule(cur, series_like, rule, side):
         join_parts.append(
             "LEFT JOIN craze cz ON cz.ticker = m.ticker AND cz.scanned_at = m.scanned_at")
 
+    ticker_filter, ticker_params = "", []
+    if tickers is not None:
+        ticker_filter = " AND m.ticker = ANY(%s)"
+        ticker_params = [list(tickers)]
+
     fills_def = f"""
         fills AS (
             SELECT DISTINCT ON (m.ticker)
@@ -190,13 +198,13 @@ def _bt_simulate_rule(cur, series_like, rule, side):
             FROM market_snapshots m
             LEFT JOIN bitcoin_snapshots b ON b.scanned_at = m.scanned_at
             {' '.join(join_parts)}
-            WHERE m.ticker LIKE %s
+            WHERE m.ticker LIKE %s{ticker_filter}
               AND {entry_clause}
               {cond_clause}
             ORDER BY m.ticker, m.scanned_at
         )"""
     fills_cte = "WITH " + ",".join(cte_defs + [fills_def])
-    params = cte_params + [series_like] + entry_params + cond_params
+    params = cte_params + [series_like] + ticker_params + entry_params + cond_params
 
     if is_limit_sell:
         sql = fills_cte + f""",
@@ -346,9 +354,32 @@ def backtest_strategy():
         return jsonify({"error": "invalid series"}), 400
     series_like = f"{series}-%"
 
+    # When market_limit is set the simulator scopes the run to the most-recent
+    # N markets and surfaces a "skipped" row for every one that no rule filled —
+    # so the feed shows all markets, not just the ones that traded.
+    try:
+        market_limit = int(body.get("market_limit") or 0) or None
+    except (TypeError, ValueError):
+        market_limit = None
+
     rule_results = []
     all_trades   = []
+    tickers      = None
+    ticker_meta  = {}
     with cursor_conn() as cur:
+        if market_limit:
+            cur.execute("""
+                SELECT ticker, MAX(scanned_at) AS last_seen
+                FROM market_snapshots
+                WHERE ticker LIKE %s
+                GROUP BY ticker
+                ORDER BY MAX(scanned_at) DESC
+                LIMIT %s
+            """, [series_like, market_limit])
+            rows = cur.fetchall()
+            tickers     = [r["ticker"] for r in rows]
+            ticker_meta = {r["ticker"]: r["last_seen"] for r in rows}
+
         for idx, rule in enumerate(rules):
             if not rule.get("enabled", True):
                 continue
@@ -361,7 +392,7 @@ def backtest_strategy():
             for side in sides:
                 if side not in ("yes", "no"):
                     continue
-                t = _bt_simulate_rule(cur, series_like, rule, side)
+                t = _bt_simulate_rule(cur, series_like, rule, side, tickers=tickers)
                 if t is None:
                     continue
                 simulated_any = True
@@ -376,11 +407,25 @@ def backtest_strategy():
             })
             all_trades.extend(rule_trades)
 
-    # Every execution, newest-first — the simulator renders these as a
-    # clickable historical feed (no top-N-by-P&L sampling).
-    executions = sorted(all_trades, key=lambda t: t["fill_time"] or "", reverse=True)
+    # Feed rows: every execution, plus a skipped row for each scoped market no
+    # rule filled. Sorted newest-first by fill time (skipped rows fall back to
+    # the market's last-seen time).
+    feed = list(all_trades)
+    if market_limit and tickers:
+        filled = {t["ticker"] for t in all_trades}
+        for tk in tickers:
+            if tk in filled:
+                continue
+            feed.append({
+                "ticker": tk, "side": None, "fill_time": None, "fill_price": None,
+                "ttc_at_fill": None, "exit_kind": None, "exit_price": None,
+                "exit_time": None, "pnl_cents": None, "qty": 1, "outcome": "skipped",
+                "event_time": ticker_meta.get(tk),
+            })
+    feed.sort(key=lambda t: t.get("fill_time") or t.get("event_time") or "", reverse=True)
+
     return jsonify({
         "summary": _bt_aggregate(all_trades),
         "rules":   rule_results,
-        "trades":  executions,
+        "trades":  feed,
     })
