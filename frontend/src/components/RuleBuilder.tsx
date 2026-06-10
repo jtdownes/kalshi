@@ -1,3 +1,4 @@
+import type { ReactNode } from 'react'
 import type {
   StrategyRule, RuleCondition, RuleField, RuleOp, RuleAction, RuleEntry, RuleExit,
 } from '../types'
@@ -137,9 +138,15 @@ interface Props {
    * Used when editing a strategy that already has historical orders.
    */
   lockStructure?: boolean
+  /**
+   * Optional content rendered at the foot of each rule card (e.g. a per-rule
+   * backtest). Lets a page attach simulation that re-runs only when that one
+   * rule changes, instead of a single backtest below the whole list.
+   */
+  renderRuleFooter?: (rule: StrategyRule, index: number) => ReactNode
 }
 
-export default function RuleBuilder({ rules, onChange, readOnly = false, lockStructure = false }: Props) {
+export default function RuleBuilder({ rules, onChange, readOnly = false, lockStructure = false, renderRuleFooter }: Props) {
   // Structural controls are locked in both read-only and limited-edit modes.
   const structLocked = readOnly || lockStructure
   const patchRule = (i: number, patch: Partial<StrategyRule>) =>
@@ -527,6 +534,10 @@ export default function RuleBuilder({ rules, onChange, readOnly = false, lockStr
             </div>
 
             <div className="rule-summary">{ruleSummary(rule)}</div>
+
+            {renderRuleFooter && (
+              <div className="rule-footer">{renderRuleFooter(rule, ri)}</div>
+            )}
           </div>
         )
       })}
