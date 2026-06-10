@@ -1,12 +1,10 @@
 import { useState, useEffect } from 'react'
 import type { Settings, Profile, StrategyRule } from '../types'
-import { centsToUSD, fmtTime, fmtTickers } from '../utils'
+import { centsToUSD, fmtTime, fmtTickers, STRATEGY_MARKETS } from '../utils'
 import RuleBuilder, { defaultRule, ruleSummary } from '../components/RuleBuilder'
 import StrategyBacktest from '../components/StrategyBacktest'
 
-const SUPPORTED_STRATEGY_MARKETS = [
-  { value: 'KXBTC15M', label: 'Bitcoin 15 Minute' },
-] as const
+const SUPPORTED_STRATEGY_MARKETS = STRATEGY_MARKETS
 
 interface StrategyDraft {
   name: string

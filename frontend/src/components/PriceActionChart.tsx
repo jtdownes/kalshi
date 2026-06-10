@@ -162,6 +162,11 @@ export default function PriceActionChart({ ticker, globalSnapshots, openOrders =
         { key: 'gemini_price',   label: 'Gemini',   color: '#38bdf8' },
       ];
 
+  // Rows appended live from globalSnapshots carry only the asset's aggregate
+  // price (btc_price / eth_price), not per-venue columns — fall back to it so
+  // the consolidated line extends to the latest tick instead of gapping.
+  const aggKey: keyof SeriesData = assetKey === 'ETH' ? 'eth_price' : 'btc_price';
+
   // Consolidated = mean of whichever venues responded this tick
   const chartData = data.map(d => {
     const venuePrices = venueFields
@@ -169,14 +174,14 @@ export default function PriceActionChart({ ticker, globalSnapshots, openOrders =
       .filter((p): p is number => p != null);
     const consolidated = venuePrices.length
       ? Math.round((venuePrices.reduce((a, b) => a + b, 0) / venuePrices.length) * 100) / 100
-      : null;
+      : (typeof d[aggKey] === 'number' ? d[aggKey] as number : null);
     return { ...d, consolidated };
   });
 
   const priceDomain: [number, number] | ['auto', 'auto'] = (() => {
     const prices = data
-      .flatMap(d => venueFields.map(f => d[f.key]))
-      .filter((p): p is number => p != null);
+      .flatMap(d => [...venueFields.map(f => d[f.key]), d[aggKey]])
+      .filter((p): p is number => typeof p === 'number');
     if (prices.length === 0) return ['auto', 'auto'];
     const candidates = strikeNum != null ? [...prices, strikeNum] : prices;
     const mn = Math.min(...candidates);

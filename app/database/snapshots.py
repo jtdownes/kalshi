@@ -1,5 +1,5 @@
 """
-Market and bitcoin snapshot persistence and queries.
+Market and crypto (per-asset) snapshot persistence and queries.
 """
 
 import psycopg2.extras
@@ -7,6 +7,7 @@ import logging
 import time
 from datetime import datetime
 
+import crypto_assets
 from .core import _conn, _lock
 
 log = logging.getLogger(__name__)
@@ -15,34 +16,16 @@ log = logging.getLogger(__name__)
 _window_res_cache: dict = {}
 
 
-def save_bitcoin_snapshot(scanned_at: str, coinbase_price: float = None,
-                          kraken_price: float = None, bitstamp_price: float = None,
-                          gemini_price: float = None, consolidated_price: float = None,
-                          coinbase_volume: float = None, kraken_volume: float = None,
-                          bitstamp_volume: float = None, gemini_volume: float = None):
-    """One bitcoin price/volume row per collection pass."""
-    query = """
-        INSERT INTO bitcoin_snapshots
-          (scanned_at, coinbase_price, kraken_price, bitstamp_price, gemini_price,
-           consolidated_price, coinbase_volume, kraken_volume, bitstamp_volume, gemini_volume)
-        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
-    """
-    params = (scanned_at, coinbase_price, kraken_price, bitstamp_price, gemini_price,
-              consolidated_price, coinbase_volume, kraken_volume, bitstamp_volume, gemini_volume)
-    with _lock, _conn() as conn:
-        cur = conn.cursor()
-        cur.execute(query, params)
-        conn.commit()
-
-
-def save_ethereum_snapshot(scanned_at: str, coinbase_price: float = None,
-                           kraken_price: float = None, bitstamp_price: float = None,
-                           gemini_price: float = None, consolidated_price: float = None,
-                           coinbase_volume: float = None, kraken_volume: float = None,
-                           bitstamp_volume: float = None, gemini_volume: float = None):
-    """One ethereum price/volume row per collection pass."""
-    query = """
-        INSERT INTO ethereum_snapshots
+def save_crypto_snapshot(asset: str, scanned_at: str, coinbase_price: float = None,
+                         kraken_price: float = None, bitstamp_price: float = None,
+                         gemini_price: float = None, consolidated_price: float = None,
+                         coinbase_volume: float = None, kraken_volume: float = None,
+                         bitstamp_volume: float = None, gemini_volume: float = None):
+    """One price/volume row per asset per collection pass. The table name comes
+    from the crypto_assets registry (never from user input)."""
+    table = crypto_assets.CRYPTO_ASSETS[asset]["snapshot_table"]
+    query = f"""
+        INSERT INTO {table}
           (scanned_at, coinbase_price, kraken_price, bitstamp_price, gemini_price,
            consolidated_price, coinbase_volume, kraken_volume, bitstamp_volume, gemini_volume)
         VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
@@ -138,11 +121,13 @@ def get_market_snapshots_for_ticker(ticker: str, limit: int | None = None) -> li
     return [dict(r) for r in rows]
 
 
-def get_recent_btc_prices(window_seconds: int = 180) -> list[float]:
-    """Consolidated BTC prices over the trailing `window_seconds`, oldest first."""
-    query = """
+def get_recent_crypto_prices(asset: str, window_seconds: int = 180) -> list[float]:
+    """Consolidated prices for one asset over the trailing `window_seconds`,
+    oldest first. Table name comes from the crypto_assets registry."""
+    table = crypto_assets.CRYPTO_ASSETS[asset]["snapshot_table"]
+    query = f"""
         SELECT COALESCE(consolidated_price, coinbase_price) AS price
-        FROM bitcoin_snapshots
+        FROM {table}
         WHERE scanned_at::timestamp >= ((CURRENT_TIMESTAMP AT TIME ZONE 'UTC') - (%s || ' seconds')::interval)
         ORDER BY scanned_at ASC
     """

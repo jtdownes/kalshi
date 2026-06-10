@@ -12,15 +12,17 @@ const FIELD_META: Record<RuleField, { label: string; unit: Unit }> = {
   yes_bid:            { label: 'YES bid',                 unit: '¢' },
   no_ask:             { label: 'NO ask',                  unit: '¢' },
   no_bid:             { label: 'NO bid',                  unit: '¢' },
-  btc_price:          { label: 'BTC price',               unit: '$' },
+  // btc_* field names are legacy: the engine resolves them to the strategy's
+  // underlying asset (BTC for KXBTC15M markets, ETH for KXETH15M, ...).
+  btc_price:          { label: 'Underlying price (BTC/ETH)', unit: '$' },
   spread:             { label: 'Spread (ask−bid)',        unit: '¢' },
   volume:             { label: 'Volume',                  unit: '' },
   open_interest:      { label: 'Open interest',           unit: '' },
   prior_resolution:   { label: 'Prior window (1=YES 0=NO)',  unit: '' },
   prev2_resolution:   { label: '2nd prior window (1=YES 0=NO)', unit: '' },
-  btc_volatility:     { label: 'BTC volatility (recent σ)',  unit: '$' },
-  btc_range:          { label: 'BTC range (recent hi−lo)',   unit: '$' },
-  btc_drift:          { label: 'BTC drift (recent net move)', unit: '$' },
+  btc_volatility:     { label: 'Underlying volatility (recent σ)',  unit: '$' },
+  btc_range:          { label: 'Underlying range (recent hi−lo)',   unit: '$' },
+  btc_drift:          { label: 'Underlying drift (recent net move)', unit: '$' },
   strike_crossings:   { label: 'Strike crossings (whole market)',  unit: '' },
   buffer_ratio:       { label: 'Buffer ÷ volatility',        unit: '' },
 }

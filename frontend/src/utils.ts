@@ -150,3 +150,18 @@ export function cryptoPriceForTicker(ticker: string, data: Record<string, unknow
   const val = data[cfg.priceField]
   return typeof val === 'number' ? val : null
 }
+
+/** True when a market belongs on the Crypto page. Ticker prefix is the primary
+ *  signal; title words are a fallback for series without a mapped prefix.
+ *  Word-boundary match so e.g. "whether" doesn't hit "eth". */
+const CRYPTO_TITLE_RE = /\b(bitcoin|btc|ethereum|eth|solana|sol)\b/i
+export function isCryptoMarket(ticker: string, title: string): boolean {
+  return detectCryptoAsset(ticker) != null || CRYPTO_TITLE_RE.test(title)
+}
+
+// Markets a strategy can be assigned to. Strategies store the series ticker;
+// add new tradable series here (and the asset above) to expose them in the UI.
+export const STRATEGY_MARKETS = [
+  { value: 'KXBTC15M', label: 'Bitcoin 15 Minute' },
+  { value: 'KXETH15M', label: 'Ethereum 15 Minute' },
+] as const

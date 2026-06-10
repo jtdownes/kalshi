@@ -5,10 +5,17 @@ Backtest route: replay a rule list over historical market_snapshots.
 from flask import Blueprint, jsonify, request
 
 import config
+import crypto_assets
 import database
 from database.core import cursor_conn
 
 backtest_bp = Blueprint('backtest', __name__)
+
+# The alias `b` in the queries below joins the series' UNDERLYING asset
+# snapshot table (bitcoin_snapshots for KXBTC*, ethereum_snapshots for
+# KXETH*, ...), so btc_price / distance_to_strike / craziness fields are
+# computed against the right asset. The table name always comes from the
+# crypto_assets registry — never from request input.
 
 # ── SQL column map ────────────────────────────────────────────────────────────
 _BT_COL = {
@@ -34,8 +41,8 @@ _BT_OP = {"lt": "<", "lte": "<=", "gt": ">", "gte": ">=", "eq": "="}
 _BT_CRAZE_FIELDS = {"btc_volatility", "btc_range", "btc_drift", "strike_crossings", "buffer_ratio"}
 
 
-def _bt_craze_cte(series_like, window_secs, need_cross):
-    """Build the `craze` CTE for windowed BTC stats (volatility, range, drift, crossings, buffer)."""
+def _bt_craze_cte(series_like, window_secs, need_cross, snap_table):
+    """Build the `craze` CTE for windowed underlying-price stats (volatility, range, drift, crossings, buffer)."""
     px     = "COALESCE(b.consolidated_price, b.coinbase_price)"
     strike = "NULLIF(m.strike_str, '')::numeric"
     win    = (f"PARTITION BY ticker ORDER BY scanned_at::timestamp "
@@ -53,7 +60,7 @@ def _bt_craze_cte(series_like, window_secs, need_cross):
                 SELECT m.ticker, m.scanned_at, {px} AS px, {strike} AS strike,
                        CASE WHEN {px} > {strike} THEN 1 ELSE 0 END AS above_int
                 FROM market_snapshots m
-                LEFT JOIN bitcoin_snapshots b ON b.scanned_at = m.scanned_at
+                LEFT JOIN {snap_table} b ON b.scanned_at = m.scanned_at
                 WHERE m.ticker LIKE %s
                   AND COALESCE(b.consolidated_price, b.coinbase_price) IS NOT NULL
             ) z
@@ -63,7 +70,7 @@ def _bt_craze_cte(series_like, window_secs, need_cross):
         inner = f"""
             SELECT m.ticker, m.scanned_at, {px} AS px, {strike} AS strike
             FROM market_snapshots m
-            LEFT JOIN bitcoin_snapshots b ON b.scanned_at = m.scanned_at
+            LEFT JOIN {snap_table} b ON b.scanned_at = m.scanned_at
             WHERE m.ticker LIKE %s
         """
         cross_col = ""
@@ -247,7 +254,7 @@ def _bt_walk_rich_exits(cur, fills_cte, params, series_like, side, bid_col,
     return trades
 
 
-def _bt_simulate_rule(cur, series_like, rule, side, tickers=None):
+def _bt_simulate_rule(cur, series_like, rule, side, snap_table, tickers=None):
     """Simulate one rule on one side. Returns a list of trade dicts, or None if
     the rule is incomplete (missing required entry/exit price).
 
@@ -361,7 +368,8 @@ def _bt_simulate_rule(cur, series_like, rule, side, tickers=None):
     if fields_used & _BT_CRAZE_FIELDS:
         craze_sql, craze_params = _bt_craze_cte(
             series_like, config.CRAZINESS_LOOKBACK_SECONDS,
-            need_cross="strike_crossings" in fields_used)
+            need_cross="strike_crossings" in fields_used,
+            snap_table=snap_table)
         cte_defs.append(craze_sql)
         cte_params.extend(craze_params)
         join_parts.append(
@@ -383,7 +391,7 @@ def _bt_simulate_rule(cur, series_like, rule, side, tickers=None):
                 m.scanned_at AS signal_time,
                 {limit_expr} AS limit_price
             FROM market_snapshots m
-            LEFT JOIN bitcoin_snapshots b ON b.scanned_at = m.scanned_at
+            LEFT JOIN {snap_table} b ON b.scanned_at = m.scanned_at
             {' '.join(join_parts)}
             WHERE m.ticker LIKE %s{ticker_filter}
               AND m.{ask_col} > 0
@@ -415,7 +423,7 @@ def _bt_simulate_rule(cur, series_like, rule, side, tickers=None):
                 m.{ask_col}          AS fill_price,
                 m.time_to_close_secs AS ttc_at_fill
             FROM market_snapshots m
-            LEFT JOIN bitcoin_snapshots b ON b.scanned_at = m.scanned_at
+            LEFT JOIN {snap_table} b ON b.scanned_at = m.scanned_at
             {' '.join(join_parts)}
             WHERE m.ticker LIKE %s{ticker_filter}
               AND {entry_clause}
@@ -579,6 +587,7 @@ def backtest_strategy():
     if not series.replace("_", "").isalnum():
         return jsonify({"error": "invalid series"}), 400
     series_like = f"{series}-%"
+    snap_table = crypto_assets.snapshot_table_for_ticker(series)
 
     # When market_limit is set the simulator scopes the run to the most-recent
     # N markets and surfaces a "skipped" row for every one that no rule filled —
@@ -618,7 +627,7 @@ def backtest_strategy():
             for side in sides:
                 if side not in ("yes", "no"):
                     continue
-                t = _bt_simulate_rule(cur, series_like, rule, side, tickers=tickers)
+                t = _bt_simulate_rule(cur, series_like, rule, side, snap_table, tickers=tickers)
                 if t is None:
                     continue
                 simulated_any = True

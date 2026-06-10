@@ -183,6 +183,24 @@ CREATE TABLE IF NOT EXISTS bitcoin_snapshots (
 );
 CREATE INDEX IF NOT EXISTS idx_bitcoin_snapshots_scanned_at ON bitcoin_snapshots (scanned_at);
 
+-- Ethereum mirrors bitcoin_snapshots: one global price row per collection
+-- pass, joined to market_snapshots on scanned_at. New crypto assets get their
+-- own table here (see app/crypto_assets.py for the registry).
+CREATE TABLE IF NOT EXISTS ethereum_snapshots (
+    id                  SERIAL PRIMARY KEY,
+    scanned_at          TEXT NOT NULL,
+    coinbase_price      REAL,
+    kraken_price        REAL,
+    bitstamp_price      REAL,
+    gemini_price        REAL,
+    consolidated_price  REAL,
+    coinbase_volume     REAL,
+    kraken_volume       REAL,
+    bitstamp_volume     REAL,
+    gemini_volume       REAL
+);
+CREATE INDEX IF NOT EXISTS idx_ethereum_snapshots_scanned_at ON ethereum_snapshots (scanned_at);
+
 -- One-time backfill: lift bitcoin data still embedded in the legacy
 -- market_snapshots columns into bitcoin_snapshots, keyed by each row's
 -- scanned_at, so historical joins resolve. Only runs on a pre-split DB that
@@ -400,3 +418,9 @@ BEGIN
         ALTER TABLE orders ADD COLUMN market_out_kalshi_id TEXT;
     END IF;
 END $$;
+
+-- Every strategy names the series it trades (the column predates multi-asset
+-- support, hence the legacy btc_ name). Blank/NULL legacy profiles default to
+-- the original Bitcoin 15-minute market.
+UPDATE profiles SET btc_series_tickers = 'KXBTC15M'
+WHERE btc_series_tickers IS NULL OR btrim(btc_series_tickers) = '';

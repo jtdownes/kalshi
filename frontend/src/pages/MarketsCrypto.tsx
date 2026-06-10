@@ -1,5 +1,6 @@
 import type { Snapshot, Order } from '../types'
 import Snapshots from './Snapshots'
+import { isCryptoMarket } from '../utils'
 
 interface Props {
   snapshots: Snapshot[]
@@ -7,15 +8,6 @@ interface Props {
   openOrders?: Order[]
 }
 
-function cryptoFilter(ticker: string, title: string): boolean {
-  const t = ticker.toUpperCase()
-  const tl = title.toLowerCase()
-  return (
-    t.includes('BTC') || tl.includes('bitcoin') || tl.includes('btc') ||
-    t.includes('ETH') || tl.includes('ethereum') || tl.includes('eth')
-  )
-}
-
 export default function MarketsCrypto({ snapshots, orders = [], openOrders = [] }: Props) {
-  return <Snapshots snapshots={snapshots} orders={orders} openOrders={openOrders} filterFn={cryptoFilter} />
+  return <Snapshots snapshots={snapshots} orders={orders} openOrders={openOrders} filterFn={isCryptoMarket} />
 }

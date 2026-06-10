@@ -18,6 +18,7 @@ import uuid
 from datetime import datetime, timezone
 
 import config
+import crypto_assets
 import database as db
 import weather
 from kalshi_client import KalshiClient, KalshiError
@@ -47,28 +48,30 @@ def _mid(bid, ask) -> float | None:
     return None
 
 
-# Each constituent returns (price, 24h_volume_btc) or None on failure. These are
-# the venues CF Benchmarks aggregates for BRTI, so an equal-weighted average of
-# whatever responds is a close, license-free proxy for the real index. Volume is
-# the venue's trailing-24h BTC volume — a weight for volume-weighted blending.
-def _venue_coinbase() -> tuple[float, float | None] | None:
+# Each constituent returns (price, 24h_volume) or None on failure. These are
+# the venues CF Benchmarks aggregates for its real-time indices (BRTI etc.), so
+# an equal-weighted average of whatever responds is a close, license-free proxy
+# for the real index. Volume is the venue's trailing-24h volume in the asset —
+# a weight for volume-weighted blending. Venue symbols come from the asset
+# registry in crypto_assets.py, so new assets need no new fetchers.
+def _venue_coinbase(product: str) -> tuple[float, float | None] | None:
     try:
-        d = _get_json("https://api.coinbase.com/v2/prices/BTC-USD/spot")
+        d = _get_json(f"https://api.coinbase.com/v2/prices/{product}/spot")
         price = float(d["data"]["amount"])
     except Exception:
         return None
     vol = None
     try:
-        s = _get_json("https://api.exchange.coinbase.com/products/BTC-USD/stats")
+        s = _get_json(f"https://api.exchange.coinbase.com/products/{product}/stats")
         vol = float(s["volume"])
     except Exception:
         pass
     return (price, vol)
 
 
-def _venue_kraken() -> tuple[float, float | None] | None:
+def _venue_kraken(pair: str) -> tuple[float, float | None] | None:
     try:
-        r = _get_json("https://api.kraken.com/0/public/Ticker?pair=XBTUSD")["result"]
+        r = _get_json(f"https://api.kraken.com/0/public/Ticker?pair={pair}")["result"]
         t = next(iter(r.values()))
         price = _mid(t["b"][0], t["a"][0])
         if price is None:
@@ -78,92 +81,48 @@ def _venue_kraken() -> tuple[float, float | None] | None:
         return None
 
 
-def _venue_bitstamp() -> tuple[float, float | None] | None:
+def _venue_bitstamp(pair: str) -> tuple[float, float | None] | None:
     try:
-        d = _get_json("https://www.bitstamp.net/api/v2/ticker/btcusd/")
+        d = _get_json(f"https://www.bitstamp.net/api/v2/ticker/{pair}/")
         price = _mid(d["bid"], d["ask"])
         if price is None:
             return None
-        return (price, float(d["volume"]))  # 24h volume in BTC
+        return (price, float(d["volume"]))  # 24h volume in the asset
     except Exception:
         return None
 
 
-def _venue_gemini() -> tuple[float, float | None] | None:
+def _venue_gemini(pair: str, volume_key: str) -> tuple[float, float | None] | None:
     try:
-        d = _get_json("https://api.gemini.com/v1/pubticker/btcusd")
+        d = _get_json(f"https://api.gemini.com/v1/pubticker/{pair}")
         price = _mid(d["bid"], d["ask"])
         if price is None:
             return None
-        return (price, float(d["volume"]["BTC"]))  # 24h volume in BTC
+        return (price, float(d["volume"][volume_key]))  # 24h volume in the asset
     except Exception:
         return None
 
 
-# ── ETH venue fetchers (same 4 venues as BTC) ────────────────────────────────
+def fetch_crypto_prices(asset: str) -> dict:
+    """Fetch one asset's USD price from all four venues, returning per-venue
+    price + volume and the equal-weighted consolidated mid across whatever
+    responded. One call per venue — no redundant fetches.
 
-def _venue_coinbase_eth() -> tuple[float, float | None] | None:
-    try:
-        d = _get_json("https://api.coinbase.com/v2/prices/ETH-USD/spot")
-        price = float(d["data"]["amount"])
-    except Exception:
-        return None
-    vol = None
-    try:
-        s = _get_json("https://api.exchange.coinbase.com/products/ETH-USD/stats")
-        vol = float(s["volume"])
-    except Exception:
-        pass
-    return (price, vol)
-
-
-def _venue_kraken_eth() -> tuple[float, float | None] | None:
-    try:
-        r = _get_json("https://api.kraken.com/0/public/Ticker?pair=ETHUSD")["result"]
-        t = next(iter(r.values()))
-        price = _mid(t["b"][0], t["a"][0])
-        if price is None:
-            return None
-        return (price, float(t["v"][1]))
-    except Exception:
-        return None
-
-
-def _venue_bitstamp_eth() -> tuple[float, float | None] | None:
-    try:
-        d = _get_json("https://www.bitstamp.net/api/v2/ticker/ethusd/")
-        price = _mid(d["bid"], d["ask"])
-        if price is None:
-            return None
-        return (price, float(d["volume"]))
-    except Exception:
-        return None
-
-
-def _venue_gemini_eth() -> tuple[float, float | None] | None:
-    try:
-        d = _get_json("https://api.gemini.com/v1/pubticker/ethusd")
-        price = _mid(d["bid"], d["ask"])
-        if price is None:
-            return None
-        return (price, float(d["volume"]["ETH"]))
-    except Exception:
-        return None
-
-
-def fetch_eth_prices() -> dict:
-    """Fetch ETH/USD from the same four venues used for BTC, returning an
-    equal-weighted consolidated mid and per-venue price + volume."""
+    Note: the consolidated mid is NOT the licensed CF Benchmarks fixing, just a
+    close keyless approximation. Volumes are captured so the blend can later be
+    made volume-weighted to better track the real index.
+    """
+    cfg = crypto_assets.CRYPTO_ASSETS[asset]
     venues = {
-        "coinbase": _venue_coinbase_eth(),
-        "kraken":   _venue_kraken_eth(),
-        "bitstamp": _venue_bitstamp_eth(),
-        "gemini":   _venue_gemini_eth(),
+        "coinbase": _venue_coinbase(cfg["coinbase_product"]),
+        "kraken":   _venue_kraken(cfg["kraken_pair"]),
+        "bitstamp": _venue_bitstamp(cfg["bitstamp_pair"]),
+        "gemini":   _venue_gemini(cfg["gemini_pair"], cfg["gemini_volume_key"]),
     }
     prices = [v[0] for v in venues.values() if v is not None]
     consolidated = round(sum(prices) / len(prices), 2) if prices else None
     if consolidated is None:
-        log.warning("fetch_eth_prices: no venues responded")
+        log.warning("fetch_crypto_prices(%s): no venues responded", asset)
 
     def price_of(v):  return round(v[0], 2) if v is not None else None
     def volume_of(v): return round(v[1], 4) if (v is not None and v[1] is not None) else None
@@ -178,42 +137,6 @@ def fetch_eth_prices() -> dict:
         "bitstamp_volume": volume_of(venues["bitstamp"]),
         "gemini_volume":   volume_of(venues["gemini"]),
         "consolidated_price": consolidated,
-    }
-
-
-def fetch_venue_prices() -> dict:
-    """Fetch each BRTI-constituent venue once, returning price and trailing-24h
-    BTC volume per venue, plus the equal-weighted consolidated mid (brti_price)
-    across whatever responded. One call per venue — no redundant fetches.
-
-    Note: the consolidated mid is NOT the licensed CF Benchmarks BRTI fixing,
-    just a close keyless approximation. Volumes are captured so the blend can
-    later be made volume-weighted to better track the real index.
-    """
-    venues = {
-        "coinbase": _venue_coinbase(),
-        "kraken":   _venue_kraken(),
-        "bitstamp": _venue_bitstamp(),
-        "gemini":   _venue_gemini(),
-    }
-    prices = [v[0] for v in venues.values() if v is not None]
-    consolidated = round(sum(prices) / len(prices), 2) if prices else None
-    if consolidated is None:
-        log.warning("fetch_venue_prices: no venues responded")
-
-    def price_of(v):  return round(v[0], 2) if v is not None else None
-    def volume_of(v): return round(v[1], 4) if (v is not None and v[1] is not None) else None
-
-    return {
-        "coinbase_price":  price_of(venues["coinbase"]),
-        "kraken_price":    price_of(venues["kraken"]),
-        "bitstamp_price":  price_of(venues["bitstamp"]),
-        "gemini_price":    price_of(venues["gemini"]),
-        "coinbase_volume": volume_of(venues["coinbase"]),
-        "kraken_volume":   volume_of(venues["kraken"]),
-        "bitstamp_volume": volume_of(venues["bitstamp"]),
-        "gemini_volume":   volume_of(venues["gemini"]),
-        "brti_price":      consolidated,
     }
 
 
@@ -746,35 +669,13 @@ _last_series_fetch: dict[str, float] = {}  # series_ticker -> last poll epoch (p
 def _collect_market_snapshots(client: KalshiClient):
     now_ts = int(time.time())
 
-    # Crypto prices are global per tick: fetch once, write one row per asset,
-    # and stamp every market_snapshots row with the same scanned_at so they join.
+    # Crypto prices are global per tick: fetch once per asset, write one row per
+    # asset, and stamp every market_snapshots row with the same scanned_at so
+    # they join on the tick.
     scanned_at = datetime.utcnow().isoformat()
-    venues = fetch_venue_prices()
-    db.save_bitcoin_snapshot(
-        scanned_at=scanned_at,
-        coinbase_price=venues["coinbase_price"],
-        kraken_price=venues["kraken_price"],
-        bitstamp_price=venues["bitstamp_price"],
-        gemini_price=venues["gemini_price"],
-        consolidated_price=venues["brti_price"],
-        coinbase_volume=venues["coinbase_volume"],
-        kraken_volume=venues["kraken_volume"],
-        bitstamp_volume=venues["bitstamp_volume"],
-        gemini_volume=venues["gemini_volume"],
-    )
-    eth_venues = fetch_eth_prices()
-    db.save_ethereum_snapshot(
-        scanned_at=scanned_at,
-        coinbase_price=eth_venues["coinbase_price"],
-        kraken_price=eth_venues["kraken_price"],
-        bitstamp_price=eth_venues["bitstamp_price"],
-        gemini_price=eth_venues["gemini_price"],
-        consolidated_price=eth_venues["consolidated_price"],
-        coinbase_volume=eth_venues["coinbase_volume"],
-        kraken_volume=eth_venues["kraken_volume"],
-        bitstamp_volume=eth_venues["bitstamp_volume"],
-        gemini_volume=eth_venues["gemini_volume"],
-    )
+    for asset in crypto_assets.CRYPTO_ASSETS:
+        venues = fetch_crypto_prices(asset)
+        db.save_crypto_snapshot(asset, scanned_at=scanned_at, **venues)
 
     # Series to scan come from the DB (editable on the Markets page); fall back to
     # the static config list if the table is empty/unavailable. Each series carries

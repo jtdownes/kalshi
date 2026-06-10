@@ -18,10 +18,10 @@ from .orders import (
     apply_exit_fill,
 )
 from .snapshots import (
-    save_bitcoin_snapshot, save_ethereum_snapshot, save_market_snapshot,
+    save_crypto_snapshot, save_market_snapshot,
     get_latest_snapshot_for_ticker,
     get_recent_market_snapshots, get_market_snapshots_for_ticker,
-    get_recent_btc_prices, get_latest_snapshots_for_series,
+    get_recent_crypto_prices, get_latest_snapshots_for_series,
     get_prior_resolutions_for_close,
 )
 from .weather import (
@@ -51,10 +51,10 @@ __all__ = [
     'get_order_by_kalshi_order_id', 'close_entry_order_with_exit',
     'apply_exit_fill',
     # snapshots
-    'save_bitcoin_snapshot', 'save_ethereum_snapshot', 'save_market_snapshot',
+    'save_crypto_snapshot', 'save_market_snapshot',
     'get_latest_snapshot_for_ticker',
     'get_recent_market_snapshots', 'get_market_snapshots_for_ticker',
-    'get_recent_btc_prices', 'get_latest_snapshots_for_series',
+    'get_recent_crypto_prices', 'get_latest_snapshots_for_series',
     'get_prior_resolutions_for_close',
     # weather
     'save_weather_snapshot', 'get_latest_weather_snapshot', 'get_recent_weather_snapshots',

@@ -35,10 +35,17 @@ by both the live engine and the migration backfill.
 import logging
 import math
 
+import crypto_assets
+
 log = logging.getLogger(__name__)
 
 # Fields a condition may reference. Values are in the same units the bot uses:
 # cents for prices, seconds for time, USD for btc_price / distance_to_strike.
+#
+# NOTE on naming: the btc_* fields hold the market's UNDERLYING asset price
+# (BTC for KXBTC* markets, ETH for KXETH*, ...). The stored field names keep
+# the btc_ prefix so existing saved strategies don't break; the UI labels them
+# "Underlying ...".
 FIELDS = (
     "time_to_close",
     "distance_to_strike",
@@ -85,7 +92,11 @@ def compute_fields(market: dict, time_to_close: int | None = None,
 
     yes_ask = num(market.get("yes_ask"))
     yes_bid = num(market.get("yes_bid"))
-    btc     = num(market.get("btc_price"))
+    # Underlying asset price: eth_price for KXETH* markets, btc_price for
+    # KXBTC* (and as the legacy fallback). Without this, distance_to_strike on
+    # an ETH market would compare the BTC price against an ETH strike.
+    price_key = crypto_assets.price_field_for_ticker(market.get("ticker"))
+    btc     = num(market.get(price_key))
     strike  = num(market.get("strike_str"))
 
     ttc = time_to_close
