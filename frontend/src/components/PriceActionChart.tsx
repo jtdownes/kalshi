@@ -167,21 +167,29 @@ export default function PriceActionChart({ ticker, globalSnapshots, openOrders =
   // the consolidated line extends to the latest tick instead of gapping.
   const aggKey: keyof SeriesData = assetKey === 'ETH' ? 'eth_price' : 'btc_price';
 
+  // The API can serialize prices as numeric strings (Postgres NUMERIC →
+  // Decimal → JSON string); coerce before doing math on them.
+  const toNum = (v: unknown): number | null => {
+    if (v == null || v === '') return null;
+    const n = Number(v);
+    return Number.isFinite(n) ? n : null;
+  };
+
   // Consolidated = mean of whichever venues responded this tick
   const chartData = data.map(d => {
     const venuePrices = venueFields
-      .map(f => d[f.key])
+      .map(f => toNum(d[f.key]))
       .filter((p): p is number => p != null);
     const consolidated = venuePrices.length
       ? Math.round((venuePrices.reduce((a, b) => a + b, 0) / venuePrices.length) * 100) / 100
-      : (typeof d[aggKey] === 'number' ? d[aggKey] as number : null);
+      : toNum(d[aggKey]);
     return { ...d, consolidated };
   });
 
   const priceDomain: [number, number] | ['auto', 'auto'] = (() => {
     const prices = data
-      .flatMap(d => [...venueFields.map(f => d[f.key]), d[aggKey]])
-      .filter((p): p is number => typeof p === 'number');
+      .flatMap(d => [...venueFields.map(f => toNum(d[f.key])), toNum(d[aggKey])])
+      .filter((p): p is number => p != null);
     if (prices.length === 0) return ['auto', 'auto'];
     const candidates = strikeNum != null ? [...prices, strikeNum] : prices;
     const mn = Math.min(...candidates);

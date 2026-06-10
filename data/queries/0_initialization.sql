@@ -201,6 +201,19 @@ CREATE TABLE IF NOT EXISTS ethereum_snapshots (
 );
 CREATE INDEX IF NOT EXISTS idx_ethereum_snapshots_scanned_at ON ethereum_snapshots (scanned_at);
 
+-- Self-heal a hand-created ethereum_snapshots whose columns were NUMERIC:
+-- psycopg2 returns NUMERIC as Decimal, which the API serializes as strings
+-- and breaks frontend math. Convert to REAL to match bitcoin_snapshots.
+DO $$
+DECLARE col TEXT;
+BEGIN
+    FOR col IN SELECT column_name FROM information_schema.columns
+               WHERE table_name = 'ethereum_snapshots' AND data_type = 'numeric'
+    LOOP
+        EXECUTE format('ALTER TABLE ethereum_snapshots ALTER COLUMN %I TYPE REAL', col);
+    END LOOP;
+END $$;
+
 -- One-time backfill: lift bitcoin data still embedded in the legacy
 -- market_snapshots columns into bitcoin_snapshots, keyed by each row's
 -- scanned_at, so historical joins resolve. Only runs on a pre-split DB that
