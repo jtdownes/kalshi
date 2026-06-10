@@ -11,7 +11,9 @@ body {
 .app {
   max-width: 1440px;
   margin: 0 auto;
-  padding: 0 20px 60px;
+  /* Top inset keeps the header clear of the iPhone status bar when the
+     app runs standalone from the home screen (0 everywhere else). */
+  padding: env(safe-area-inset-top) 20px 60px;
 }
 
 /* ── Header ────────────────────────────────────────────────────── */
@@ -1249,8 +1251,9 @@ select optgroup {
    the file so it wins over the base rules above. */
 @media (max-width: 768px) {
   .app {
-    /* Bottom padding clears the fixed tab bar. */
-    padding: 0 10px calc(64px + env(safe-area-inset-bottom));
+    /* Bottom padding clears the fixed tab bar; top clears the status bar
+       when running standalone. */
+    padding: env(safe-area-inset-top) 10px calc(64px + env(safe-area-inset-bottom));
   }
 
   .header {
