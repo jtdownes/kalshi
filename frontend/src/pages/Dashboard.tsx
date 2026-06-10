@@ -112,7 +112,7 @@ export default function Dashboard({ orders, trades, openOrders, positions, snaps
   }
 
   return (
-    <div>
+    <div className="page-stack">
       {/* Portfolio Summary */}
       {(() => {
         const posArr = Array.isArray(positions) ? positions as Position[] : []
@@ -127,53 +127,29 @@ export default function Dashboard({ orders, trades, openOrders, positions, snaps
           if (bid != null && contracts > 0) return sum + ((bid / 100) * contracts - exposure)
           return sum
         }, 0)
+        const pnlColor = (v: number) => v > 0 ? '#00d4a0' : v < 0 ? '#ff4444' : undefined
+        const cards: { label: string; value: string; color?: string }[] = [
+          { label: 'Portfolio Balance', value: balance != null ? `$${((balance / 100) + totalExposure + totalUnrealizedPnL).toFixed(2)}` : '—' },
+          { label: 'Cash Balance',      value: balance != null ? `$${(balance / 100).toFixed(2)}` : '—' },
+          { label: 'Open Positions',    value: posArr.length > 0 ? `$${totalExposure.toFixed(2)}` : '—' },
+          { label: 'Unrealized P&L',    value: posArr.length > 0 ? `${totalUnrealizedPnL >= 0 ? '+' : ''}$${totalUnrealizedPnL.toFixed(2)}` : '—', color: pnlColor(totalUnrealizedPnL) },
+          { label: 'Realized P&L',      value: posArr.length > 0 ? `${totalRealizedPnL >= 0 ? '+' : ''}$${totalRealizedPnL.toFixed(2)}` : '—', color: pnlColor(totalRealizedPnL) },
+        ]
         return (
-          <div style={{
-            display: 'flex', gap: 12, margin: '16px 18px 0',
-            background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.08)',
-            borderRadius: 12, padding: '14px 20px', flexWrap: 'wrap',
-          }}>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 3, minWidth: 140 }}>
-              <span style={{ fontSize: 11, fontWeight: 600, color: '#64748b', textTransform: 'uppercase', letterSpacing: '0.06em' }}>Portfolio Balance</span>
-              <span style={{ fontSize: 22, fontWeight: 800, color: '#f1f5f9' }}>
-                {balance != null ? `$${((balance / 100) + totalExposure + totalUnrealizedPnL).toFixed(2)}` : '—'}
-              </span>
-            </div>
-            <div style={{ width: 1, background: 'rgba(255,255,255,0.08)', margin: '0 4px', alignSelf: 'stretch' }} />
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 3, minWidth: 120 }}>
-              <span style={{ fontSize: 11, fontWeight: 600, color: '#64748b', textTransform: 'uppercase', letterSpacing: '0.06em' }}>Cash Balance</span>
-              <span style={{ fontSize: 22, fontWeight: 800, color: '#f1f5f9' }}>
-                {balance != null ? `$${(balance / 100).toFixed(2)}` : '—'}
-              </span>
-            </div>
-            <div style={{ width: 1, background: 'rgba(255,255,255,0.08)', margin: '0 4px', alignSelf: 'stretch' }} />
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 3, minWidth: 120 }}>
-              <span style={{ fontSize: 11, fontWeight: 600, color: '#64748b', textTransform: 'uppercase', letterSpacing: '0.06em' }}>Open Positions</span>
-              <span style={{ fontSize: 22, fontWeight: 800, color: '#f1f5f9' }}>
-                {posArr.length > 0 ? `$${totalExposure.toFixed(2)}` : '—'}
-              </span>
-            </div>
-            <div style={{ width: 1, background: 'rgba(255,255,255,0.08)', margin: '0 4px', alignSelf: 'stretch' }} />
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 3, minWidth: 120 }}>
-              <span style={{ fontSize: 11, fontWeight: 600, color: '#64748b', textTransform: 'uppercase', letterSpacing: '0.06em' }}>Unrealized P&L</span>
-              <span style={{ fontSize: 22, fontWeight: 800, color: totalUnrealizedPnL > 0 ? '#00d4a0' : totalUnrealizedPnL < 0 ? '#ff4444' : '#f1f5f9' }}>
-                {posArr.length > 0 ? `${totalUnrealizedPnL >= 0 ? '+' : ''}$${totalUnrealizedPnL.toFixed(2)}` : '—'}
-              </span>
-            </div>
-            <div style={{ width: 1, background: 'rgba(255,255,255,0.08)', margin: '0 4px', alignSelf: 'stretch' }} />
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 3, minWidth: 120 }}>
-              <span style={{ fontSize: 11, fontWeight: 600, color: '#64748b', textTransform: 'uppercase', letterSpacing: '0.06em' }}>Realized P&L</span>
-              <span style={{ fontSize: 22, fontWeight: 800, color: totalRealizedPnL > 0 ? '#00d4a0' : totalRealizedPnL < 0 ? '#ff4444' : '#f1f5f9' }}>
-                {posArr.length > 0 ? `${totalRealizedPnL >= 0 ? '+' : ''}$${totalRealizedPnL.toFixed(2)}` : '—'}
-              </span>
-            </div>
+          <div className="stats-row">
+            {cards.map(c => (
+              <div key={c.label} className="stat-card">
+                <div className="stat-label">{c.label}</div>
+                <div className="stat-value" style={c.color ? { color: c.color } : undefined}>{c.value}</div>
+              </div>
+            ))}
           </div>
         )
       })()}
 
       {/* Active Strategy Widget */}
       {settings && (
-        <section className="strategy-active-panel" style={{ margin: '16px 18px 0' }}>
+        <section className="strategy-active-panel">
           <div className="strategy-active-main">
             <div className="stat-label">Active Strategy</div>
             <h2>{activeProfile?.name || settings.name || 'Current settings'}</h2>
@@ -194,7 +170,7 @@ export default function Dashboard({ orders, trades, openOrders, positions, snaps
       )}
 
       {/* Live Markets */}
-      <div className="table-panel" style={{ marginTop: 16, marginLeft: 18, marginRight: 18 }}>
+      <div className="table-panel">
         <div className="snapshot-panel-head">
           <span className="section-toggle-label">Live Markets</span>
           <span className="tab-count">{marketSnapshots.length}</span>
@@ -209,10 +185,10 @@ export default function Dashboard({ orders, trades, openOrders, positions, snaps
                 <th>Yes Ask</th>
                 <th>Yes Bid</th>
                 <th>No Ask</th>
-                <th>Volume</th>
-                <th>OI</th>
+                <th className="hide-sm">Volume</th>
+                <th className="hide-sm">OI</th>
                 <th>TTC</th>
-                <th>Scanned</th>
+                <th className="hide-sm">Scanned</th>
               </tr>
             </thead>
             <tbody>
@@ -258,10 +234,10 @@ export default function Dashboard({ orders, trades, openOrders, positions, snaps
                   <td>{fmtCents(s.yes_ask)}</td>
                   <td className="cell-dim">{fmtCents(s.yes_bid)}</td>
                   <td className="cell-dim">{fmtCents(s.no_ask)}</td>
-                  <td className="cell-dim">{s.volume != null ? s.volume.toLocaleString() : '—'}</td>
-                  <td className="cell-dim">{s.open_interest != null ? s.open_interest.toLocaleString() : '—'}</td>
+                  <td className="cell-dim hide-sm">{s.volume != null ? s.volume.toLocaleString() : '—'}</td>
+                  <td className="cell-dim hide-sm">{s.open_interest != null ? s.open_interest.toLocaleString() : '—'}</td>
                   <td className="cell-dim">{fmtDur(s.time_to_close_secs)}</td>
-                  <td className="cell-dim">{fmtTime(s.scanned_at)}</td>
+                  <td className="cell-dim hide-sm">{fmtTime(s.scanned_at)}</td>
                 </tr>
               ))}
             </tbody>
@@ -271,13 +247,11 @@ export default function Dashboard({ orders, trades, openOrders, positions, snaps
 
       {/* Market Chart */}
       {selectedTicker && (
-        <div style={{ marginTop: 8, marginLeft: 18, marginRight: 18 }}>
-          <PriceActionChart ticker={selectedTicker} globalSnapshots={dashSnapshots} openOrders={openOrders} historyOrders={orders} />
-        </div>
+        <PriceActionChart ticker={selectedTicker} globalSnapshots={dashSnapshots} openOrders={openOrders} historyOrders={orders} />
       )}
 
       {/* Active Positions */}
-      <div className="table-panel" style={{ marginTop: 16, marginLeft: 18, marginRight: 18 }}>
+      <div className="table-panel">
         <div style={{ padding: '10px', display: 'flex', alignItems: 'center', gap: 8 }}>
           <span style={{ fontWeight: 600, fontSize: 13 }}>Active Positions</span>
           <span className="tab-count">{Array.isArray(positions) ? positions.length : 0}</span>
@@ -290,9 +264,9 @@ export default function Dashboard({ orders, trades, openOrders, positions, snaps
                 <th>Side</th>
                 <th>Contracts</th>
                 <th>Fill</th>
-                <th>Cost</th>
+                <th className="hide-sm">Cost</th>
                 <th>Ask</th>
-                <th>OI</th>
+                <th className="hide-sm">OI</th>
                 <th>Realized P&L</th>
                 <th>Unr. P&L</th>
               </tr>
@@ -325,9 +299,9 @@ export default function Dashboard({ orders, trades, openOrders, positions, snaps
                     <td><span className={`badge ${side === 'yes' ? 'side-yes' : 'side-no'}`}>{side.toUpperCase()}</span></td>
                     <td>{absContracts}</td>
                     <td className="cell-dim">{fillPrice != null ? `${fillPrice.toFixed(1)}¢` : '—'}</td>
-                    <td className="cell-dim">${p.total_traded_dollars}</td>
+                    <td className="cell-dim hide-sm">${p.total_traded_dollars}</td>
                     <td className="cell-dim">{fmtCents(ask)}</td>
-                    <td className="cell-dim">{q?.open_interest != null ? q.open_interest.toLocaleString() : '—'}</td>
+                    <td className="cell-dim hide-sm">{q?.open_interest != null ? q.open_interest.toLocaleString() : '—'}</td>
                     <td className={pnl > 0 ? 'cell-profit' : pnl < 0 ? 'cell-loss' : 'cell-dim'}>
                       {pnl > 0 ? '+' : ''}${p.realized_pnl_dollars}
                     </td>
@@ -345,7 +319,7 @@ export default function Dashboard({ orders, trades, openOrders, positions, snaps
       </div>
 
       {/* Open Orders */}
-      <div className="table-panel" style={{ marginTop: 16, marginLeft: 18, marginRight: 18 }}>
+      <div className="table-panel">
         <div style={{ padding: '10px', display: 'flex', alignItems: 'center', gap: 8 }}>
           <span style={{ fontWeight: 600, fontSize: 13 }}>Open Orders</span>
           <span className="tab-count">{openOrders.length}</span>
@@ -359,9 +333,9 @@ export default function Dashboard({ orders, trades, openOrders, positions, snaps
                 <th>Direction</th>
                 <th>Entry</th>
                 <th>Ask</th>
-                <th>OI</th>
+                <th className="hide-sm">OI</th>
                 <th>Status</th>
-                <th>Placed</th>
+                <th className="hide-sm">Placed</th>
                 <th>TTC</th>
               </tr>
             </thead>
@@ -383,9 +357,9 @@ export default function Dashboard({ orders, trades, openOrders, positions, snaps
                     <td><span className={`badge ${o.side === 'yes' ? 'side-yes' : 'side-no'}`}>{o.side.toUpperCase()}</span></td>
                     <td>{o.entry_price_cents}¢</td>
                     <td className="cell-dim">{fmtCents(ask)}</td>
-                    <td className="cell-dim">{q?.open_interest != null ? q.open_interest.toLocaleString() : '—'}</td>
+                    <td className="cell-dim hide-sm">{q?.open_interest != null ? q.open_interest.toLocaleString() : '—'}</td>
                     <td><StatusBadge status={o.status} outcome={o.outcome} /></td>
-                    <td className="cell-dim">{fmtTime(o.placed_at)}</td>
+                    <td className="cell-dim hide-sm">{fmtTime(o.placed_at)}</td>
                     <td className="cell-dim">{fmtDur(o.time_to_close_at_placement)}</td>
                   </tr>
                 )
@@ -396,7 +370,7 @@ export default function Dashboard({ orders, trades, openOrders, positions, snaps
       </div>
 
       {/* Order History */}
-      <div className="table-panel" style={{ marginTop: 16, marginLeft: 18, marginRight: 18 }}>
+      <div className="table-panel">
         <div style={{ padding: '10px', display: 'flex', alignItems: 'center', gap: 8 }}>
           <button
             type="button"
@@ -422,8 +396,8 @@ export default function Dashboard({ orders, trades, openOrders, positions, snaps
                 <th>Qty</th>
                 <th>Result</th>
                 <th>P&L</th>
-                <th>Placed</th>
-                <th>Filled</th>
+                <th className="hide-sm">Placed</th>
+                <th className="hide-sm">Filled</th>
               </tr>
             </thead>
             <tbody>
@@ -444,8 +418,8 @@ export default function Dashboard({ orders, trades, openOrders, positions, snaps
                   <td className={o.net_profit_cents != null && o.net_profit_cents > 0 ? 'cell-profit' : o.net_profit_cents != null && o.net_profit_cents < 0 ? 'cell-loss' : 'cell-dim'}>
                     {o.net_profit_cents != null ? fmtPnL(o.net_profit_cents) : '—'}
                   </td>
-                  <td className="cell-dim">{fmtTime(o.placed_at)}</td>
-                  <td className="cell-dim">{fmtTime(o.filled_at)}</td>
+                  <td className="cell-dim hide-sm">{fmtTime(o.placed_at)}</td>
+                  <td className="cell-dim hide-sm">{fmtTime(o.filled_at)}</td>
                 </tr>
               ))}
             </tbody>
@@ -454,7 +428,7 @@ export default function Dashboard({ orders, trades, openOrders, positions, snaps
       </div>
 
       {/* Trades */}
-      <div className="table-panel" style={{ marginTop: 16, marginLeft: 18, marginRight: 18, marginBottom: 32 }}>
+      <div className="table-panel">
         <div style={{ padding: '10px', display: 'flex', alignItems: 'center', gap: 8 }}>
           <button
             type="button"
@@ -474,14 +448,14 @@ export default function Dashboard({ orders, trades, openOrders, positions, snaps
                 <th>Market</th>
                 <th>Qty</th>
                 <th>Entry Cost</th>
-                <th>Exit Proceeds</th>
+                <th className="hide-sm">Exit Proceeds</th>
                 <th>Status</th>
                 <th>P&amp;L</th>
-                <th>Placed</th>
-                <th>Entry Fill</th>
+                <th className="hide-sm">Placed</th>
+                <th className="hide-sm">Entry Fill</th>
                 <th>Closed</th>
-                <th>Open</th>
-                <th>Close</th>
+                <th className="hide-sm">Open</th>
+                <th className="hide-sm">Close</th>
               </tr>
             </thead>
             <tbody>
@@ -507,20 +481,20 @@ export default function Dashboard({ orders, trades, openOrders, positions, snaps
                       </td>
                       <td className="cell-dim">{t.total_count}</td>
                       <td className="cell-dim">{centsToUSD(t.total_entry_cost_cents ?? 0)}</td>
-                      <td className="cell-dim">{t.total_close_proceeds_cents != null && t.total_close_proceeds_cents > 0 ? centsToUSD(t.total_close_proceeds_cents) : '—'}</td>
+                      <td className="cell-dim hide-sm">{t.total_close_proceeds_cents != null && t.total_close_proceeds_cents > 0 ? centsToUSD(t.total_close_proceeds_cents) : '—'}</td>
                       <td><StatusBadge status={t.status} outcome={t.outcome} /></td>
                       <td className={t.net_profit_cents != null && t.net_profit_cents > 0 ? 'cell-profit' : t.net_profit_cents != null && t.net_profit_cents < 0 ? 'cell-loss' : 'cell-dim'}>
                         {t.net_profit_cents != null ? fmtPnL(t.net_profit_cents) : '—'}
                       </td>
-                      <td className="cell-dim">{fmtTime(t.placed_at)}</td>
-                      <td className="cell-dim">
+                      <td className="cell-dim hide-sm">{fmtTime(t.placed_at)}</td>
+                      <td className="cell-dim hide-sm">
                         {t.first_entry_filled_at && t.last_entry_filled_at && t.first_entry_filled_at !== t.last_entry_filled_at
                           ? `${fmtTime(t.first_entry_filled_at)}–${fmtTime(t.last_entry_filled_at)}`
                           : fmtTime(t.first_entry_filled_at ?? t.filled_at)}
                       </td>
                       <td className="cell-dim">{fmtTime(t.closed_at)}</td>
-                      <td className="cell-dim">{tickerOpenTime(t.market_ticker)}</td>
-                      <td className="cell-dim">{fmtUnixTime(t.market_close_time)}</td>
+                      <td className="cell-dim hide-sm">{tickerOpenTime(t.market_ticker)}</td>
+                      <td className="cell-dim hide-sm">{fmtUnixTime(t.market_close_time)}</td>
                     </tr>
                     {isExpanded && (() => {
                       const tradeOrders = orders.filter(o => o.market_ticker === t.market_ticker).slice().sort((a, b) => {

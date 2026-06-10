@@ -287,19 +287,12 @@ export default function PriceActionChart({ ticker, globalSnapshots, openOrders =
     );
   };
 
-  const chartStyle = {
-    background: 'rgba(255,255,255,0.03)',
-    padding: '16px',
-    borderRadius: '8px',
-    border: '1px solid rgba(255,255,255,0.1)',
-  };
-
   return (
-    <div style={{ marginBottom: '24px' }}>
+    <div className="chart-block">
       {/* header */}
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px' }}>
-        <h3 style={{ margin: 0, color: '#eee', fontSize: '16px' }}>Price Action: {ticker}</h3>
-        <div style={{ display: 'flex', gap: 16, alignItems: 'center' }}>
+      <div className="chart-head">
+        <h3>Price Action: {ticker}</h3>
+        <div className="chart-meta">
           {tickerOpen.length > 0 && (
             <span style={{ fontSize: 11, color: '#f5c842' }}>{tickerOpen.length} resting order{tickerOpen.length > 1 ? 's' : ''}</span>
           )}
@@ -313,10 +306,10 @@ export default function PriceActionChart({ ticker, globalSnapshots, openOrders =
       {loading && data.length === 0 ? (
         <div style={{ color: '#888', textAlign: 'center', paddingTop: '100px' }}>Loading chart data...</div>
       ) : (
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
+        <div className="chart-grid">
 
           {/* ── Contract price chart ── */}
-          <div style={{ ...chartStyle, height: 320 }}>
+          <div className="chart-card">
             <div style={{ fontSize: 11, color: '#888', marginBottom: 4 }}>Contract (¢)</div>
             <ResponsiveContainer width="100%" height="93%">
               <LineChart data={data} margin={{ top: 5, right: 10, left: 0, bottom: 5 }} syncId="priceAction">
@@ -391,7 +384,7 @@ export default function PriceActionChart({ ticker, globalSnapshots, openOrders =
           </div>
 
           {/* ── Crypto price chart ── */}
-          <div style={{ ...chartStyle, height: 320 }}>
+          <div className="chart-card">
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 }}>
               <span style={{ fontSize: 11, color: '#888' }}>
                 {assetInfo ? `${assetInfo.label} (USD)` : 'Price (USD)'}

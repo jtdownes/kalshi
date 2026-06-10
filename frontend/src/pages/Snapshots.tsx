@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
+import { NavLink } from 'react-router-dom'
 import type { Snapshot, Order } from '../types'
 import { fmtCents, fmtDur, fmtTime, fmtUnixTime, kalshiMarketUrl, cryptoPriceForTicker } from '../utils'
 import PriceActionChart from '../components/PriceActionChart'
@@ -84,6 +85,23 @@ export default function Snapshots({ snapshots, orders = [], openOrders = [], fil
 
   return (
     <div className="snapshots-view">
+      <nav className="markets-subnav" aria-label="Market category">
+        {[
+          { to: '/markets',         label: 'All Markets' },
+          { to: '/markets/crypto',  label: 'Crypto' },
+          { to: '/markets/climate', label: 'Climate' },
+        ].map(item => (
+          <NavLink
+            key={item.to}
+            to={item.to}
+            end
+            className={({ isActive }) => isActive ? 'subnav-link subnav-link-active' : 'subnav-link'}
+          >
+            {item.label}
+          </NavLink>
+        ))}
+      </nav>
+
       <ScannedMarkets />
 
       <section className="table-panel">
@@ -100,10 +118,10 @@ export default function Snapshots({ snapshots, orders = [], openOrders = [], fil
                 <th>Yes Ask</th>
                 <th>Yes Bid</th>
                 <th>No Ask</th>
-                <th>Volume</th>
-                <th>OI</th>
+                <th className="hide-sm">Volume</th>
+                <th className="hide-sm">OI</th>
                 <th>TTC</th>
-                <th>Scanned</th>
+                <th className="hide-sm">Scanned</th>
               </tr>
             </thead>
             <tbody>
@@ -126,10 +144,10 @@ export default function Snapshots({ snapshots, orders = [], openOrders = [], fil
                   <td>{fmtCents(snapshot.yes_ask)}</td>
                   <td className="cell-dim">{fmtCents(snapshot.yes_bid)}</td>
                   <td className="cell-dim">{fmtCents(snapshot.no_ask)}</td>
-                  <td className="cell-dim">{snapshot.volume != null ? snapshot.volume.toLocaleString() : '—'}</td>
-                  <td className="cell-dim">{snapshot.open_interest != null ? snapshot.open_interest.toLocaleString() : '—'}</td>
+                  <td className="cell-dim hide-sm">{snapshot.volume != null ? snapshot.volume.toLocaleString() : '—'}</td>
+                  <td className="cell-dim hide-sm">{snapshot.open_interest != null ? snapshot.open_interest.toLocaleString() : '—'}</td>
                   <td className="cell-dim">{fmtDur(snapshot.time_to_close_secs)}</td>
-                  <td className="cell-dim">{fmtTime(snapshot.scanned_at)}</td>
+                  <td className="cell-dim hide-sm">{fmtTime(snapshot.scanned_at)}</td>
                 </tr>
               ))}
             </tbody>
@@ -157,10 +175,10 @@ export default function Snapshots({ snapshots, orders = [], openOrders = [], fil
                 <th>Yes Ask</th>
                 <th>Yes Bid</th>
                 <th>No Ask</th>
-                <th>Volume</th>
-                <th>OI</th>
+                <th className="hide-sm">Volume</th>
+                <th className="hide-sm">OI</th>
                 <th>TTC</th>
-                <th>Scanned</th>
+                <th className="hide-sm">Scanned</th>
               </tr>
             </thead>
             <tbody>
@@ -185,10 +203,10 @@ export default function Snapshots({ snapshots, orders = [], openOrders = [], fil
                     <td>{fmtCents(t.yes_ask)}</td>
                     <td className="cell-dim">{fmtCents(t.yes_bid)}</td>
                     <td className="cell-dim">{fmtCents(t.no_ask)}</td>
-                    <td className="cell-dim">{t.volume != null ? t.volume.toLocaleString() : '—'}</td>
-                    <td className="cell-dim">{t.open_interest != null ? t.open_interest.toLocaleString() : '—'}</td>
+                    <td className="cell-dim hide-sm">{t.volume != null ? t.volume.toLocaleString() : '—'}</td>
+                    <td className="cell-dim hide-sm">{t.open_interest != null ? t.open_interest.toLocaleString() : '—'}</td>
                     <td className="cell-dim">{fmtDur(t.time_to_close_secs)}</td>
-                    <td className="cell-dim">{fmtTime(t.scanned_at)}</td>
+                    <td className="cell-dim hide-sm">{fmtTime(t.scanned_at)}</td>
                   </tr>
                   {expandedTicker === t.ticker && (
                     <tr key={`${t.ticker}-history`} className="snapshot-history-row">
@@ -216,11 +234,11 @@ export default function Snapshots({ snapshots, orders = [], openOrders = [], fil
                                   <th>Yes Ask</th>
                                   <th>Yes Bid</th>
                                   <th>No Ask</th>
-                                  <th>No Bid</th>
-                                  <th>Volume</th>
-                                  <th>OI</th>
+                                  <th className="hide-sm">No Bid</th>
+                                  <th className="hide-sm">Volume</th>
+                                  <th className="hide-sm">OI</th>
                                   <th>TTC</th>
-                                  <th>Close</th>
+                                  <th className="hide-sm">Close</th>
                                 </tr>
                               </thead>
                               <tbody>
@@ -231,11 +249,11 @@ export default function Snapshots({ snapshots, orders = [], openOrders = [], fil
                                     <td>{fmtCents(snap.yes_ask)}</td>
                                     <td className="cell-dim">{fmtCents(snap.yes_bid)}</td>
                                     <td className="cell-dim">{fmtCents(snap.no_ask)}</td>
-                                    <td className="cell-dim">{fmtCents(snap.no_bid)}</td>
-                                    <td className="cell-dim">{snap.volume != null ? snap.volume.toLocaleString() : '—'}</td>
-                                    <td className="cell-dim">{snap.open_interest != null ? snap.open_interest.toLocaleString() : '—'}</td>
+                                    <td className="cell-dim hide-sm">{fmtCents(snap.no_bid)}</td>
+                                    <td className="cell-dim hide-sm">{snap.volume != null ? snap.volume.toLocaleString() : '—'}</td>
+                                    <td className="cell-dim hide-sm">{snap.open_interest != null ? snap.open_interest.toLocaleString() : '—'}</td>
                                     <td className="cell-dim">{fmtDur(snap.time_to_close_secs)}</td>
-                                    <td className="cell-dim">{fmtUnixTime(snap.close_time)}</td>
+                                    <td className="cell-dim hide-sm">{fmtUnixTime(snap.close_time)}</td>
                                   </tr>
                                 ))}
                               </tbody>

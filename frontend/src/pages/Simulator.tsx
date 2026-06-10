@@ -95,10 +95,8 @@ export default function Simulator({ profiles }: Props) {
         </div>
       </section>
 
-      <div style={{ padding: '0 18px 32px' }}>
-        <RuleBuilder rules={rules} onChange={setRules} />
-        <StrategyBacktest rules={rules} series={series} defaultShowExecutions marketLimit={1000} ttcWindows={ttcWindows} />
-      </div>
+      <RuleBuilder rules={rules} onChange={setRules} />
+      <StrategyBacktest rules={rules} series={series} defaultShowExecutions marketLimit={1000} ttcWindows={ttcWindows} />
     </div>
   )
 }

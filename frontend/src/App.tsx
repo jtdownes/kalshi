@@ -12,6 +12,14 @@ export type { Position, Order, Trade, Snapshot, Settings, Profile, Quotes }
 export type { RuleField, RuleOp, RuleCondition, RuleEntry, RuleExit, RuleAction, StrategyRule } from './types'
 export { centsToUSD, fmtPnL, fmtCents, fmtTime, fmtUnixTime, fmtDur, fmtTickers, kalshiMarketUrl } from './utils'
 
+// Shared by the desktop header nav and the mobile bottom tab bar.
+const NAV_ITEMS = [
+  { to: '/',           label: 'Dashboard',  end: true },
+  { to: '/strategies', label: 'Strategies', end: false },
+  { to: '/simulator',  label: 'Simulator',  end: false },
+  { to: '/markets',    label: 'Markets',    end: false },
+]
+
 // ── Main ─────────────────────────────────────────────────────────────────────────────────
 export default function App() {
   const [orders,      setOrders]      = useState<Order[]>([])
@@ -129,31 +137,16 @@ export default function App() {
           <span className="header-title">Kalshi Bot</span>
         </div>
         <nav className="header-nav">
-          <NavLink to="/" end className={({ isActive }) => isActive ? 'nav-link nav-link-active' : 'nav-link'}>
-            Dashboard
-          </NavLink>
-          <NavLink to="/strategies" className={({ isActive }) => isActive ? 'nav-link nav-link-active' : 'nav-link'}>
-            Strategies
-          </NavLink>
-          <NavLink to="/simulator" className={({ isActive }) => isActive ? 'nav-link nav-link-active' : 'nav-link'}>
-            Simulator
-          </NavLink>
-          <div className="nav-dropdown">
-            <NavLink to="/markets" end className={({ isActive }) => isActive ? 'nav-link nav-link-active' : 'nav-link'}>
-              Markets ▾
+          {NAV_ITEMS.map(item => (
+            <NavLink
+              key={item.to}
+              to={item.to}
+              end={item.end}
+              className={({ isActive }) => isActive ? 'nav-link nav-link-active' : 'nav-link'}
+            >
+              {item.label}
             </NavLink>
-            <div className="nav-dropdown-menu">
-              <NavLink to="/markets" end className={({ isActive }) => isActive ? 'nav-dropdown-item nav-dropdown-item-active' : 'nav-dropdown-item'}>
-                All Markets
-              </NavLink>
-              <NavLink to="/markets/crypto" className={({ isActive }) => isActive ? 'nav-dropdown-item nav-dropdown-item-active' : 'nav-dropdown-item'}>
-                Crypto
-              </NavLink>
-              <NavLink to="/markets/climate" className={({ isActive }) => isActive ? 'nav-dropdown-item nav-dropdown-item-active' : 'nav-dropdown-item'}>
-                Climate
-              </NavLink>
-            </div>
-          </div>
+          ))}
         </nav>
         <div className="header-right">
           {error && <span style={{ color: '#ff4444', fontSize: 12 }}>{error}</span>}
@@ -222,6 +215,20 @@ export default function App() {
           element={<MarketsCrypto snapshots={snapshots} orders={orders} openOrders={orders.filter(o => o.status === 'resting')} />}
         />
       </Routes>
+
+      {/* Mobile-only tab bar (hidden on desktop via CSS) */}
+      <nav className="bottom-nav">
+        {NAV_ITEMS.map(item => (
+          <NavLink
+            key={item.to}
+            to={item.to}
+            end={item.end}
+            className={({ isActive }) => isActive ? 'bottom-nav-link bottom-nav-link-active' : 'bottom-nav-link'}
+          >
+            {item.label}
+          </NavLink>
+        ))}
+      </nav>
     </div>
   )
 }

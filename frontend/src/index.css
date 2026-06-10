@@ -43,48 +43,38 @@ body {
 .nav-link:hover { color: #e2e8f0; }
 .nav-link-active { color: #00d4a0; border-color: rgba(0,212,160,0.3); background: rgba(0,212,160,0.07); }
 
-/* ── Nav Dropdown ─────────────────────────────────────────────── */
-.nav-dropdown { position: relative; display: flex; align-items: center; }
-.nav-dropdown::after {
-  content: ''; position: absolute; top: 100%; left: 0;
-  width: 100%; height: 12px; /* bridge gap so hover doesn't break */
+/* ── Bottom nav (mobile only — enabled in the mobile media block) ── */
+.bottom-nav {
+  display: none;
+  position: fixed; bottom: 0; left: 0; right: 0; z-index: 150;
+  background: rgba(13,13,20,0.97);
+  backdrop-filter: blur(8px);
+  border-top: 1px solid #1e1e2e;
+  padding-bottom: env(safe-area-inset-bottom);
 }
-.nav-dropdown-menu {
-  display: none; flex-direction: column; gap: 2px;
-  position: absolute; top: calc(100% + 8px); left: 0;
-  background: #0d0d16; border: 1px solid rgba(100,116,139,0.25);
-  border-radius: 8px; padding: 4px; min-width: 150px; z-index: 200;
-  box-shadow: 0 8px 24px rgba(0,0,0,0.5);
+.bottom-nav-link {
+  flex: 1; display: flex; align-items: center; justify-content: center;
+  min-height: 52px;
+  font-size: 13px; font-weight: 600;
+  color: #64748b; text-decoration: none;
 }
-.nav-dropdown:hover .nav-dropdown-menu { display: flex; }
-.nav-dropdown-item {
-  padding: 6px 14px; border-radius: 6px; font-size: 13px; font-weight: 500;
-  color: #64748b; text-decoration: none; transition: all 0.15s;
-  white-space: nowrap;
-}
-.nav-dropdown-item:hover { color: #e2e8f0; background: rgba(255,255,255,0.05); }
-.nav-dropdown-item-active { color: #00d4a0; background: rgba(0,212,160,0.07); }
+.bottom-nav-link-active { color: #00d4a0; }
 
-/* ── Active Strategy Widget ──────────────────────────────────── */
-.active-strategy-widget {
-  display: flex; align-items: center; justify-content: space-between;
-  margin: 18px 18px 0;
-  padding: 16px 20px;
-  background: #11111a;
-  border: 1px solid rgba(0,212,160,0.18);
-  border-radius: 10px;
+/* ── Markets sub-nav pills ────────────────────────────────────── */
+.markets-subnav { display: flex; gap: 8px; flex-wrap: wrap; }
+.subnav-link {
+  padding: 6px 16px; border-radius: 999px; font-size: 12px; font-weight: 600;
+  color: #64748b; text-decoration: none; border: 1px solid #2d2d3e;
+  transition: all 0.15s;
 }
-.active-strategy-name {
-  font-size: 18px; font-weight: 700; margin: 4px 0 10px;
-}
-.active-strategy-metrics {
-  display: flex; flex-wrap: wrap; gap: 16px;
-}
-.active-strategy-metrics span {
-  font-size: 12px; color: #64748b;
-}
-.active-strategy-metrics strong {
-  color: #e2e8f0; margin-left: 4px;
+.subnav-link:hover { color: #e2e8f0; }
+.subnav-link-active { color: #00d4a0; border-color: rgba(0,212,160,0.4); background: rgba(0,212,160,0.07); }
+
+/* ── Page layout ──────────────────────────────────────────────── */
+/* Vertical stack of page sections with consistent gutters. */
+.page-stack {
+  display: flex; flex-direction: column; gap: 16px;
+  padding: 16px 18px 40px;
 }
 
 .btn {
@@ -100,7 +90,6 @@ body {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
   gap: 12px;
-  margin-bottom: 28px;
 }
 .stat-card {
   background: #16161f;
@@ -118,33 +107,6 @@ body {
 }
 .stat-sub { font-size: 11px; color: #64748b; margin-top: 4px; }
 
-/* ── Tabs ────────────────────────────────────────────────────── */
-.tabs {
-  display: flex;
-  gap: 2px;
-  border-bottom: 1px solid #1e1e2e;
-  margin-bottom: 0;
-}
-.tab {
-  padding: 9px 18px;
-  border-radius: 8px 8px 0 0;
-  border: 1px solid transparent;
-  border-bottom: none;
-  cursor: pointer;
-  background: none;
-  color: #64748b;
-  font-size: 13px; font-weight: 500;
-  transition: all 0.15s;
-  display: flex; align-items: center; gap: 7px;
-  position: relative; bottom: -1px;
-}
-.tab:hover { color: #e2e8f0; }
-.tab.active {
-  background: #16161f;
-  border-color: #1e1e2e;
-  border-bottom-color: #16161f;
-  color: #e2e8f0;
-}
 .tab-count {
   font-size: 10px; background: #1e1e2e; border-radius: 10px;
   padding: 1px 6px; color: #94a3b8;
@@ -195,7 +157,7 @@ body {
   border-radius: 10px;
   overflow: hidden;
 }
-.table-wrap { overflow-x: auto; }
+.table-wrap { overflow-x: auto; -webkit-overflow-scrolling: touch; }
 
 /* Scrollable trade list inside the backtest panel — header stays pinned. */
 .table-wrap.bt-trades-scroll { max-height: 360px; overflow-y: auto; }
@@ -242,6 +204,28 @@ tbody tr:hover { background: rgba(255,255,255,0.025); }
 .side-no   { color: #f87171; background: rgba(248,113,113,0.12); }
 .side-buy  { color: #60a5fa; background: rgba(96,165,250,0.12); }
 .side-sell { color: #f59e0b; background: rgba(245,158,11,0.12); }
+
+/* ── Price-action charts ──────────────────────────────────────────────── */
+.chart-block { margin-bottom: 24px; }
+.chart-head {
+  display: flex; align-items: center; justify-content: space-between;
+  gap: 8px; flex-wrap: wrap;
+  margin-bottom: 10px;
+}
+.chart-head h3 { margin: 0; color: #eee; font-size: 16px; }
+.chart-meta { display: flex; align-items: center; gap: 16px; flex-wrap: wrap; }
+.chart-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+}
+.chart-card {
+  height: 320px;
+  background: rgba(255,255,255,0.03);
+  border: 1px solid rgba(255,255,255,0.1);
+  border-radius: 8px;
+  padding: 16px;
+}
 
 /* ── Strategies ──────────────────────────────────────────────────────── */
 .strategies-view {
@@ -935,9 +919,23 @@ select optgroup {
   flex-shrink: 0;
 }
 
+/* Modals become full-screen sheets on small screens. */
 @media (max-width: 640px) {
+  .strategy-modal-backdrop {
+    padding: 0;
+    align-items: stretch;
+  }
+
   .strategy-modal {
-    max-height: 95vh;
+    max-width: none;
+    max-height: none;
+    height: 100dvh;
+    border-radius: 0;
+  }
+
+  .strategy-config-panel,
+  .strategy-detail-panel {
+    padding: 14px 12px;
   }
 
   .strategy-modal .strategy-form {
@@ -980,58 +978,6 @@ select optgroup {
 
   .strategy-form-buttons .btn {
     flex: 1;
-  }
-}
-
-@media (max-width: 640px) {
-  .app {
-    padding: 0 12px 40px;
-  }
-
-  /* Row 1: logo+title (left) and controls (right) stay together.
-     Row 2: nav links wrap below and span full width. */
-  .header {
-    flex-wrap: wrap;
-    align-items: center;
-    padding: 12px 0 10px;
-    gap: 0;
-  }
-
-  /* Logo + title: shrink to content, stay on row 1 */
-  .header-left {
-    flex: 1 1 auto;
-    min-width: 0;
-  }
-
-  /* Controls: stay on row 1, right side */
-  .header-right {
-    flex: 0 0 auto;
-    gap: 6px;
-  }
-
-  /* Nav: full-width row 2 */
-  .header-nav {
-    flex: 0 0 100%;
-    order: 3;
-    margin-left: 0;
-    margin-top: 8px;
-    flex-wrap: wrap;
-    gap: 4px;
-  }
-
-  .nav-link {
-    font-size: 12px;
-    padding: 5px 10px;
-  }
-
-  /* Hide timestamp — saves row space */
-  .last-refresh {
-    display: none;
-  }
-
-  /* Stat cards: 2-column grid on narrow screens */
-  .stats-row {
-    grid-template-columns: repeat(2, 1fr);
   }
 }
 
@@ -1296,7 +1242,60 @@ select optgroup {
   white-space: nowrap;
 }
 
-@media (max-width: 640px) {
-  .strategy-builder-meta { grid-template-columns: repeat(2, 1fr); }
+/* ── Mobile ───────────────────────────────────────────────────────────
+   One breakpoint for phones: top nav moves to a fixed bottom tab bar,
+   tables compact (with .hide-sm dropping low-value columns), charts
+   stack, and touch targets / input font sizes grow. Kept at the end of
+   the file so it wins over the base rules above. */
+@media (max-width: 768px) {
+  .app {
+    /* Bottom padding clears the fixed tab bar. */
+    padding: 0 10px calc(64px + env(safe-area-inset-bottom));
+  }
+
+  .header {
+    padding: 10px 0 8px;
+    margin-bottom: 0;
+  }
+  .header-left { min-width: 0; }
+  .header-logo { font-size: 20px; }
+  .header-title { font-size: 17px; }
+  .header-sub { display: none; }
+  .header-right { gap: 6px; }
+  .header-nav { display: none; }
+  .last-refresh { display: none; }
+  .bottom-nav { display: flex; }
+
+  .page-stack {
+    padding: 12px 0 24px;
+    gap: 12px;
+  }
+  .snapshots-view { padding: 12px 0; gap: 12px; }
+  .strategies-view { padding: 12px 0; }
+
+  /* Columns marked low-value for small screens. */
+  .hide-sm { display: none !important; }
+
+  td, th { padding: 8px 10px; }
+
+  .stats-row { grid-template-columns: repeat(2, 1fr); gap: 8px; }
+  .stat-card { padding: 12px 14px; }
+  .stat-value { font-size: 20px; }
+
+  .chart-grid { grid-template-columns: 1fr; }
+  .chart-card { height: 260px; padding: 12px 10px; }
+
+  /* Comfortable touch targets. */
+  .btn { padding: 8px 12px; font-size: 13px; }
+  .rule-icon-btn { width: 34px; height: 34px; }
+
+  /* iOS Safari zooms the page when a focused input is under 16px. */
+  input, select, textarea { font-size: 16px; }
+
+  .strategy-builder-meta { grid-template-columns: 1fr; }
   .rule-action-grid { grid-template-columns: 1fr 1fr; }
+
+  /* Modal footers hold several actions — let them wrap instead of overflowing. */
+  .strategy-view-footer,
+  .strategy-form-buttons { flex-wrap: wrap; }
 }

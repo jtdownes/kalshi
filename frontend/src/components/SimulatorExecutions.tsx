@@ -102,10 +102,10 @@ export default function SimulatorExecutions({ trades, globalSnapshots = [], ttcW
               <th>Side</th>
               <th>Fill</th>
               <th>Exit</th>
-              <th>TTC</th>
+              <th className="hide-sm">TTC</th>
               <th>P&L</th>
               <th>Outcome</th>
-              <th>Time</th>
+              <th className="hide-sm">Time</th>
             </tr>
           </thead>
           <tbody>
@@ -131,14 +131,14 @@ export default function SimulatorExecutions({ trades, globalSnapshots = [], ttcW
                     <td style={t.side ? { color: t.side === 'yes' ? '#3b82f6' : '#a78bfa', fontWeight: 600 } : { color: '#475569' }}>{t.side ? t.side.toUpperCase() : '—'}</td>
                     <td className="cell-dim">{t.fill_price != null ? `${t.fill_price}¢${t.qty > 1 ? ` ×${t.qty}` : ''}` : '—'}</td>
                     <td className="cell-dim">{t.exit_kind === 'limit_sell' ? `sell ${t.exit_price ?? '—'}¢` : t.exit_kind === 'hold' ? 'hold' : '—'}</td>
-                    <td className="cell-dim">{fmtDur(t.ttc_at_fill)}</td>
+                    <td className="cell-dim hide-sm">{fmtDur(t.ttc_at_fill)}</td>
                     <td style={{ color: pnlColor(t.pnl_cents) }}>{t.pnl_cents != null ? `${t.pnl_cents > 0 ? '+' : ''}${t.pnl_cents}¢` : '—'}</td>
                     <td>
                       <span style={{ fontSize: 11, fontWeight: 600, padding: '2px 7px', borderRadius: 10, background: OUTCOME_COLOR[t.outcome] + '22', color: OUTCOME_COLOR[t.outcome] }}>
                         {OUTCOME_LABEL[t.outcome]}
                       </span>
                     </td>
-                    <td className="cell-dim">{fmtTime(t.fill_time ?? t.event_time)}</td>
+                    <td className="cell-dim hide-sm">{fmtTime(t.fill_time ?? t.event_time)}</td>
                   </tr>
                   {isOpen && (
                     <tr className="snapshot-history-row">
