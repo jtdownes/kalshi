@@ -963,13 +963,9 @@ select optgroup {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
-  .strategies-grid {
-    grid-template-columns: 1fr;
-  }
-
-  .strategy-ticket-band {
-    grid-template-columns: 1fr;
-  }
+  /* .strategies-grid and .strategy-ticket-band keep their base grids:
+     auto-fit / minmax already collapse them sensibly on narrow screens,
+     and forcing 1fr left wide empty boxes around small values. */
 
   .field-wide { grid-column: span 1; }
 
@@ -1318,6 +1314,17 @@ select optgroup {
   .strategy-builder-meta { grid-template-columns: 1fr; }
   /* minmax(0,...) — plain 1fr can't shrink below the widest select. */
   .rule-action-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+
+  /* Denser strategy panels/cards — small values don't need wide boxes. */
+  .strategies-view { gap: 10px; }
+  .strategies-grid { gap: 10px; }
+  .strategy-active-panel { padding: 12px; gap: 10px; }
+  .strategy-card { padding: 12px; gap: 10px; }
+  .strategy-ticket-band { gap: 6px; }
+  .strategy-ticket-metric { padding: 8px; }
+  .strategy-ticket-metric strong { font-size: 15px; }
+  .strategy-metrics div,
+  .strategy-card-stats div { padding: 8px; }
 
   /* Modal footers hold several actions — let them wrap instead of overflowing. */
   .strategy-view-footer,
