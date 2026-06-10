@@ -126,9 +126,25 @@ def _bt_simulate_rule(cur, series_like, rule, side, tickers=None):
 
     cond_clause, cond_params = _bt_conditions_sql(rule.get("conditions"))
 
-    if entry.get("type") == "ask":
+    entry_type = entry.get("type", "limit")
+    relative   = entry_type in ("ask_minus", "ask_minus_pct")
+
+    entry_clause, entry_params = "", []
+    limit_expr,   limit_params = None, []
+    if entry_type == "ask":
         entry_clause = f"m.{ask_col} IS NOT NULL AND m.{ask_col} > 0"
-        entry_params = []
+    elif entry_type == "ask_minus":
+        offset = entry.get("offset_cents")
+        if offset is None:
+            return None
+        limit_expr   = f"(m.{ask_col} - %s)"
+        limit_params = [offset]
+    elif entry_type == "ask_minus_pct":
+        pct = entry.get("offset_pct")
+        if pct is None:
+            return None
+        limit_expr   = f"FLOOR(m.{ask_col} * (1 - %s / 100.0))"
+        limit_params = [pct]
     else:
         price = entry.get("price_cents")
         if price is None:
@@ -188,7 +204,42 @@ def _bt_simulate_rule(cur, series_like, rule, side, tickers=None):
         ticker_filter = " AND m.ticker = ANY(%s)"
         ticker_params = [list(tickers)]
 
-    fills_def = f"""
+    if relative:
+        # Two-stage: the first snapshot where the conditions hold fixes the
+        # resting limit at (ask − offset); the order then fills at the first
+        # later snapshot whose ask drops to that price (or never fills).
+        fills_def = f"""
+        signals AS (
+            SELECT DISTINCT ON (m.ticker)
+                m.ticker,
+                m.scanned_at AS signal_time,
+                {limit_expr} AS limit_price
+            FROM market_snapshots m
+            LEFT JOIN bitcoin_snapshots b ON b.scanned_at = m.scanned_at
+            {' '.join(join_parts)}
+            WHERE m.ticker LIKE %s{ticker_filter}
+              AND m.{ask_col} > 0
+              {cond_clause}
+            ORDER BY m.ticker, m.scanned_at
+        ),
+        fills AS (
+            SELECT DISTINCT ON (s.ticker)
+                s.ticker,
+                s.scanned_at         AS fill_time,
+                sg.limit_price       AS fill_price,
+                s.time_to_close_secs AS ttc_at_fill
+            FROM signals sg
+            JOIN market_snapshots s
+              ON s.ticker = sg.ticker
+             AND s.scanned_at >= sg.signal_time
+             AND s.{ask_col} > 0
+             AND s.{ask_col} <= sg.limit_price
+            WHERE sg.limit_price >= 1
+            ORDER BY s.ticker, s.scanned_at
+        )"""
+        params = cte_params + limit_params + [series_like] + ticker_params + cond_params
+    else:
+        fills_def = f"""
         fills AS (
             SELECT DISTINCT ON (m.ticker)
                 m.ticker,
@@ -203,8 +254,8 @@ def _bt_simulate_rule(cur, series_like, rule, side, tickers=None):
               {cond_clause}
             ORDER BY m.ticker, m.scanned_at
         )"""
+        params = cte_params + [series_like] + ticker_params + entry_params + cond_params
     fills_cte = "WITH " + ",".join(cte_defs + [fills_def])
-    params = cte_params + [series_like] + ticker_params + entry_params + cond_params
 
     if is_limit_sell:
         sql = fills_cte + f""",

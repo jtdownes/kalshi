@@ -1,5 +1,5 @@
 import type {
-  StrategyRule, RuleCondition, RuleField, RuleOp, RuleAction,
+  StrategyRule, RuleCondition, RuleField, RuleOp, RuleAction, RuleEntry,
 } from '../types'
 
 // ── Field / operator metadata ────────────────────────────────────────────────
@@ -95,6 +95,10 @@ export function ruleSummary(rule: StrategyRule): string {
   const sideTxt = a.side === 'both' ? 'YES & NO' : a.side.toUpperCase()
   const entryTxt = a.entry.type === 'ask'
     ? 'at current ask'
+    : a.entry.type === 'ask_minus'
+    ? `at ask − ${a.entry.offset_cents ?? '?'}¢`
+    : a.entry.type === 'ask_minus_pct'
+    ? `at ${a.entry.offset_pct ?? '?'}% below ask`
     : `at ${a.entry.price_cents ?? '?'}¢`
   const exitTxt = a.exit.type === 'limit_sell'
     ? `, sell @ ${a.exit.price_cents ?? '?'}¢`
@@ -299,10 +303,12 @@ export default function RuleBuilder({ rules, onChange, readOnly = false, lockStr
                   <span>Entry price</span>
                   <select className="rule-input" value={a.entry.type} disabled={structLocked}
                     onChange={e => patchRule(ri, {
-                      action: { ...a, entry: { ...a.entry, type: e.target.value as 'limit' | 'ask' } },
+                      action: { ...a, entry: { ...a.entry, type: e.target.value as RuleEntry['type'] } },
                     })}>
                     <option value="limit">Limit @</option>
                     <option value="ask">Take current ask</option>
+                    <option value="ask_minus">¢ below ask</option>
+                    <option value="ask_minus_pct">% below ask</option>
                   </select>
                 </label>
                 {a.entry.type === 'limit' && (
@@ -312,6 +318,26 @@ export default function RuleBuilder({ rules, onChange, readOnly = false, lockStr
                       value={a.entry.price_cents ?? ''}
                       onChange={e => patchRule(ri, {
                         action: { ...a, entry: { ...a.entry, price_cents: e.target.value === '' ? null : parseInt(e.target.value, 10) } },
+                      })} />
+                  </label>
+                )}
+                {a.entry.type === 'ask_minus' && (
+                  <label className="rule-action-field">
+                    <span>Below ask (¢)</span>
+                    <input className="rule-input" type="number" min={1} max={98} disabled={structLocked}
+                      value={a.entry.offset_cents ?? ''}
+                      onChange={e => patchRule(ri, {
+                        action: { ...a, entry: { ...a.entry, offset_cents: e.target.value === '' ? null : parseInt(e.target.value, 10) } },
+                      })} />
+                  </label>
+                )}
+                {a.entry.type === 'ask_minus_pct' && (
+                  <label className="rule-action-field">
+                    <span>Below ask (%)</span>
+                    <input className="rule-input" type="number" min={1} max={99} disabled={structLocked}
+                      value={a.entry.offset_pct ?? ''}
+                      onChange={e => patchRule(ri, {
+                        action: { ...a, entry: { ...a.entry, offset_pct: e.target.value === '' ? null : parseFloat(e.target.value) } },
                       })} />
                   </label>
                 )}

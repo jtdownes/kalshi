@@ -88,7 +88,12 @@ export interface RuleCondition {
   value: number | null
   value2?: number | null
 }
-export interface RuleEntry { type: 'limit' | 'ask'; price_cents?: number | null }
+export interface RuleEntry {
+  type: 'limit' | 'ask' | 'ask_minus' | 'ask_minus_pct'
+  price_cents?: number | null    // limit
+  offset_cents?: number | null   // ask_minus: rest N¢ below the current ask
+  offset_pct?: number | null     // ask_minus_pct: rest N% below the current ask
+}
 export interface RuleExit  { type: 'hold' | 'limit_sell'; price_cents?: number | null; stop_cents?: number | null }
 export interface RuleAction {
   side: 'yes' | 'no' | 'both'

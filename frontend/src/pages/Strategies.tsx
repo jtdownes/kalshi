@@ -66,6 +66,10 @@ function validateRules(rules: StrategyRule[]): string | null {
     }
     if (r.action.entry.type === 'limit' && r.action.entry.price_cents == null)
       return 'Limit-entry rules need a price.'
+    if (r.action.entry.type === 'ask_minus' && r.action.entry.offset_cents == null)
+      return '"¢ below ask" entries need an offset.'
+    if (r.action.entry.type === 'ask_minus_pct' && r.action.entry.offset_pct == null)
+      return '"% below ask" entries need a percentage.'
     if (r.action.exit.type === 'limit_sell' && r.action.exit.price_cents == null)
       return 'Limit-sell exits need a price.'
   }

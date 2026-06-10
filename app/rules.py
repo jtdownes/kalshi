@@ -10,7 +10,9 @@ A strategy holds an ordered list of rules. Each rule is:
         "conditions": [ {"field", "op", "value", "value2"?}, ... ],   # ANDed
         "action": {
             "side": "yes" | "no" | "both",
-            "entry": {"type": "limit", "price_cents": N} | {"type": "ask"},
+            "entry": {"type": "limit", "price_cents": N} | {"type": "ask"}
+                   | {"type": "ask_minus", "offset_cents": N}
+                   | {"type": "ask_minus_pct", "offset_pct": P},
             "quantity": N,
             "exit": {"type": "hold"} | {"type": "limit_sell", "price_cents": N}
         }
@@ -24,6 +26,7 @@ by both the live engine and the migration backfill.
 """
 
 import logging
+import math
 
 log = logging.getLogger(__name__)
 
@@ -182,11 +185,31 @@ def conditions_pass(conditions: list, fields: dict) -> bool:
 
 def _resolve_entry_price(entry: dict, side: str, fields: dict) -> int | None:
     """Resolve a rule's entry price to integer cents (1..99), or None to skip."""
-    etype = (entry or {}).get("type", "limit")
+    entry = entry or {}
+    etype = entry.get("type", "limit")
+    ask = fields.get("yes_ask") if side == "yes" else fields.get("no_ask")
+
     if etype == "ask":
-        price = fields.get("yes_ask") if side == "yes" else fields.get("no_ask")
+        price = ask
+    elif etype == "ask_minus":
+        offset = entry.get("offset_cents")
+        if ask is None or offset is None:
+            return None
+        try:
+            price = float(ask) - float(offset)
+        except (TypeError, ValueError):
+            return None
+    elif etype == "ask_minus_pct":
+        pct = entry.get("offset_pct")
+        if ask is None or pct is None:
+            return None
+        try:
+            # Floor, so "5% below ask" never rounds back up toward the ask.
+            price = math.floor(float(ask) * (1 - float(pct) / 100.0))
+        except (TypeError, ValueError):
+            return None
     else:
-        price = (entry or {}).get("price_cents")
+        price = entry.get("price_cents")
     if price is None:
         return None
     try:
