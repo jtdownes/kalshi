@@ -35,6 +35,26 @@ def save_bitcoin_snapshot(scanned_at: str, coinbase_price: float = None,
         conn.commit()
 
 
+def save_ethereum_snapshot(scanned_at: str, coinbase_price: float = None,
+                           kraken_price: float = None, bitstamp_price: float = None,
+                           gemini_price: float = None, consolidated_price: float = None,
+                           coinbase_volume: float = None, kraken_volume: float = None,
+                           bitstamp_volume: float = None, gemini_volume: float = None):
+    """One ethereum price/volume row per collection pass."""
+    query = """
+        INSERT INTO ethereum_snapshots
+          (scanned_at, coinbase_price, kraken_price, bitstamp_price, gemini_price,
+           consolidated_price, coinbase_volume, kraken_volume, bitstamp_volume, gemini_volume)
+        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+    """
+    params = (scanned_at, coinbase_price, kraken_price, bitstamp_price, gemini_price,
+              consolidated_price, coinbase_volume, kraken_volume, bitstamp_volume, gemini_volume)
+    with _lock, _conn() as conn:
+        cur = conn.cursor()
+        cur.execute(query, params)
+        conn.commit()
+
+
 def save_market_snapshot(ticker: str, title: str, close_time: str,
                          yes_ask: float | None, yes_bid: float | None,
                          no_ask: float | None, no_bid: float | None,
@@ -78,9 +98,11 @@ def get_recent_market_snapshots(limit: int | None = None) -> list[dict]:
                b.consolidated_price AS brti_price,
                b.coinbase_price, b.kraken_price, b.bitstamp_price, b.gemini_price,
                b.coinbase_volume, b.kraken_volume, b.bitstamp_volume, b.gemini_volume,
+               COALESCE(e.consolidated_price, e.coinbase_price) AS eth_price,
                m.time_to_close_secs, m.strike_str, m.volume, m.open_interest
         FROM market_snapshots m
         LEFT JOIN bitcoin_snapshots b ON b.scanned_at = m.scanned_at
+        LEFT JOIN ethereum_snapshots e ON e.scanned_at = m.scanned_at
         ORDER BY m.id DESC
         {limit_sql}
     """
@@ -100,9 +122,11 @@ def get_market_snapshots_for_ticker(ticker: str, limit: int | None = None) -> li
                b.consolidated_price AS brti_price,
                b.coinbase_price, b.kraken_price, b.bitstamp_price, b.gemini_price,
                b.coinbase_volume, b.kraken_volume, b.bitstamp_volume, b.gemini_volume,
+               COALESCE(e.consolidated_price, e.coinbase_price) AS eth_price,
                m.time_to_close_secs, m.strike_str, m.volume, m.open_interest
         FROM market_snapshots m
         LEFT JOIN bitcoin_snapshots b ON b.scanned_at = m.scanned_at
+        LEFT JOIN ethereum_snapshots e ON e.scanned_at = m.scanned_at
         WHERE m.ticker = %s
         ORDER BY m.id DESC
         {limit_sql}
@@ -143,9 +167,11 @@ def get_latest_snapshots_for_series(series_tickers: list[str], max_age_seconds: 
                b.consolidated_price AS brti_price,
                b.coinbase_price, b.kraken_price, b.bitstamp_price, b.gemini_price,
                b.coinbase_volume, b.kraken_volume, b.bitstamp_volume, b.gemini_volume,
+               COALESCE(e.consolidated_price, e.coinbase_price) AS eth_price,
                m.time_to_close_secs, m.strike_str, m.volume, m.open_interest
         FROM market_snapshots m
         LEFT JOIN bitcoin_snapshots b ON b.scanned_at = m.scanned_at
+        LEFT JOIN ethereum_snapshots e ON e.scanned_at = m.scanned_at
         WHERE ({where})
           AND m.scanned_at::timestamp >= ((CURRENT_TIMESTAMP AT TIME ZONE 'UTC') - (%s || ' seconds')::interval)
         ORDER BY m.ticker, m.scanned_at DESC

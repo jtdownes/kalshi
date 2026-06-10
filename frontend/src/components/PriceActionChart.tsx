@@ -12,7 +12,7 @@ import {
   ReferenceDot,
   ReferenceArea,
 } from 'recharts';
-import { fmtTime } from '../utils';
+import { fmtTime, detectCryptoAsset, cryptoAssetConfig } from '../utils';
 import type { Snapshot, Order } from '../types';
 import type { TtcWindow } from '../utils';
 
@@ -21,12 +21,17 @@ interface SeriesData {
   yes_bid: number | null;
   no_bid: number | null;
   time_to_close_secs: number | null;
-  btc_price: number | null;       // consolidated multi-venue price
-  brti_price: number | null;      // consolidated price (BRTI proxy)
-  coinbase_price: number | null;  // Coinbase-only venue line
-  kraken_price: number | null;
-  bitstamp_price: number | null;
-  gemini_price: number | null;
+  btc_price: number | null;       // consolidated BTC multi-venue price
+  brti_price: number | null;      // consolidated BTC price (BRTI proxy)
+  coinbase_price: number | null;  // BTC Coinbase venue
+  kraken_price: number | null;    // BTC Kraken venue
+  bitstamp_price: number | null;  // BTC Bitstamp venue
+  gemini_price: number | null;    // BTC Gemini venue
+  eth_price: number | null;       // consolidated ETH multi-venue price
+  eth_coinbase_price: number | null;
+  eth_kraken_price: number | null;
+  eth_bitstamp_price: number | null;
+  eth_gemini_price: number | null;
   strike_str: string | null;
 }
 
@@ -56,12 +61,12 @@ export default function PriceActionChart({ ticker, globalSnapshots, openOrders =
   const [data, setData] = useState<SeriesData[]>([]);
   const [loading, setLoading] = useState(false);
   const [showStrikeLabel, setShowStrikeLabel] = useState(false);
-  const [btcView, setBtcView] = useState<'consolidated' | 'individual'>('consolidated');
-  // Unique per instance: multiple PriceActionCharts can render at once (e.g.
-  // the selected-ticker chart + an expanded-row chart). A shared SVG gradient
-  // id would make every url(#id) resolve to the first one in the DOM, so one
-  // chart's green/red strike split would bleed onto the others.
+  const [priceView, setPriceView] = useState<'consolidated' | 'individual'>('consolidated');
   const gradientId = `consolidatedStrikeSplit-${useId()}`;
+
+  // Detect which crypto asset this ticker tracks (BTC, ETH, etc.)
+  const assetInfo = cryptoAssetConfig(ticker);
+  const assetKey = detectCryptoAsset(ticker);
 
   useEffect(() => {
     if (!ticker) return;
@@ -92,6 +97,11 @@ export default function PriceActionChart({ ticker, globalSnapshots, openOrders =
           kraken_price: latest.kraken_price,
           bitstamp_price: latest.bitstamp_price,
           gemini_price: latest.gemini_price,
+          eth_price: latest.eth_price,
+          eth_coinbase_price: null,
+          eth_kraken_price: null,
+          eth_bitstamp_price: null,
+          eth_gemini_price: null,
           strike_str: latest.strike_str,
         }].slice(-1000);
       });
@@ -137,23 +147,35 @@ export default function PriceActionChart({ ticker, globalSnapshots, openOrders =
     />
   ));
 
-  // Consolidated = mean of whatever venue prices a row actually has. Computed
-  // per row from the individual venues (Coinbase/Kraken/Bitstamp/Gemini) rather
-  // than read from the stored consolidated column, so historical rows that only
-  // have Coinbase still get a value (= Coinbase) instead of a blank gap where
-  // the other venues didn't exist yet.
+  // Venue fields per asset — defines which raw columns to read for individual-venue view
+  const venueFields: { key: keyof SeriesData; label: string; color: string }[] = assetKey === 'ETH'
+    ? [
+        { key: 'eth_coinbase_price', label: 'Coinbase', color: '#627eea' },
+        { key: 'eth_kraken_price',   label: 'Kraken',   color: '#a855f7' },
+        { key: 'eth_bitstamp_price', label: 'Bitstamp', color: '#86efac' },
+        { key: 'eth_gemini_price',   label: 'Gemini',   color: '#38bdf8' },
+      ]
+    : [
+        { key: 'coinbase_price', label: 'Coinbase', color: '#f7931a' },
+        { key: 'kraken_price',   label: 'Kraken',   color: '#a855f7' },
+        { key: 'bitstamp_price', label: 'Bitstamp', color: '#86efac' },
+        { key: 'gemini_price',   label: 'Gemini',   color: '#38bdf8' },
+      ];
+
+  // Consolidated = mean of whichever venues responded this tick
   const chartData = data.map(d => {
-    const venues = [d.coinbase_price, d.kraken_price, d.bitstamp_price, d.gemini_price]
+    const venuePrices = venueFields
+      .map(f => d[f.key])
       .filter((p): p is number => p != null);
-    const consolidated = venues.length
-      ? Math.round((venues.reduce((a, b) => a + b, 0) / venues.length) * 100) / 100
+    const consolidated = venuePrices.length
+      ? Math.round((venuePrices.reduce((a, b) => a + b, 0) / venuePrices.length) * 100) / 100
       : null;
     return { ...d, consolidated };
   });
 
-  const btcDomain: [number, number] | ['auto', 'auto'] = (() => {
+  const priceDomain: [number, number] | ['auto', 'auto'] = (() => {
     const prices = data
-      .flatMap(d => [d.coinbase_price, d.kraken_price, d.bitstamp_price, d.gemini_price])
+      .flatMap(d => venueFields.map(f => d[f.key]))
       .filter((p): p is number => p != null);
     if (prices.length === 0) return ['auto', 'auto'];
     const candidates = strikeNum != null ? [...prices, strikeNum] : prices;
@@ -163,9 +185,11 @@ export default function PriceActionChart({ ticker, globalSnapshots, openOrders =
     return [Math.floor(mn - pad), Math.ceil(mx + pad)];
   })();
 
-  const btcTicks: number[] | undefined = (() => {
-    if (btcDomain[0] === 'auto') return undefined;
-    const [lo, hi] = btcDomain as [number, number];
+  const btcDomain = priceDomain;  // kept for backward compat with BtcTick/BtcTooltip
+
+  const priceTicks: number[] | undefined = (() => {
+    if (priceDomain[0] === 'auto') return undefined;
+    const [lo, hi] = priceDomain as [number, number];
     const range = hi - lo;
     const mag = Math.pow(10, Math.floor(Math.log10(range)));
     const step = mag * (range / mag > 5 ? 2 : 1);
@@ -173,8 +197,6 @@ export default function PriceActionChart({ ticker, globalSnapshots, openOrders =
     const start = Math.ceil(lo / step) * step;
     for (let v = start; v <= hi; v += step) ticks.push(Math.round(v));
     if (strikeNum != null) {
-      // Drop any round tick close enough to collide with the strike label,
-      // then insert the strike so it always renders on the axis.
       ticks = ticks.filter(t => Math.abs(t - strikeNum) > step * 0.45);
       ticks.push(strikeNum);
     }
@@ -355,22 +377,24 @@ export default function PriceActionChart({ ticker, globalSnapshots, openOrders =
             </ResponsiveContainer>
           </div>
 
-          {/* ── BTC price chart ── */}
+          {/* ── Crypto price chart ── */}
           <div style={{ ...chartStyle, height: 320 }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 }}>
-              <span style={{ fontSize: 11, color: '#888' }}>Bitcoin (USD)</span>
+              <span style={{ fontSize: 11, color: '#888' }}>
+                {assetInfo ? `${assetInfo.label} (USD)` : 'Price (USD)'}
+              </span>
               <div style={{ display: 'flex', borderRadius: 4, overflow: 'hidden', border: '1px solid #333' }}>
                 {(['consolidated', 'individual'] as const).map(v => (
                   <button
                     key={v}
-                    onClick={() => setBtcView(v)}
+                    onClick={() => setPriceView(v)}
                     style={{
                       fontSize: 10,
                       padding: '2px 8px',
                       cursor: 'pointer',
                       border: 'none',
-                      background: btcView === v ? '#374151' : 'transparent',
-                      color: btcView === v ? '#fff' : '#888',
+                      background: priceView === v ? '#374151' : 'transparent',
+                      color: priceView === v ? '#fff' : '#888',
                       textTransform: 'capitalize',
                     }}
                   >
@@ -381,7 +405,7 @@ export default function PriceActionChart({ ticker, globalSnapshots, openOrders =
             </div>
             <ResponsiveContainer width="100%" height="93%">
               <LineChart data={chartData} margin={{ top: 5, right: 10, left: 0, bottom: 5 }} syncId="priceAction">
-                {btcView === 'consolidated' && consolidatedSplit != null && (
+                {priceView === 'consolidated' && consolidatedSplit != null && (
                   <defs>
                     <linearGradient id={gradientId} x1="0" y1="0" x2="0" y2="1">
                       <stop offset="0" stopColor={ABOVE} />
@@ -404,7 +428,7 @@ export default function PriceActionChart({ ticker, globalSnapshots, openOrders =
                 <YAxis
                   stroke="#666"
                   domain={btcDomain}
-                  ticks={btcTicks}
+                  ticks={priceTicks}
                   tick={<BtcTick />}
                   width={52}
                 />
@@ -427,14 +451,12 @@ export default function PriceActionChart({ ticker, globalSnapshots, openOrders =
                   />
                 )}
 
-                {btcView === 'consolidated'
-                  ? <Line key="consolidated" type="monotone" dataKey="consolidated" name="Consolidated (avg available)" stroke={consolidatedSplit != null ? `url(#${gradientId})` : '#ffffff'} dot={false} strokeWidth={2.5} isAnimationActive={false} connectNulls />
-                  : [
-                      <Line key="coinbase" type="monotone" dataKey="coinbase_price" name="Coinbase" stroke="#f7931a" dot={false} strokeWidth={2} isAnimationActive={false} connectNulls />,
-                      <Line key="kraken" type="monotone" dataKey="kraken_price" name="Kraken" stroke="#a855f7" dot={false} strokeWidth={2} isAnimationActive={false} connectNulls />,
-                      <Line key="bitstamp" type="monotone" dataKey="bitstamp_price" name="Bitstamp" stroke="#86efac" dot={false} strokeWidth={2} isAnimationActive={false} connectNulls />,
-                      <Line key="gemini" type="monotone" dataKey="gemini_price" name="Gemini" stroke="#38bdf8" dot={false} strokeWidth={2} isAnimationActive={false} connectNulls />,
-                    ]}
+                {priceView === 'consolidated'
+                  ? <Line key="consolidated" type="monotone" dataKey="consolidated" name="Consolidated (avg available)" stroke={consolidatedSplit != null ? `url(#${gradientId})` : (assetInfo?.color ?? '#ffffff')} dot={false} strokeWidth={2.5} isAnimationActive={false} connectNulls />
+                  : venueFields.map(vf => (
+                      <Line key={vf.key as string} type="monotone" dataKey={vf.key as string} name={vf.label} stroke={vf.color} dot={false} strokeWidth={2} isAnimationActive={false} connectNulls />
+                    ))
+                }
               </LineChart>
             </ResponsiveContainer>
           </div>

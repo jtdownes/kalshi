@@ -102,3 +102,51 @@ export function kalshiMarketUrl(ticker: string): string {
   const series = parts[0]
   return `https://kalshi.com/markets/${series}/${marketSlug}`
 }
+
+// ── Crypto asset detection ────────────────────────────────────────────────────
+// Maps a Kalshi ticker prefix to the underlying crypto asset.
+// Add new assets here to support them everywhere (chart label, price column, filter).
+
+export type CryptoAsset = 'BTC' | 'ETH' | 'SOL'
+
+interface CryptoAssetConfig {
+  label: string          // human-readable name
+  priceField: string     // field name on the Snapshot / SeriesData objects
+  color: string          // accent color used in charts / UI
+}
+
+const CRYPTO_ASSET_MAP: Record<CryptoAsset, CryptoAssetConfig> = {
+  BTC: { label: 'Bitcoin', priceField: 'btc_price', color: '#f7931a' },
+  ETH: { label: 'Ethereum', priceField: 'eth_price', color: '#627eea' },
+  SOL: { label: 'Solana', priceField: 'sol_price', color: '#9945ff' },
+}
+
+// Ticker-prefix → asset mapping. Extend this as new series are added.
+const TICKER_PREFIX_TO_ASSET: [string, CryptoAsset][] = [
+  ['KXBTC', 'BTC'],
+  ['KXETH', 'ETH'],
+  ['KXSOL', 'SOL'],
+]
+
+/** Returns the crypto asset for a given Kalshi ticker, or null if not a crypto market. */
+export function detectCryptoAsset(ticker: string): CryptoAsset | null {
+  const upper = ticker.toUpperCase()
+  for (const [prefix, asset] of TICKER_PREFIX_TO_ASSET) {
+    if (upper.startsWith(prefix)) return asset
+  }
+  return null
+}
+
+/** Returns the full config for the crypto asset corresponding to a ticker, or null. */
+export function cryptoAssetConfig(ticker: string): CryptoAssetConfig | null {
+  const asset = detectCryptoAsset(ticker)
+  return asset ? CRYPTO_ASSET_MAP[asset] : null
+}
+
+/** Returns the price (from a snapshot-like object) for the asset detected from ticker. */
+export function cryptoPriceForTicker(ticker: string, data: Record<string, unknown>): number | null {
+  const cfg = cryptoAssetConfig(ticker)
+  if (!cfg) return null
+  const val = data[cfg.priceField]
+  return typeof val === 'number' ? val : null
+}

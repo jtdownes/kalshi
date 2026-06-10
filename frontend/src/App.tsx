@@ -147,7 +147,7 @@ export default function App() {
                 All Markets
               </NavLink>
               <NavLink to="/markets/crypto" className={({ isActive }) => isActive ? 'nav-dropdown-item nav-dropdown-item-active' : 'nav-dropdown-item'}>
-                Crypto (BTC)
+                Crypto (BTC + ETH)
               </NavLink>
               <NavLink to="/markets/climate" className={({ isActive }) => isActive ? 'nav-dropdown-item nav-dropdown-item-active' : 'nav-dropdown-item'}>
                 Climate

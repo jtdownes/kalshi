@@ -18,7 +18,7 @@ from .orders import (
     apply_exit_fill,
 )
 from .snapshots import (
-    save_bitcoin_snapshot, save_market_snapshot,
+    save_bitcoin_snapshot, save_ethereum_snapshot, save_market_snapshot,
     get_latest_snapshot_for_ticker,
     get_recent_market_snapshots, get_market_snapshots_for_ticker,
     get_recent_btc_prices, get_latest_snapshots_for_series,
@@ -51,7 +51,7 @@ __all__ = [
     'get_order_by_kalshi_order_id', 'close_entry_order_with_exit',
     'apply_exit_fill',
     # snapshots
-    'save_bitcoin_snapshot', 'save_market_snapshot',
+    'save_bitcoin_snapshot', 'save_ethereum_snapshot', 'save_market_snapshot',
     'get_latest_snapshot_for_ticker',
     'get_recent_market_snapshots', 'get_market_snapshots_for_ticker',
     'get_recent_btc_prices', 'get_latest_snapshots_for_series',

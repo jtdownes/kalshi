@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import type { Snapshot, Order } from '../types'
-import { fmtCents, fmtDur, fmtTime, fmtUnixTime, kalshiMarketUrl } from '../utils'
+import { fmtCents, fmtDur, fmtTime, fmtUnixTime, kalshiMarketUrl, cryptoPriceForTicker } from '../utils'
 import PriceActionChart from '../components/PriceActionChart'
 import ScannedMarkets from '../components/ScannedMarkets'
 
@@ -122,7 +122,7 @@ export default function Snapshots({ snapshots, orders = [], openOrders = [], fil
                     </a>
                   </td>
                   <td className="cell-dim">{snapshot.strike_str ?? '—'}</td>
-                  <td className="cell-dim">{snapshot.btc_price != null ? `$${snapshot.btc_price.toLocaleString()}` : '—'}</td>
+                  <td className="cell-dim">{(() => { const p = cryptoPriceForTicker(snapshot.ticker, snapshot as unknown as Record<string, unknown>); return p != null ? `$${p.toLocaleString()}` : '—' })()}</td>
                   <td>{fmtCents(snapshot.yes_ask)}</td>
                   <td className="cell-dim">{fmtCents(snapshot.yes_bid)}</td>
                   <td className="cell-dim">{fmtCents(snapshot.no_ask)}</td>
@@ -227,7 +227,7 @@ export default function Snapshots({ snapshots, orders = [], openOrders = [], fil
                                 {expandedHistory.map(snap => (
                                   <tr key={snap.id}>
                                     <td className="cell-dim">{fmtTime(snap.scanned_at)}</td>
-                                    <td className="cell-dim">{snap.btc_price != null ? `$${snap.btc_price.toLocaleString()}` : '—'}</td>
+                                    <td className="cell-dim">{(() => { const p = cryptoPriceForTicker(t.ticker, snap as unknown as Record<string, unknown>); return p != null ? `$${p.toLocaleString()}` : '—' })()}</td>
                                     <td>{fmtCents(snap.yes_ask)}</td>
                                     <td className="cell-dim">{fmtCents(snap.yes_bid)}</td>
                                     <td className="cell-dim">{fmtCents(snap.no_ask)}</td>

@@ -8,9 +8,12 @@ interface Props {
 }
 
 function cryptoFilter(ticker: string, title: string): boolean {
-  return ticker.toUpperCase().includes('BTC')
-    || title.toLowerCase().includes('bitcoin')
-    || title.toLowerCase().includes('btc')
+  const t = ticker.toUpperCase()
+  const tl = title.toLowerCase()
+  return (
+    t.includes('BTC') || tl.includes('bitcoin') || tl.includes('btc') ||
+    t.includes('ETH') || tl.includes('ethereum') || tl.includes('eth')
+  )
 }
 
 export default function MarketsCrypto({ snapshots, orders = [], openOrders = [] }: Props) {

@@ -67,6 +67,7 @@ export interface Snapshot {
   kraken_price: number | null
   bitstamp_price: number | null
   gemini_price: number | null
+  eth_price: number | null
   volume: number | null
   open_interest: number | null
 }

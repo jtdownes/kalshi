@@ -133,9 +133,15 @@ def snapshot_series():
             SELECT m.scanned_at, m.yes_bid, m.no_bid, m.time_to_close_secs,
                    COALESCE(b.consolidated_price, b.coinbase_price) AS btc_price,
                    b.consolidated_price AS brti_price,
-                   b.coinbase_price, b.kraken_price, b.bitstamp_price, b.gemini_price, m.strike_str
+                   b.coinbase_price, b.kraken_price, b.bitstamp_price, b.gemini_price, m.strike_str,
+                   COALESCE(e.consolidated_price, e.coinbase_price) AS eth_price,
+                   e.coinbase_price AS eth_coinbase_price,
+                   e.kraken_price   AS eth_kraken_price,
+                   e.bitstamp_price AS eth_bitstamp_price,
+                   e.gemini_price   AS eth_gemini_price
             FROM market_snapshots m
             LEFT JOIN bitcoin_snapshots b ON b.scanned_at = m.scanned_at
+            LEFT JOIN ethereum_snapshots e ON e.scanned_at = m.scanned_at
             WHERE m.ticker = %s
             ORDER BY m.id DESC
             LIMIT %s
