@@ -580,7 +580,9 @@ tbody tr:hover { background: rgba(255,255,255,0.025); }
   position: fixed;
   inset: 0;
   background: rgba(0, 0, 0, 0.65);
-  z-index: 100;
+  /* Above the mobile bottom nav (150) so its footer buttons aren't
+     covered by the tab bar. */
+  z-index: 200;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -941,7 +943,9 @@ select optgroup {
 
   .strategy-config-panel,
   .strategy-detail-panel {
-    padding: 14px 12px;
+    /* Extra bottom space keeps the footer buttons clear of the iPhone
+       home indicator when the modal is a full-height sheet. */
+    padding: 14px 12px calc(24px + env(safe-area-inset-bottom));
   }
 
   .strategy-modal .strategy-form {
