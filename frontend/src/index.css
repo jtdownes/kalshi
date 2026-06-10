@@ -405,6 +405,9 @@ tbody tr:hover { background: rgba(255,255,255,0.025); }
   flex-direction: column;
   gap: 12px;
   padding: 14px;
+  /* As a grid item the card defaults to min-width:auto, so a nowrap
+     child (rule chips) would blow it past the viewport. */
+  min-width: 0;
   cursor: pointer;
   transition: border-color 0.15s ease, box-shadow 0.15s ease, transform 0.15s ease;
   border-left: 4px solid transparent;
@@ -534,6 +537,7 @@ tbody tr:hover { background: rgba(255,255,255,0.025); }
   flex-wrap: wrap;
   gap: 7px;
   padding-top: 4px;
+  min-width: 0;
 }
 
 .strategy-chip {
@@ -1239,6 +1243,7 @@ select optgroup {
 
 .strategy-chip-rule {
   max-width: 100%;
+  min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -1250,6 +1255,10 @@ select optgroup {
    stack, and touch targets / input font sizes grow. Kept at the end of
    the file so it wins over the base rules above. */
 @media (max-width: 768px) {
+  /* Wide content must scroll inside its own panel (.table-wrap etc.),
+     never pan the whole page sideways. */
+  body { overflow-x: hidden; }
+
   .app {
     /* Bottom padding clears the fixed tab bar; top clears the status bar
        when running standalone. */
