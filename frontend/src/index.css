@@ -1076,6 +1076,7 @@ select optgroup {
 }
 .rule-name-input {
   flex: 1;
+  min-width: 0;
   min-height: 32px;
   border: 1px solid #2d2d3e;
   border-radius: 6px;
@@ -1151,6 +1152,7 @@ select optgroup {
   border-radius: 8px;
 }
 .rule-input {
+  min-width: 0;
   min-height: 34px;
   border: 1px solid #2d2d3e;
   border-radius: 6px;
@@ -1203,7 +1205,11 @@ select optgroup {
   display: flex;
   flex-direction: column;
   gap: 5px;
+  min-width: 0;
 }
+/* Selects size to their longest option by default — fill the cell
+   instead so they compress with the grid on narrow screens. */
+.rule-action-field .rule-input { width: 100%; }
 .rule-action-field span {
   color: #64748b;
   font-size: 10px;
@@ -1231,6 +1237,7 @@ select optgroup {
 .rule-summary {
   border-top: 1px solid #1f2637;
   padding-top: 10px;
+  overflow-wrap: anywhere;
   color: #94a3b8;
   font-size: 12px;
   font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
@@ -1309,7 +1316,8 @@ select optgroup {
   .rule-input, .rule-name-input { font-size: 16px; }
 
   .strategy-builder-meta { grid-template-columns: 1fr; }
-  .rule-action-grid { grid-template-columns: 1fr 1fr; }
+  /* minmax(0,...) — plain 1fr can't shrink below the widest select. */
+  .rule-action-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 
   /* Modal footers hold several actions — let them wrap instead of overflowing. */
   .strategy-view-footer,
