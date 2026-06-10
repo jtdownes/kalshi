@@ -386,8 +386,8 @@ export default function RuleBuilder({ rules, onChange, readOnly = false, lockStr
                 )}
                 <label className="rule-action-field">
                   <span>Stop loss</span>
-                  <div className="rule-value-wrap">
-                    <input className="rule-input rule-value" type="number" min={1} disabled={structLocked}
+                  <div className="rule-inline-wrap">
+                    <input className="rule-input" type="number" min={1} disabled={structLocked}
                       placeholder="off"
                       value={a.exit.stop_cents ?? a.exit.stop_pct ?? ''}
                       onChange={e => {

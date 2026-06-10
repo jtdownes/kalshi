@@ -1223,6 +1223,11 @@ select optgroup {
 .rule-unit { width: 64px; min-height: 34px; border: 1px solid #2d2d3e; border-radius: 6px;
   background: rgba(255,255,255,0.04); color: #e2e8f0; font: inherit; font-size: 12px; }
 .rule-unit-static { color: #64748b; font-size: 12px; min-width: 16px; }
+/* Inline input+unit pair inside a column-direction action cell. Unlike
+   .rule-value-wrap it must NOT carry a flex-basis (that becomes height here). */
+.rule-inline-wrap { display: flex; align-items: center; gap: 6px; }
+.rule-inline-wrap .rule-input { flex: 1 1 auto; min-width: 0; }
+.rule-inline-wrap .rule-unit  { width: auto; flex: 0 0 auto; }
 
 .rule-add-cond {
   align-self: flex-start;
