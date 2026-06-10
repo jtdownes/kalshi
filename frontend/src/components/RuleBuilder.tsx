@@ -89,10 +89,11 @@ function fmtFieldValue(c: RuleCondition): string {
   return `${meta.label} ${OP_LABELS[c.op]} ${v(c.value)}`
 }
 
-export function ruleSummary(rule: StrategyRule): string {
-  const conds = rule.conditions.length
-    ? rule.conditions.map(fmtFieldValue).join('  AND  ')
-    : 'always'
+function conditionSummaries(rule: StrategyRule): string[] {
+  return rule.conditions.length ? rule.conditions.map(fmtFieldValue) : ['always']
+}
+
+function actionSummary(rule: StrategyRule): string {
   const a = rule.action
   const sideTxt = a.side === 'both' ? 'YES & NO' : a.side.toUpperCase()
   const entryTxt = a.entry.type === 'ask'
@@ -118,7 +119,11 @@ export function ruleSummary(rule: StrategyRule): string {
   const ocoTxt = a.side === 'both' && a.cancel_sibling_on_fill
     ? ' (first fill cancels the other)'
     : ''
-  return `IF ${conds} → buy ${sideTxt} ${entryTxt} ×${a.quantity}${exitTxt}${stopTxt}${timeTxt}${ocoTxt}`
+  return `Buy ${sideTxt} ${entryTxt} ×${a.quantity}${exitTxt}${stopTxt}${timeTxt}${ocoTxt}`
+}
+
+export function ruleSummary(rule: StrategyRule): string {
+  return `IF ${conditionSummaries(rule).join('  AND  ')} → ${actionSummary(rule)}`
 }
 
 // ── Component ─────────────────────────────────────────────────────────────────
@@ -180,6 +185,34 @@ export default function RuleBuilder({ rules, onChange, readOnly = false, lockStr
 
   if (readOnly && rules.length === 0) {
     return <div className="rule-empty">This strategy has no rules.</div>
+  }
+
+  // Read-only: a compact plain-English digest of each rule instead of a wall
+  // of disabled form controls.
+  if (readOnly) {
+    return (
+      <div className="rule-builder">
+        {rules.map((rule, ri) => (
+          <div key={rule.id} className={`rule-card rule-card-readonly${rule.enabled ? '' : ' rule-disabled'}`}>
+            <div className="rule-head">
+              <span className="rule-index">#{ri + 1}</span>
+              <span className="rule-readonly-name">{rule.name || `Rule ${ri + 1}`}</span>
+              {!rule.enabled && <span className="badge">OFF</span>}
+            </div>
+            <div className="rule-section">
+              <div className="rule-section-label">IF <span>all of</span></div>
+              <ul className="rule-readonly-conds">
+                {conditionSummaries(rule).map((c, i) => <li key={i}>{c}</li>)}
+              </ul>
+            </div>
+            <div className="rule-section">
+              <div className="rule-section-label">THEN</div>
+              <div className="rule-readonly-action">{actionSummary(rule)}</div>
+            </div>
+          </div>
+        ))}
+      </div>
+    )
   }
 
   return (

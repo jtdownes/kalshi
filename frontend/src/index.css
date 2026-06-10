@@ -1063,6 +1063,40 @@ select optgroup {
   opacity: 0.55;
 }
 
+/* Read-only digest cards (strategy view modal) */
+.rule-card-readonly { gap: 10px; }
+.rule-readonly-name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: #e2e8f0;
+  font-size: 14px;
+  font-weight: 600;
+}
+.rule-readonly-conds {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  list-style: none;
+}
+.rule-readonly-conds li {
+  color: #cbd5e1;
+  font-size: 13px;
+  line-height: 1.45;
+}
+.rule-readonly-conds li::before {
+  content: '•';
+  color: #00d4a0;
+  margin-right: 8px;
+}
+.rule-readonly-action {
+  color: #cbd5e1;
+  font-size: 13px;
+  line-height: 1.5;
+}
+
 .rule-head {
   display: flex;
   align-items: center;
