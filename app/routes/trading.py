@@ -184,6 +184,32 @@ def stats():
     })
 
 
+@trading_bp.get("/api/pnl/daily")
+def pnl_daily():
+    """Every settled order's P&L with its settlement timestamp (UTC). The
+    frontend groups rows into local-timezone days for the P&L calendar —
+    grouping client-side keeps day boundaries correct for the viewer."""
+    profile_id = request.args.get("profile_id")
+
+    where_clauses = ["order_role = 'entry'", "net_profit_cents IS NOT NULL"]
+    params = []
+    if profile_id:
+        where_clauses.append("profile_id = %s")
+        params.append(profile_id)
+
+    query = f"""
+        SELECT id, market_ticker, net_profit_cents,
+               COALESCE(closed_at, filled_at, placed_at) AS settled_at
+        FROM orders
+        WHERE {" AND ".join(where_clauses)}
+        ORDER BY settled_at ASC
+    """
+    with cursor_conn() as c:
+        c.execute(query, params)
+        rows = c.fetchall()
+    return jsonify([dict(r) for r in rows])
+
+
 @trading_bp.get("/api/orders")
 def orders():
     limit      = min(int(request.args.get("limit", 100)), 500)

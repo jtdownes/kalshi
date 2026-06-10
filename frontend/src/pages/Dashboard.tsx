@@ -2,11 +2,12 @@ import { Fragment, useEffect, useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import type { Order, Trade, Position, Snapshot, Settings, Profile, Quotes } from '../types'
 import PriceActionChart from '../components/PriceActionChart'
+import PnLCalendar from '../components/PnLCalendar'
 import { centsToUSD, fmtCents, fmtPnL, fmtTime, fmtUnixTime, fmtDur, kalshiMarketUrl } from '../utils'
 
 const DEFAULT_HISTORY_LIMIT = 10
 const HISTORY_LIMIT_STORAGE_KEY = 'kalshi-order-history-limit'
-type CollapsibleSection = 'history' | 'trades'
+type CollapsibleSection = 'history' | 'trades' | 'calendar'
 
 function tickerOpenTime(ticker: string): string {
   const parts = ticker.split('-')
@@ -56,6 +57,7 @@ export default function Dashboard({ orders, trades, openOrders, positions, snaps
   const [collapsedSections, setCollapsedSections] = useState<Record<CollapsibleSection, boolean>>({
     history: false,
     trades: false,
+    calendar: false,
   })
   const [historyLimit, setHistoryLimit] = useState(() => {
     if (typeof window === 'undefined') return DEFAULT_HISTORY_LIMIT
@@ -146,6 +148,22 @@ export default function Dashboard({ orders, trades, openOrders, positions, snaps
           </div>
         )
       })()}
+
+      {/* P&L Calendar */}
+      <div className="table-panel">
+        <div style={{ padding: '10px', display: 'flex', alignItems: 'center', gap: 8 }}>
+          <button
+            type="button"
+            className="section-toggle"
+            onClick={() => toggleSection('calendar')}
+            aria-expanded={!collapsedSections.calendar}
+          >
+            <span className="section-toggle-caret">{collapsedSections.calendar ? '▸' : '▾'}</span>
+            <span className="section-toggle-label">P&amp;L Calendar</span>
+          </button>
+        </div>
+        {!collapsedSections.calendar && <PnLCalendar />}
+      </div>
 
       {/* Active Strategy Widget */}
       {settings && (
