@@ -1292,8 +1292,12 @@ select optgroup {
   .btn { padding: 8px 12px; font-size: 13px; }
   .rule-icon-btn { width: 34px; height: 34px; }
 
-  /* iOS Safari zooms the page when a focused input is under 16px. */
-  input, select, textarea { font-size: 16px; }
+  /* iOS Safari zooms the page when a focused input is under 16px. The
+     class selectors are needed to outrank the styled inputs above
+     (.rule-input etc.), which set smaller sizes. */
+  input, select, textarea,
+  .field input, .field select,
+  .rule-input, .rule-name-input { font-size: 16px; }
 
   .strategy-builder-meta { grid-template-columns: 1fr; }
   .rule-action-grid { grid-template-columns: 1fr 1fr; }
