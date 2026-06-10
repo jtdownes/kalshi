@@ -14,7 +14,14 @@ A strategy holds an ordered list of rules. Each rule is:
                    | {"type": "ask_minus", "offset_cents": N}
                    | {"type": "ask_minus_pct", "offset_pct": P},
             "quantity": N,
-            "exit": {"type": "hold"} | {"type": "limit_sell", "price_cents": N}
+            "exit": {
+                "type": "hold" | "limit_sell" | "scale_out",
+                "price_cents": N,                       # limit_sell
+                "legs": [{"qty": N, "price_cents": N}], # scale_out ladder
+                "stop_cents": N,      # optional stop (absolute cents), or:
+                "stop_pct": P,        # stop at P% below the entry price
+                "time_exit_secs": N,  # market-out remainder at N secs to close
+            }
         }
     }
 

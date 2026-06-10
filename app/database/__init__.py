@@ -13,7 +13,9 @@ from .orders import (
     get_today_spend_cents, count_resting_orders,
     get_resting_orders, get_sibling_resting_entries,
     get_filled_without_outcome, get_open_stop_orders,
+    get_open_time_exit_orders, get_resting_child_exits,
     get_order_by_kalshi_order_id, close_entry_order_with_exit,
+    apply_exit_fill,
 )
 from .snapshots import (
     save_bitcoin_snapshot, save_market_snapshot,
@@ -45,7 +47,9 @@ __all__ = [
     'get_today_spend_cents', 'count_resting_orders',
     'get_resting_orders', 'get_sibling_resting_entries',
     'get_filled_without_outcome', 'get_open_stop_orders',
+    'get_open_time_exit_orders', 'get_resting_child_exits',
     'get_order_by_kalshi_order_id', 'close_entry_order_with_exit',
+    'apply_exit_fill',
     # snapshots
     'save_bitcoin_snapshot', 'save_market_snapshot',
     'get_latest_snapshot_for_ticker',

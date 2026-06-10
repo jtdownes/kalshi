@@ -21,7 +21,8 @@ def save_order(client_order_id: str, market_ticker: str, side: str,
                exit_strategy: str = 'hold_to_expiration',
                exit_target_cents: int = None, count: int = 1,
                entry_rule_id: str = None, cancel_sibling_on_fill: bool = False,
-               stop_loss_cents: int = None):
+               stop_loss_cents: int = None, exit_legs: list = None,
+               time_exit_secs: int = None):
     now = datetime.utcnow().isoformat()
     query = """
         INSERT OR IGNORE INTO orders
@@ -30,15 +31,18 @@ def save_order(client_order_id: str, market_ticker: str, side: str,
            distance_to_strike_at_placement, market_close_time,
            time_to_close_at_placement, profile_id, order_role,
            parent_kalshi_order_id, exit_strategy, exit_target_cents,
-           entry_rule_id, cancel_sibling_on_fill, stop_loss_cents)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+           entry_rule_id, cancel_sibling_on_fill, stop_loss_cents,
+           exit_legs, time_exit_secs)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     """
     params = (client_order_id, kalshi_order_id, market_ticker, side,
               entry_price_cents, count, now, btc_price, distance_to_strike,
               market_close_time, time_to_close_seconds, profile_id,
               order_role, parent_kalshi_order_id, exit_strategy,
               exit_target_cents, entry_rule_id, cancel_sibling_on_fill,
-              stop_loss_cents)
+              stop_loss_cents,
+              psycopg2.extras.Json(exit_legs) if exit_legs is not None else None,
+              time_exit_secs)
     with _lock, _conn() as conn:
         _execute(conn, query, params)
         conn.commit()
@@ -184,7 +188,7 @@ def get_sibling_resting_entries(market_ticker: str, entry_rule_id: str,
 def get_filled_without_outcome() -> list[dict]:
     query = """
         SELECT kalshi_order_id, market_ticker, side, entry_price_cents,
-               count, market_close_time
+               count, market_close_time, closed_count, close_proceeds_cents
         FROM orders
         WHERE order_role = 'entry'
           AND status = 'filled'
@@ -199,21 +203,64 @@ def get_filled_without_outcome() -> list[dict]:
 
 
 def get_open_stop_orders() -> list[dict]:
-    """Filled entry positions with a stop-loss set that haven't been closed yet."""
+    """Filled entry positions with a stop-loss set that haven't been closed yet.
+
+    A resting passive exit (limit sell / scale-out legs) does NOT exclude the
+    position — the stop fires alongside it and cancels those legs. Only an
+    already-placed market-out (stop/time exit in flight) blocks re-firing.
+    """
     query = """
         SELECT kalshi_order_id, market_ticker, side, entry_price_cents,
-               count, market_close_time, stop_loss_cents, exit_strategy,
-               exit_target_cents, profile_id
+               count, closed_count, market_close_time, stop_loss_cents,
+               exit_strategy, exit_target_cents, profile_id
         FROM orders
         WHERE order_role = 'entry'
           AND status = 'filled'
           AND stop_loss_cents IS NOT NULL
           AND closed_at IS NULL
-          AND exit_order_kalshi_id IS NULL
+          AND market_out_kalshi_id IS NULL
+          AND closed_count < count
     """
     with _lock, _conn() as conn:
         cur = conn.cursor(cursor_factory=psycopg2.extras.DictCursor)
         cur.execute(query)
+        rows = cur.fetchall()
+    return [dict(r) for r in rows]
+
+
+def get_open_time_exit_orders() -> list[dict]:
+    """Filled entry positions carrying a time-based exit that are still open."""
+    query = """
+        SELECT kalshi_order_id, market_ticker, side, entry_price_cents,
+               count, closed_count, market_close_time, time_exit_secs,
+               exit_strategy, exit_target_cents, profile_id
+        FROM orders
+        WHERE order_role = 'entry'
+          AND status = 'filled'
+          AND time_exit_secs IS NOT NULL
+          AND closed_at IS NULL
+          AND market_out_kalshi_id IS NULL
+          AND closed_count < count
+    """
+    with _lock, _conn() as conn:
+        cur = conn.cursor(cursor_factory=psycopg2.extras.DictCursor)
+        cur.execute(query)
+        rows = cur.fetchall()
+    return [dict(r) for r in rows]
+
+
+def get_resting_child_exits(parent_kalshi_order_id: str) -> list[dict]:
+    """Resting exit orders (limit sell / scale-out legs) hanging off an entry."""
+    query = """
+        SELECT kalshi_order_id, side, count, entry_price_cents
+        FROM orders
+        WHERE order_role = 'exit'
+          AND parent_kalshi_order_id = %s
+          AND status = 'resting'
+    """
+    with _lock, _conn() as conn:
+        cur = conn.cursor(cursor_factory=psycopg2.extras.DictCursor)
+        cur.execute(query, (parent_kalshi_order_id,))
         rows = cur.fetchall()
     return [dict(r) for r in rows]
 
@@ -229,21 +276,53 @@ def get_order_by_kalshi_order_id(kalshi_order_id: str) -> dict | None:
 
 def close_entry_order_with_exit(parent_kalshi_order_id: str, close_price_cents: int,
                                 closed_at: str = None, close_reason: str = 'limit_sell'):
+    """Full-position close at one price (single limit sell / stop on the
+    whole count). Kept for compatibility; delegates to apply_exit_fill."""
+    parent = get_order_by_kalshi_order_id(parent_kalshi_order_id)
+    if not parent or parent.get('closed_at'):
+        return
+    remaining = (parent.get('count') or 1) - (parent.get('closed_count') or 0)
+    apply_exit_fill(parent_kalshi_order_id, remaining, close_price_cents,
+                    closed_at=closed_at, close_reason=close_reason)
+
+
+def apply_exit_fill(parent_kalshi_order_id: str, sold_count: int,
+                    sell_price_cents: int, closed_at: str = None,
+                    close_reason: str = 'limit_sell'):
+    """Record a (possibly partial) exit fill against the parent entry order.
+
+    Accumulates closed_count / close_proceeds_cents; when the whole position
+    has been sold, stamps the parent closed with the blended P&L. Positions
+    that scale out partially and settle the rest are finalised by the
+    settlement monitor, which folds close_proceeds_cents into the net.
+    """
     parent = get_order_by_kalshi_order_id(parent_kalshi_order_id)
     if not parent or parent.get('closed_at'):
         return
 
-    if closed_at is None:
-        closed_at = datetime.utcnow().isoformat()
+    count        = parent.get('count') or 1
+    closed_count = parent.get('closed_count') or 0
+    proceeds     = parent.get('close_proceeds_cents') or 0
 
-    count = parent.get('count') or 1
-    net_profit_cents = (close_price_cents - parent['entry_price_cents']) * count
+    sold_count = max(0, min(int(sold_count), count - closed_count))
+    if sold_count == 0:
+        return
+    closed_count += sold_count
+    proceeds     += int(sell_price_cents) * sold_count
 
-    update_order(
-        parent_kalshi_order_id,
-        closed_at=closed_at,
-        close_reason=close_reason,
-        close_price_cents=close_price_cents,
-        payout_cents=close_price_cents * count,
-        net_profit_cents=net_profit_cents,
-    )
+    fields = {
+        'closed_count':         closed_count,
+        'close_proceeds_cents': proceeds,
+    }
+    if closed_count >= count:
+        if closed_at is None:
+            closed_at = datetime.utcnow().isoformat()
+        net = proceeds - parent['entry_price_cents'] * count
+        fields.update(
+            closed_at=closed_at,
+            close_reason=close_reason,
+            close_price_cents=sell_price_cents,
+            payout_cents=proceeds,
+            net_profit_cents=net,
+        )
+    update_order(parent_kalshi_order_id, **fields)

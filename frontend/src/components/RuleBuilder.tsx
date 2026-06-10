@@ -1,5 +1,5 @@
 import type {
-  StrategyRule, RuleCondition, RuleField, RuleOp, RuleAction, RuleEntry,
+  StrategyRule, RuleCondition, RuleField, RuleOp, RuleAction, RuleEntry, RuleExit,
 } from '../types'
 
 // ── Field / operator metadata ────────────────────────────────────────────────
@@ -102,14 +102,21 @@ export function ruleSummary(rule: StrategyRule): string {
     : `at ${a.entry.price_cents ?? '?'}¢`
   const exitTxt = a.exit.type === 'limit_sell'
     ? `, sell @ ${a.exit.price_cents ?? '?'}¢`
+    : a.exit.type === 'scale_out'
+    ? `, scale out ${(a.exit.legs ?? []).map(l => `${l.qty ?? '?'}@${l.price_cents ?? '?'}¢`).join(' + ')}`
     : ''
   const stopTxt = a.exit.stop_cents != null
     ? `, stop @ ${a.exit.stop_cents}¢`
+    : a.exit.stop_pct != null
+    ? `, stop ${a.exit.stop_pct}% below entry`
+    : ''
+  const timeTxt = a.exit.time_exit_secs != null
+    ? `, sell all @ ${a.exit.time_exit_secs}s left`
     : ''
   const ocoTxt = a.side === 'both' && a.cancel_sibling_on_fill
     ? ' (first fill cancels the other)'
     : ''
-  return `IF ${conds} → buy ${sideTxt} ${entryTxt} ×${a.quantity}${exitTxt}${stopTxt}${ocoTxt}`
+  return `IF ${conds} → buy ${sideTxt} ${entryTxt} ×${a.quantity}${exitTxt}${stopTxt}${timeTxt}${ocoTxt}`
 }
 
 // ── Component ─────────────────────────────────────────────────────────────────
@@ -151,7 +158,11 @@ export default function RuleBuilder({ rules, onChange, readOnly = false, lockStr
       id: newId(),
       name: src.name ? `${src.name} (copy)` : '',
       conditions: src.conditions.map(c => ({ ...c })),
-      action: { ...src.action, entry: { ...src.action.entry }, exit: { ...src.action.exit } },
+      action: {
+        ...src.action,
+        entry: { ...src.action.entry },
+        exit: { ...src.action.exit, legs: src.action.exit.legs?.map(l => ({ ...l })) },
+      },
     }
     const next = [...rules]
     next.splice(i + 1, 0, clone)
@@ -350,11 +361,17 @@ export default function RuleBuilder({ rules, onChange, readOnly = false, lockStr
                 <label className="rule-action-field">
                   <span>After fill</span>
                   <select className="rule-input" value={a.exit.type} disabled={structLocked}
-                    onChange={e => patchRule(ri, {
-                      action: { ...a, exit: { ...a.exit, type: e.target.value as 'hold' | 'limit_sell' } },
-                    })}>
+                    onChange={e => {
+                      const type = e.target.value as RuleExit['type']
+                      const exit: RuleExit = { ...a.exit, type }
+                      if (type === 'scale_out' && !exit.legs?.length) {
+                        exit.legs = [{ qty: 1, price_cents: null }]
+                      }
+                      patchRule(ri, { action: { ...a, exit } })
+                    }}>
                     <option value="hold">Hold to expiration</option>
                     <option value="limit_sell">Limit sell @</option>
+                    <option value="scale_out">Scale out (ladder)</option>
                   </select>
                 </label>
                 {a.exit.type === 'limit_sell' && (
@@ -368,15 +385,96 @@ export default function RuleBuilder({ rules, onChange, readOnly = false, lockStr
                   </label>
                 )}
                 <label className="rule-action-field">
-                  <span>Stop loss (¢)</span>
-                  <input className="rule-input" type="number" min={1} max={99} disabled={structLocked}
+                  <span>Stop loss</span>
+                  <div className="rule-value-wrap">
+                    <input className="rule-input rule-value" type="number" min={1} disabled={structLocked}
+                      placeholder="off"
+                      value={a.exit.stop_cents ?? a.exit.stop_pct ?? ''}
+                      onChange={e => {
+                        const v = e.target.value === '' ? null : parseFloat(e.target.value)
+                        const isPct = a.exit.stop_pct != null && a.exit.stop_cents == null
+                        patchRule(ri, {
+                          action: { ...a, exit: { ...a.exit,
+                            stop_cents: isPct ? null : (v == null ? null : Math.round(v)),
+                            stop_pct:   isPct ? v : null,
+                          } },
+                        })
+                      }} />
+                    <select className="rule-unit" disabled={structLocked}
+                      value={a.exit.stop_pct != null && a.exit.stop_cents == null ? 'pct' : 'cents'}
+                      onChange={e => {
+                        const v = a.exit.stop_cents ?? a.exit.stop_pct ?? null
+                        const toPct = e.target.value === 'pct'
+                        patchRule(ri, {
+                          action: { ...a, exit: { ...a.exit,
+                            stop_cents: toPct ? null : (v == null ? null : Math.round(v)),
+                            stop_pct:   toPct ? v : null,
+                          } },
+                        })
+                      }}>
+                      <option value="cents">¢</option>
+                      <option value="pct">% below entry</option>
+                    </select>
+                  </div>
+                </label>
+                <label className="rule-action-field">
+                  <span>Sell all at (sec left)</span>
+                  <input className="rule-input" type="number" min={1} disabled={structLocked}
                     placeholder="off"
-                    value={a.exit.stop_cents ?? ''}
+                    value={a.exit.time_exit_secs ?? ''}
                     onChange={e => patchRule(ri, {
-                      action: { ...a, exit: { ...a.exit, stop_cents: e.target.value === '' ? null : parseInt(e.target.value, 10) } },
+                      action: { ...a, exit: { ...a.exit, time_exit_secs: e.target.value === '' ? null : parseInt(e.target.value, 10) } },
                     })} />
                 </label>
               </div>
+              {a.exit.type === 'scale_out' && (
+                <div className="rule-scale-out">
+                  <div className="rule-section-label">SCALE OUT <span>sell rungs as the price climbs; anything left holds (or hits the stop / time exit)</span></div>
+                  {(a.exit.legs ?? []).map((leg, li) => (
+                    <div key={li} className="rule-cond-row">
+                      <span className="rule-unit-static">Sell</span>
+                      <input className="rule-input rule-value" type="number" min={1} disabled={structLocked}
+                        placeholder="qty"
+                        value={leg.qty ?? ''}
+                        onChange={e => {
+                          const legs = (a.exit.legs ?? []).map((l, idx) =>
+                            idx === li ? { ...l, qty: e.target.value === '' ? null : parseInt(e.target.value, 10) } : l)
+                          patchRule(ri, { action: { ...a, exit: { ...a.exit, legs } } })
+                        }} />
+                      <span className="rule-unit-static">@</span>
+                      <input className="rule-input rule-value" type="number" min={1} max={99} disabled={structLocked}
+                        placeholder="price"
+                        value={leg.price_cents ?? ''}
+                        onChange={e => {
+                          const legs = (a.exit.legs ?? []).map((l, idx) =>
+                            idx === li ? { ...l, price_cents: e.target.value === '' ? null : parseInt(e.target.value, 10) } : l)
+                          patchRule(ri, { action: { ...a, exit: { ...a.exit, legs } } })
+                        }} />
+                      <span className="rule-unit-static">¢</span>
+                      {!structLocked && (
+                        <button type="button" className="rule-icon-btn rule-icon-danger"
+                          disabled={(a.exit.legs ?? []).length === 1}
+                          onClick={() => patchRule(ri, {
+                            action: { ...a, exit: { ...a.exit, legs: (a.exit.legs ?? []).filter((_, idx) => idx !== li) } },
+                          })} title="Remove rung">−</button>
+                      )}
+                    </div>
+                  ))}
+                  {!structLocked && (
+                    <button type="button" className="rule-add-cond"
+                      onClick={() => {
+                        const prev = (a.exit.legs ?? [])[((a.exit.legs ?? []).length - 1)]
+                        const legs = [...(a.exit.legs ?? []), {
+                          qty: prev?.qty ?? 1,
+                          price_cents: prev?.price_cents != null ? Math.min(99, prev.price_cents + 5) : null,
+                        }]
+                        patchRule(ri, { action: { ...a, exit: { ...a.exit, legs } } })
+                      }}>
+                      + Add rung
+                    </button>
+                  )}
+                </div>
+              )}
               {a.side === 'both' && (
                 <label className="rule-oco">
                   <input

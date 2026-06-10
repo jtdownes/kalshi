@@ -94,7 +94,15 @@ export interface RuleEntry {
   offset_cents?: number | null   // ask_minus: rest N¢ below the current ask
   offset_pct?: number | null     // ask_minus_pct: rest N% below the current ask
 }
-export interface RuleExit  { type: 'hold' | 'limit_sell'; price_cents?: number | null; stop_cents?: number | null }
+export interface ScaleOutLeg { qty: number | null; price_cents: number | null }
+export interface RuleExit {
+  type: 'hold' | 'limit_sell' | 'scale_out'
+  price_cents?: number | null      // limit_sell
+  legs?: ScaleOutLeg[]             // scale_out ladder (sell qty @ price, ...)
+  stop_cents?: number | null       // stop at an absolute price, or:
+  stop_pct?: number | null         // stop at N% below the entry price
+  time_exit_secs?: number | null   // market-out remainder at N secs to close
+}
 export interface RuleAction {
   side: 'yes' | 'no' | 'both'
   entry: RuleEntry

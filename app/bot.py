@@ -183,6 +183,7 @@ def scan_loop(client: KalshiClient):
             for profile in active_profiles:
                 _scan(client, profile)
             _check_stop_losses(client)
+            _check_time_exits(client)
         except Exception:
             log.exception("Unhandled error in scanner")
         time.sleep(1)
@@ -230,6 +231,87 @@ def weather_loop():
             except Exception as e:
                 log.error("weather fetch failed for %s/%s: %s", site, station, e)
         time.sleep(config.WEATHER_INTERVAL_SECONDS)
+
+
+def _clean_scale_out_legs(legs, quantity: int) -> list[dict] | None:
+    """Validate a scale-out ladder: each leg needs a qty and a 1-99¢ price, and
+    the ladder may not sell more than the entry buys. Returns clean legs or None."""
+    if not isinstance(legs, list) or not legs:
+        return None
+    clean, total = [], 0
+    for leg in legs:
+        try:
+            qty   = int(leg.get("qty"))
+            price = int(leg.get("price_cents"))
+        except (TypeError, ValueError, AttributeError):
+            return None
+        if qty < 1 or not (1 <= price <= 99):
+            return None
+        if total + qty > quantity:
+            qty = quantity - total       # truncate the last rung to fit
+            if qty < 1:
+                break
+        clean.append({"qty": qty, "price_cents": price})
+        total += qty
+    return clean or None
+
+
+def _place_scale_out_exits(client: KalshiClient, entry_order: dict):
+    """Entry filled with a scale-out exit: rest one sell order per ladder rung.
+    Any quantity the ladder doesn't cover simply holds to expiration."""
+    legs = entry_order.get("exit_legs")
+    if isinstance(legs, str):
+        try:
+            legs = json.loads(legs)
+        except json.JSONDecodeError:
+            legs = None
+    legs = _clean_scale_out_legs(legs, entry_order.get("count") or 1)
+    if not legs:
+        log.warning("Scale-out skipped for %s: no valid legs saved",
+                    entry_order["market_ticker"])
+        return
+
+    current = db.get_order_by_kalshi_order_id(entry_order["kalshi_order_id"]) or entry_order
+    if current.get("exit_order_kalshi_id"):
+        return
+
+    close_ts = close_ts_to_int(entry_order.get("market_close_time"))
+    time_to_close = seconds_until(close_ts) if close_ts else None
+    first_leg_id = None
+    for leg in legs:
+        leg_oid = str(uuid.uuid4())
+        try:
+            resp = client.place_order(
+                entry_order["market_ticker"], entry_order["side"],
+                leg["price_cents"], leg_oid, count=leg["qty"], action="sell",
+            )
+        except KalshiError as e:
+            log.error("scale-out leg failed on %s %s @%d¢: %s",
+                      entry_order["side"], entry_order["market_ticker"],
+                      leg["price_cents"], e)
+            continue
+        leg_order_id = resp.get("order", {}).get("order_id")
+        first_leg_id = first_leg_id or leg_order_id
+        db.save_order(
+            client_order_id=leg_oid,
+            market_ticker=entry_order["market_ticker"],
+            side=entry_order["side"],
+            entry_price_cents=leg["price_cents"],
+            kalshi_order_id=leg_order_id,
+            market_close_time=entry_order.get("market_close_time"),
+            time_to_close_seconds=time_to_close,
+            profile_id=entry_order.get("profile_id"),
+            order_role="exit",
+            parent_kalshi_order_id=entry_order["kalshi_order_id"],
+            exit_strategy="scale_out",
+            exit_target_cents=leg["price_cents"],
+            count=leg["qty"],
+        )
+        log.info("LADDER   %-6s %-50s  sell %d @ %d¢  parent=%s",
+                 entry_order["side"], entry_order["market_ticker"],
+                 leg["qty"], leg["price_cents"], entry_order["kalshi_order_id"])
+    if first_leg_id:
+        db.update_order(entry_order["kalshi_order_id"], exit_order_kalshi_id=first_leg_id)
 
 
 def _place_limit_sell_exit(client: KalshiClient, entry_order: dict):
@@ -281,25 +363,51 @@ def _place_limit_sell_exit(client: KalshiClient, entry_order: dict):
     )
 
 
-def _place_stop_exit(client: KalshiClient, entry_order: dict, sell_price: int):
-    """Stop triggered: market-sell the position now by crossing into the current
-    bid. Saved as an `exit` order so the normal fill monitor closes the parent at
-    the sale price; we stamp exit_order_kalshi_id on the parent to block re-fires."""
+def _cancel_resting_child_exits(client: KalshiClient, parent_kalshi_order_id: str):
+    """Cancel resting passive exits (limit sell / scale-out rungs) before a
+    market-out, so the remainder isn't sold twice."""
+    for child in db.get_resting_child_exits(parent_kalshi_order_id):
+        oid = child.get("kalshi_order_id")
+        if not oid:
+            continue
+        try:
+            client.cancel_order(oid)
+        except KalshiError as e:
+            # Likely filled in the race — the fill monitor will account for it.
+            log.warning("exit-leg cancel failed for %s: %s", oid, e)
+            continue
+        db.update_order(oid, status="canceled")
+
+
+def _place_market_out(client: KalshiClient, entry_order: dict, sell_price: int,
+                      reason: str):
+    """Stop or time exit triggered: cancel any resting exit legs, then sell the
+    remaining position now by crossing into the current bid. Saved as an `exit`
+    order so the normal fill monitor closes the parent at the sale price;
+    market_out_kalshi_id on the parent blocks re-fires."""
     sell_price = max(1, min(99, int(sell_price)))
 
     # Re-read under the lock-free race window: another tick may have placed it.
     current = db.get_order_by_kalshi_order_id(entry_order["kalshi_order_id"]) or entry_order
-    if current.get("exit_order_kalshi_id") or current.get("closed_at"):
+    if current.get("market_out_kalshi_id") or current.get("closed_at"):
+        return
+
+    _cancel_resting_child_exits(client, entry_order["kalshi_order_id"])
+
+    # Remaining count re-read after cancels, in case a leg filled in the race.
+    current = db.get_order_by_kalshi_order_id(entry_order["kalshi_order_id"]) or current
+    remaining = (current.get("count") or 1) - (current.get("closed_count") or 0)
+    if remaining < 1:
         return
 
     exit_oid = str(uuid.uuid4())
     try:
         resp = client.place_order(
             entry_order["market_ticker"], entry_order["side"], sell_price,
-            exit_oid, count=entry_order.get("count") or 1, action="sell",
+            exit_oid, count=remaining, action="sell",
         )
     except KalshiError as e:
-        log.error("stop-loss sell failed on %s %s: %s",
+        log.error("%s sell failed on %s %s: %s", reason,
                   entry_order["side"], entry_order["market_ticker"], e)
         return
 
@@ -314,14 +422,17 @@ def _place_stop_exit(client: KalshiClient, entry_order: dict, sell_price: int):
         profile_id=entry_order.get("profile_id"),
         order_role="exit",
         parent_kalshi_order_id=entry_order["kalshi_order_id"],
-        exit_strategy="stop_loss",
+        exit_strategy=reason,
         exit_target_cents=sell_price,
-        count=entry_order.get("count") or 1,
+        count=remaining,
     )
-    db.update_order(entry_order["kalshi_order_id"], exit_order_kalshi_id=exit_order_id)
-    log.info("STOP HIT %-6s %-50s  bid<=%s¢  sell@%d¢  id=%s",
+    db.update_order(entry_order["kalshi_order_id"],
+                    market_out_kalshi_id=exit_order_id,
+                    exit_order_kalshi_id=current.get("exit_order_kalshi_id") or exit_order_id)
+    log.info("%s %-6s %-50s  sell %d @ %d¢  id=%s",
+             "STOP HIT" if reason == "stop_loss" else "TIME OUT",
              entry_order["side"], entry_order["market_ticker"],
-             entry_order.get("stop_loss_cents"), sell_price, exit_order_id)
+             remaining, sell_price, exit_order_id)
 
 
 def _check_stop_losses(client: KalshiClient):
@@ -338,7 +449,24 @@ def _check_stop_losses(client: KalshiClient):
             continue
         if bid > pos["stop_loss_cents"]:
             continue
-        _place_stop_exit(client, pos, round(float(bid)))
+        _place_market_out(client, pos, round(float(bid)), "stop_loss")
+
+
+def _check_time_exits(client: KalshiClient):
+    """Every scan tick: market-out positions whose contract is within their
+    time_exit_secs window of closing."""
+    positions = db.get_open_time_exit_orders()
+    for pos in positions:
+        close_ts = close_ts_to_int(pos.get("market_close_time"))
+        if not close_ts or seconds_until(close_ts) > pos["time_exit_secs"]:
+            continue
+        snap = db.get_latest_snapshot_for_ticker(pos["market_ticker"])
+        if not snap:
+            continue
+        bid = snap.get("yes_bid") if pos["side"] == "yes" else snap.get("no_bid")
+        if bid is None or bid <= 0:
+            continue   # no bid to hit; retry next tick until close
+        _place_market_out(client, pos, round(float(bid)), "time_exit")
 
 
 def _cancel_sibling_legs(client: KalshiClient, order: dict):
@@ -373,19 +501,25 @@ def _handle_filled_order(client: KalshiClient, order: dict, filled_at: str = Non
     db.update_order(order["kalshi_order_id"], status="filled", filled_at=filled_at)
 
     if order.get("order_role") == "exit":
-        is_stop = order.get("exit_strategy") == "stop_loss"
-        db.close_entry_order_with_exit(
+        reason = order.get("exit_strategy") or "limit_sell"
+        if reason not in ("stop_loss", "time_exit", "scale_out"):
+            reason = "limit_sell"
+        db.apply_exit_fill(
             order["parent_kalshi_order_id"],
+            order.get("count") or 1,
             order["entry_price_cents"],
             closed_at=filled_at,
-            close_reason="stop_loss" if is_stop else "limit_sell",
+            close_reason=reason,
         )
+        labels = {"stop_loss": "STOP OUT", "time_exit": "TIME OUT",
+                  "scale_out": "RUNG HIT"}
         log.info(
-            "%s %-6s %-50s  %d¢",
-            "STOP OUT" if is_stop else "EXIT HIT",
+            "%s %-6s %-50s  %d¢ x%d",
+            labels.get(reason, "EXIT HIT"),
             order["side"],
             order["market_ticker"],
             order["entry_price_cents"],
+            order.get("count") or 1,
         )
         return
 
@@ -399,18 +533,19 @@ def _handle_filled_order(client: KalshiClient, order: dict, filled_at: str = Non
     if order.get("cancel_sibling_on_fill"):
         _cancel_sibling_legs(client, order)
 
-    if order.get("exit_strategy") != "limit_sell":
-        return
-
-    try:
-        _place_limit_sell_exit(client, order)
-    except KalshiError as e:
-        log.error(
-            "limit sell placement failed on %s %s: %s",
-            order["side"],
-            order["market_ticker"],
-            e,
-        )
+    exit_strategy = order.get("exit_strategy")
+    if exit_strategy == "scale_out":
+        _place_scale_out_exits(client, order)
+    elif exit_strategy == "limit_sell":
+        try:
+            _place_limit_sell_exit(client, order)
+        except KalshiError as e:
+            log.error(
+                "limit sell placement failed on %s %s: %s",
+                order["side"],
+                order["market_ticker"],
+                e,
+            )
 
 
 def _scan(client: KalshiClient, settings: dict):
@@ -451,22 +586,52 @@ def _scan(client: KalshiClient, settings: dict):
                 log.warning("Order skipped (%s): %s %s", reason, side, ticker)
                 continue
 
+            exit_legs = None
             if exit_spec.get("type") == "limit_sell":
                 exit_strategy = "limit_sell"
                 exit_target_cents = exit_spec.get("price_cents")
+            elif exit_spec.get("type") == "scale_out":
+                exit_strategy = "scale_out"
+                exit_target_cents = None
+                exit_legs = _clean_scale_out_legs(exit_spec.get("legs"), quantity)
+                if not exit_legs:
+                    log.warning("Order skipped (scale-out rule has no valid legs): %s %s",
+                                side, ticker)
+                    continue
             else:
                 exit_strategy = "hold_to_expiration"
                 exit_target_cents = None
 
-            # Optional stop-loss (independent of the hold/limit-sell exit): the
-            # bot market-sells when the side's bid trades at/through this level.
+            # Optional stop-loss (independent of the passive exit): the bot
+            # market-sells the remainder when the side's bid trades at/through
+            # this level. Absolute cents wins; otherwise a % stop is resolved
+            # against this order's entry price right here, so downstream
+            # machinery only ever sees cents.
             stop_loss_cents = exit_spec.get("stop_cents")
             try:
                 stop_loss_cents = int(stop_loss_cents) if stop_loss_cents not in (None, "") else None
             except (TypeError, ValueError):
                 stop_loss_cents = None
+            if stop_loss_cents is None:
+                stop_pct = exit_spec.get("stop_pct")
+                try:
+                    stop_pct = float(stop_pct) if stop_pct not in (None, "") else None
+                except (TypeError, ValueError):
+                    stop_pct = None
+                if stop_pct is not None and 0 < stop_pct < 100:
+                    stop_loss_cents = int(price_cents * (1 - stop_pct / 100.0))
             if stop_loss_cents is not None and not (1 <= stop_loss_cents <= 99):
                 stop_loss_cents = None
+
+            # Optional time-based exit: market-sell whatever is still held when
+            # the contract has <= N seconds to close.
+            time_exit_secs = exit_spec.get("time_exit_secs")
+            try:
+                time_exit_secs = int(time_exit_secs) if time_exit_secs not in (None, "") else None
+            except (TypeError, ValueError):
+                time_exit_secs = None
+            if time_exit_secs is not None and time_exit_secs <= 0:
+                time_exit_secs = None
 
             client_oid = str(uuid.uuid4())
             try:
@@ -487,6 +652,8 @@ def _scan(client: KalshiClient, settings: dict):
                     exit_strategy=exit_strategy,
                     exit_target_cents=exit_target_cents,
                     stop_loss_cents=stop_loss_cents,
+                    exit_legs=exit_legs,
+                    time_exit_secs=time_exit_secs,
                 )
             except KalshiError as e:
                 log.error("place_order failed on %s %s: %s", side, ticker, e)
@@ -647,7 +814,11 @@ def _resolve_outcomes(client: KalshiClient):
             side    = order["side"]
             outcome = "win" if result == side else "loss"
             count   = order.get("count") or 1
-            payout  = (100 if outcome == "win" else 0) * count
+            # Scaled-out positions settle only the remainder; earlier rung
+            # sales are already banked in close_proceeds_cents.
+            remaining = count - (order.get("closed_count") or 0)
+            proceeds  = order.get("close_proceeds_cents") or 0
+            payout  = (100 if outcome == "win" else 0) * remaining + proceeds
             net     = payout - order["entry_price_cents"] * count
             db.update_order(order["kalshi_order_id"],
                             outcome=outcome, payout_cents=payout, net_profit_cents=net)

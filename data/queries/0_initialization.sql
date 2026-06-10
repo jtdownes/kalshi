@@ -380,3 +380,23 @@ BEGIN
         ALTER TABLE weather_snapshots ADD COLUMN source_url TEXT;
     END IF;
 END $$;
+-- Rich exits: scale-out ladders, %-stops resolved at placement, time-based
+-- exits, and partial-close accounting on the parent entry order.
+DO $$
+BEGIN
+    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='orders' AND column_name='exit_legs') THEN
+        ALTER TABLE orders ADD COLUMN exit_legs JSONB;
+    END IF;
+    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='orders' AND column_name='time_exit_secs') THEN
+        ALTER TABLE orders ADD COLUMN time_exit_secs INTEGER;
+    END IF;
+    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='orders' AND column_name='closed_count') THEN
+        ALTER TABLE orders ADD COLUMN closed_count INTEGER NOT NULL DEFAULT 0;
+    END IF;
+    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='orders' AND column_name='close_proceeds_cents') THEN
+        ALTER TABLE orders ADD COLUMN close_proceeds_cents INTEGER NOT NULL DEFAULT 0;
+    END IF;
+    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='orders' AND column_name='market_out_kalshi_id') THEN
+        ALTER TABLE orders ADD COLUMN market_out_kalshi_id TEXT;
+    END IF;
+END $$;

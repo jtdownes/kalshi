@@ -107,6 +107,146 @@ def _bt_conditions_sql(conditions):
     return clause, params
 
 
+def _bt_clean_legs(legs, quantity):
+    """Mirror of the live engine's ladder validation (rules in bot.py)."""
+    if not isinstance(legs, list) or not legs:
+        return None
+    clean, total = [], 0
+    for leg in legs:
+        try:
+            q = int(leg.get("qty"))
+            p = int(leg.get("price_cents"))
+        except (TypeError, ValueError, AttributeError):
+            return None
+        if q < 1 or not (1 <= p <= 99):
+            return None
+        if total + q > quantity:
+            q = quantity - total
+            if q < 1:
+                break
+        clean.append({"qty": q, "price_cents": p})
+        total += q
+    return clean or None
+
+
+def _bt_walk_rich_exits(cur, fills_cte, params, series_like, side, bid_col,
+                        qty, legs, stop_cents, stop_pct, time_exit_secs):
+    """Replay rich exits (scale-out ladder / %-stop / time exit / stop alongside
+    a limit sell) by walking each filled market's snapshot series after the fill.
+
+    Per tick, in priority order: stop fires first (sell remainder at the bid),
+    then the time exit, then any ladder rung whose price the bid has reached.
+    Whatever remains at the end settles on the official result.
+    """
+    sql = fills_cte + """,
+        finals AS (
+            SELECT DISTINCT ON (ticker)
+                ticker, yes_bid AS final_bid, yes_ask AS final_ask
+            FROM market_snapshots
+            WHERE ticker LIKE %s
+            ORDER BY ticker, scanned_at DESC
+        )
+        SELECT f.ticker, f.fill_time, f.fill_price, f.ttc_at_fill,
+               fin.final_bid, fin.final_ask, ms.result AS official
+        FROM fills f
+        LEFT JOIN finals fin ON fin.ticker = f.ticker
+        LEFT JOIN market_settlements ms ON ms.ticker = f.ticker
+    """
+    cur.execute(sql, params + [series_like])
+    fills = cur.fetchall()
+    if not fills:
+        return []
+
+    min_fill = min(r["fill_time"] for r in fills)
+    cur.execute(f"""
+        SELECT ticker, scanned_at, {bid_col} AS bid, time_to_close_secs AS ttc
+        FROM market_snapshots
+        WHERE ticker = ANY(%s) AND scanned_at > %s
+        ORDER BY ticker, scanned_at
+    """, ([r["ticker"] for r in fills], min_fill))
+    series = {}
+    for r in cur.fetchall():
+        series.setdefault(r["ticker"], []).append(r)
+
+    trades = []
+    for f in fills:
+        fill = float(f["fill_price"])
+        stop = stop_cents
+        if stop is None and stop_pct is not None:
+            stop = int(fill * (1 - stop_pct / 100.0))
+            if not (1 <= stop <= 99):
+                stop = None
+
+        remaining  = qty
+        proceeds   = 0.0
+        pending    = [dict(l) for l in legs]
+        outcome    = None
+        exit_time  = None
+        exit_price = None
+        for snap in series.get(f["ticker"], []):
+            if snap["scanned_at"] <= f["fill_time"]:
+                continue
+            bid = snap["bid"]
+            if bid is None or float(bid) <= 0:
+                continue
+            bid = float(bid)
+            if stop is not None and bid <= stop:
+                proceeds += bid * remaining
+                remaining = 0
+                outcome, exit_time, exit_price = "stopped", snap["scanned_at"], bid
+                break
+            if time_exit_secs is not None and snap["ttc"] is not None \
+                    and int(snap["ttc"]) <= time_exit_secs:
+                proceeds += bid * remaining
+                remaining = 0
+                outcome, exit_time, exit_price = "time_exit", snap["scanned_at"], bid
+                break
+            still = []
+            for leg in pending:
+                if bid >= leg["price_cents"]:
+                    proceeds += leg["price_cents"] * leg["qty"]
+                    remaining -= leg["qty"]
+                    exit_time, exit_price = snap["scanned_at"], float(leg["price_cents"])
+                else:
+                    still.append(leg)
+            pending = still
+            if remaining <= 0:
+                outcome = "sold"
+                break
+
+        settle_win = None
+        if remaining > 0:
+            official = f["official"]
+            if official in ("yes", "no"):
+                resolved_yes = official == "yes"
+            else:
+                ref = f["final_bid"] if f["final_bid"] is not None else f["final_ask"]
+                resolved_yes = ref is not None and float(ref) >= 50
+            settle = (100 if resolved_yes else 0) if side == "yes" else (0 if resolved_yes else 100)
+            settle_win = (settle - fill) > 0
+            proceeds += settle * remaining
+
+        pnl = proceeds - fill * qty
+        if outcome is None:
+            outcome = "won" if pnl > 0 else "lost"
+        trades.append({
+            "ticker":      f["ticker"],
+            "side":        side,
+            "fill_time":   f["fill_time"],
+            "fill_price":  round(fill, 1),
+            "ttc_at_fill": int(f["ttc_at_fill"]) if f["ttc_at_fill"] is not None else None,
+            "exit_kind":   "scale_out" if len(legs) > 1 else ("limit_sell" if legs else "hold"),
+            "exit_price":  round(exit_price, 1) if exit_price is not None else None,
+            "exit_time":   exit_time,
+            "pnl_cents":   round(pnl, 1),
+            "qty":         qty,
+            "outcome":     outcome,
+            "stopped":     outcome == "stopped",
+            "settle_win":  settle_win,
+        })
+    return trades
+
+
 def _bt_simulate_rule(cur, series_like, rule, side, tickers=None):
     """Simulate one rule on one side. Returns a list of trade dicts, or None if
     the rule is incomplete (missing required entry/exit price).
@@ -153,9 +293,16 @@ def _bt_simulate_rule(cur, series_like, rule, side, tickers=None):
         entry_params = [price]
 
     is_limit_sell = exit_.get("type") == "limit_sell"
+    is_scale_out  = exit_.get("type") == "scale_out"
     sell_price = exit_.get("price_cents") if is_limit_sell else None
     if is_limit_sell and sell_price is None:
         return None
+
+    legs = None
+    if is_scale_out:
+        legs = _bt_clean_legs(exit_.get("legs"), qty)
+        if not legs:
+            return None
 
     stop_cents = exit_.get("stop_cents")
     try:
@@ -164,6 +311,27 @@ def _bt_simulate_rule(cur, series_like, rule, side, tickers=None):
         stop_cents = None
     if stop_cents is not None and not (1 <= stop_cents <= 99):
         stop_cents = None
+
+    stop_pct = exit_.get("stop_pct") if stop_cents is None else None
+    try:
+        stop_pct = float(stop_pct) if stop_pct not in (None, "") else None
+    except (TypeError, ValueError):
+        stop_pct = None
+    if stop_pct is not None and not (0 < stop_pct < 100):
+        stop_pct = None
+
+    time_exit_secs = exit_.get("time_exit_secs")
+    try:
+        time_exit_secs = int(time_exit_secs) if time_exit_secs not in (None, "") else None
+    except (TypeError, ValueError):
+        time_exit_secs = None
+    if time_exit_secs is not None and time_exit_secs <= 0:
+        time_exit_secs = None
+
+    # Exit combinations the single-pass SQL can't express get a Python walk
+    # over each filled market's post-fill bid series instead.
+    rich_exit = (is_scale_out or time_exit_secs is not None or stop_pct is not None
+                 or (stop_cents is not None and is_limit_sell))
 
     fields_used = {c.get("field") for c in (rule.get("conditions") or [])}
 
@@ -256,6 +424,13 @@ def _bt_simulate_rule(cur, series_like, rule, side, tickers=None):
         )"""
         params = cte_params + [series_like] + ticker_params + entry_params + cond_params
     fills_cte = "WITH " + ",".join(cte_defs + [fills_def])
+
+    if rich_exit:
+        if is_limit_sell:
+            legs = [{"qty": qty, "price_cents": int(sell_price)}]
+        return _bt_walk_rich_exits(
+            cur, fills_cte, params, series_like, side, bid_col, qty,
+            legs or [], stop_cents, stop_pct, time_exit_secs)
 
     if is_limit_sell:
         sql = fills_cte + f""",

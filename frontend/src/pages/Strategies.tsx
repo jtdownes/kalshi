@@ -72,6 +72,17 @@ function validateRules(rules: StrategyRule[]): string | null {
       return '"% below ask" entries need a percentage.'
     if (r.action.exit.type === 'limit_sell' && r.action.exit.price_cents == null)
       return 'Limit-sell exits need a price.'
+    if (r.action.exit.type === 'scale_out') {
+      const legs = r.action.exit.legs ?? []
+      if (legs.length === 0) return 'Scale-out exits need at least one rung.'
+      if (legs.some(l => l.qty == null || l.price_cents == null))
+        return 'Every scale-out rung needs a quantity and a price.'
+      const total = legs.reduce((s, l) => s + (l.qty ?? 0), 0)
+      if (total > r.action.quantity)
+        return `Scale-out rungs sell ${total} contracts but the rule only buys ${r.action.quantity}.`
+    }
+    if (r.action.exit.stop_pct != null && (r.action.exit.stop_pct <= 0 || r.action.exit.stop_pct >= 100))
+      return 'A %-stop must be between 0 and 100.'
   }
   return null
 }
