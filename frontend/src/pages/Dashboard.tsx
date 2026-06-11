@@ -5,9 +5,7 @@ import PriceActionChart from '../components/PriceActionChart'
 import PnLCalendar from '../components/PnLCalendar'
 import { centsToUSD, fmtCents, fmtPnL, fmtTime, fmtUnixTime, fmtDur, kalshiMarketUrl } from '../utils'
 
-const DEFAULT_HISTORY_LIMIT = 10
-const HISTORY_LIMIT_STORAGE_KEY = 'kalshi-order-history-limit'
-type CollapsibleSection = 'history' | 'trades' | 'calendar'
+type CollapsibleSection = 'trades' | 'calendar'
 
 function tickerOpenTime(ticker: string): string {
   const parts = ticker.split('-')
@@ -55,26 +53,15 @@ interface Props {
 export default function Dashboard({ orders, trades, openOrders, positions, snapshots, quotes, settings, profiles, balance }: Props) {
   const navigate = useNavigate()
   const [collapsedSections, setCollapsedSections] = useState<Record<CollapsibleSection, boolean>>({
-    history: false,
     trades: false,
     calendar: false,
   })
-  const [historyLimit, setHistoryLimit] = useState(() => {
-    if (typeof window === 'undefined') return DEFAULT_HISTORY_LIMIT
-    const stored = window.localStorage.getItem(HISTORY_LIMIT_STORAGE_KEY)
-    const parsed = Number.parseInt(stored ?? '', 10)
-    return Number.isFinite(parsed) && parsed > 0 ? parsed : DEFAULT_HISTORY_LIMIT
-  })
-  useEffect(() => {
-    window.localStorage.setItem(HISTORY_LIMIT_STORAGE_KEY, String(historyLimit))
-  }, [historyLimit])
 
   const [selectedTicker, setSelectedTicker] = useState<string | null>(null)
   const [pinnedTicker, setPinnedTicker] = useState<string | null>(null)
   const [selectedTrade, setSelectedTrade] = useState<string | null>(null)
 
   const activeProfile = profiles.find(p => p.id === settings?.active_profile_id)
-  const history = orders.filter(o => o.status !== 'resting').slice(0, historyLimit)
   // The dashboard tracks the active strategy's market(s) only. Other scanned
   // series (e.g. weather, which polls on its own slower cadence) would otherwise
   // churn the live table and flip the auto-selected chart on every weather tick.
@@ -98,16 +85,6 @@ export default function Dashboard({ orders, trades, openOrders, positions, snaps
   useEffect(() => {
     if (!pinnedTicker && mostRecentTicker) setSelectedTicker(mostRecentTicker)
   }, [mostRecentTicker, pinnedTicker])
-
-  function updateHistoryLimit() {
-    const nextValue = window.prompt('Set order history limit', String(historyLimit))
-    if (nextValue == null) return
-
-    const parsed = Number.parseInt(nextValue, 10)
-    if (!Number.isFinite(parsed) || parsed < 1) return
-
-    setHistoryLimit(Math.min(parsed, 500))
-  }
 
   function toggleSection(section: CollapsibleSection) {
     setCollapsedSections(prev => ({ ...prev, [section]: !prev[section] }))
@@ -385,64 +362,6 @@ export default function Dashboard({ orders, trades, openOrders, positions, snaps
             </tbody>
           </table>
         </div>
-      </div>
-
-      {/* Order History */}
-      <div className="table-panel">
-        <div style={{ padding: '10px', display: 'flex', alignItems: 'center', gap: 8 }}>
-          <button
-            type="button"
-            className="section-toggle"
-            onClick={() => toggleSection('history')}
-            aria-expanded={!collapsedSections.history}
-          >
-            <span className="section-toggle-caret">{collapsedSections.history ? '▸' : '▾'}</span>
-            <span className="section-toggle-label">Order History</span>
-          </button>
-          <button type="button" className="tab-count-button" onClick={updateHistoryLimit} title="Click to change the order history limit">
-            <span className="tab-count">LIMIT {historyLimit}</span>
-          </button>
-        </div>
-        {!collapsedSections.history && <div className="table-wrap">
-          <table>
-            <thead>
-              <tr>
-                <th>Market</th>
-                <th>Side</th>
-                <th>Direction</th>
-                <th>Entry</th>
-                <th>Qty</th>
-                <th>Result</th>
-                <th>P&L</th>
-                <th className="hide-sm">Placed</th>
-                <th className="hide-sm">Filled</th>
-              </tr>
-            </thead>
-            <tbody>
-              {history.length === 0 ? (
-                <tr><td colSpan={9} className="cell-empty">No order history</td></tr>
-              ) : history.map(o => (
-                <tr key={o.id}>
-                  <td className="cell-ticker">
-                    <a href={kalshiMarketUrl(o.market_ticker)} target="_blank" rel="noreferrer" style={{ color: 'inherit', textDecoration: 'none' }}>
-                      {o.market_ticker}
-                    </a>
-                  </td>
-                  <td><span className={`badge ${o.order_role === 'entry' ? 'side-buy' : 'side-sell'}`}>{o.order_role === 'entry' ? 'BUY' : 'SELL'}</span></td>
-                  <td><span className={`badge ${o.side === 'yes' ? 'side-yes' : 'side-no'}`}>{o.side.toUpperCase()}</span></td>
-                  <td>{o.entry_price_cents}¢</td>
-                  <td>{o.count}</td>
-                  <td><StatusBadge status={o.status} outcome={o.outcome} /></td>
-                  <td className={o.net_profit_cents != null && o.net_profit_cents > 0 ? 'cell-profit' : o.net_profit_cents != null && o.net_profit_cents < 0 ? 'cell-loss' : 'cell-dim'}>
-                    {o.net_profit_cents != null ? fmtPnL(o.net_profit_cents) : '—'}
-                  </td>
-                  <td className="cell-dim hide-sm">{fmtTime(o.placed_at)}</td>
-                  <td className="cell-dim hide-sm">{fmtTime(o.filled_at)}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>}
       </div>
 
       {/* Trades */}
