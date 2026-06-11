@@ -33,9 +33,8 @@ export default function Login({ onLogin }: Props) {
     setSubmitting(true)
 
     const trimmed = usernameEmail.trim()
-    const fields  = trimmed.includes('@')
-      ? { email: trimmed, password }
-      : { username: trimmed, password }
+    // Backend accepts username or email under the `username` key.
+    const fields  = { username: trimmed, password }
 
     try {
       const res  = await fetch('/api/auth/login', {
@@ -45,14 +44,10 @@ export default function Login({ onLogin }: Props) {
       })
       const json = await res.json()
 
-      if (json.status === 'success') {
+      if (res.ok && json.ok) {
         onLogin(json.username)
-      } else if (json.status === 'incorrect_email' || json.status === 'incorrect_username') {
-        setUsernameEmailError(json.message)
-      } else if (json.status === 'incorrect_password') {
-        setPasswordError(json.message)
       } else {
-        setPasswordError(json.message || 'Login failed.')
+        setPasswordError(json.error || 'Login failed.')
       }
     } catch {
       setPasswordError('Network error. Please try again.')
