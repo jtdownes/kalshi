@@ -40,6 +40,50 @@ _BT_COL = {
 _BT_OP = {"lt": "<", "lte": "<=", "gt": ">", "gte": ">=", "eq": "="}
 _BT_CRAZE_FIELDS = {"btc_volatility", "btc_range", "btc_drift", "strike_crossings", "buffer_ratio"}
 
+# Data-quality gate: the simulator replays each market's 1s snapshot series
+# tick-by-tick, so a market with a big hole (collector was down/restarting) or
+# barely any snapshots produces fabricated fills/exits that skew results. Drop a
+# market when its largest inter-snapshot gap exceeds _BT_MAX_GAP_SECS, or it has
+# fewer than _BT_MIN_SNAPS rows. Healthy 15-min markets have ~280+ snapshots and
+# gaps well under 30s, so these thresholds only catch the broken ones. Both are
+# overridable per-request (max_gap_secs / min_snaps).
+_BT_MAX_GAP_SECS = 120
+_BT_MIN_SNAPS    = 60
+
+
+def _bt_market_quality(cur, series_like, max_gap_secs, min_snaps, tickers=None):
+    """Return {ticker: {snaps, max_gap, bad, reason}} for the series.
+
+    A market is flagged bad (excluded from the simulation) if its biggest gap
+    between consecutive snapshots exceeds `max_gap_secs`, or it has fewer than
+    `min_snaps` snapshots total. Scoped to `tickers` when given, else the whole
+    series (via the LIKE pattern)."""
+    where, params = ("m.ticker = ANY(%s)", [list(tickers)]) if tickers is not None \
+        else ("m.ticker LIKE %s", [series_like])
+    cur.execute(f"""
+        WITH gaps AS (
+            SELECT m.ticker,
+                   EXTRACT(EPOCH FROM (m.scanned_at::timestamp
+                       - lag(m.scanned_at::timestamp)
+                             OVER (PARTITION BY m.ticker ORDER BY m.scanned_at::timestamp))) AS gap
+            FROM market_snapshots m
+            WHERE {where}
+        )
+        SELECT ticker, count(*) AS snaps, COALESCE(max(gap), 0)::int AS max_gap
+        FROM gaps GROUP BY ticker
+    """, params)
+    out = {}
+    for r in cur.fetchall():
+        snaps, max_gap = r["snaps"], r["max_gap"]
+        reason = None
+        if snaps < min_snaps:
+            reason = f"only {snaps} snapshots"
+        elif max_gap > max_gap_secs:
+            reason = f"{max_gap}s data gap"
+        out[r["ticker"]] = {"snaps": snaps, "max_gap": max_gap,
+                            "bad": reason is not None, "reason": reason}
+    return out
+
 
 def _bt_craze_cte(series_like, window_secs, need_cross, snap_table):
     """Build the `craze` CTE for windowed underlying-price stats (volatility, range, drift, crossings, buffer)."""
@@ -597,10 +641,21 @@ def backtest_strategy():
     except (TypeError, ValueError):
         market_limit = None
 
+    try:
+        max_gap_secs = int(body.get("max_gap_secs") or _BT_MAX_GAP_SECS)
+    except (TypeError, ValueError):
+        max_gap_secs = _BT_MAX_GAP_SECS
+    try:
+        min_snaps = int(body.get("min_snaps") or _BT_MIN_SNAPS)
+    except (TypeError, ValueError):
+        min_snaps = _BT_MIN_SNAPS
+
     rule_results = []
     all_trades   = []
-    tickers      = None
+    tickers      = None      # markets actually simulated (good data only)
+    scoped        = None     # all markets in scope (good + bad), for the feed
     ticker_meta  = {}
+    quality      = {}
     with cursor_conn() as cur:
         if market_limit:
             cur.execute("""
@@ -612,8 +667,19 @@ def backtest_strategy():
                 LIMIT %s
             """, [series_like, market_limit])
             rows = cur.fetchall()
-            tickers     = [r["ticker"] for r in rows]
+            scoped      = [r["ticker"] for r in rows]
             ticker_meta = {r["ticker"]: r["last_seen"] for r in rows}
+
+        # Flag markets whose snapshot coverage is too holed/sparse to replay, and
+        # simulate only the good ones so fabricated fills/exits can't skew results.
+        quality   = _bt_market_quality(cur, series_like, max_gap_secs, min_snaps, tickers=scoped)
+        bad_set   = {tk for tk, q in quality.items() if q["bad"]}
+        if scoped is not None:
+            tickers = [tk for tk in scoped if tk not in bad_set]
+        else:
+            # No market_limit: scope the run to the good markets explicitly so
+            # the bad ones drop out of the LIKE-everything scan.
+            tickers = [tk for tk, q in quality.items() if not q["bad"]]
 
         for idx, rule in enumerate(rules):
             if not rule.get("enabled", True):
@@ -642,25 +708,37 @@ def backtest_strategy():
             })
             all_trades.extend(rule_trades)
 
-    # Feed rows: every execution, plus a skipped row for each scoped market no
-    # rule filled. Sorted newest-first by fill time (skipped rows fall back to
-    # the market's last-seen time).
+    # Feed rows: every execution, plus a row for each scoped market that didn't
+    # trade — "bad_data" if it was excluded for poor coverage, else "skipped".
+    # Sorted newest-first (non-fill rows fall back to the market's last-seen time).
     feed = list(all_trades)
-    if market_limit and tickers:
+    if market_limit and scoped:
         filled = {t["ticker"] for t in all_trades}
-        for tk in tickers:
+        for tk in scoped:
             if tk in filled:
                 continue
-            feed.append({
-                "ticker": tk, "side": None, "fill_time": None, "fill_price": None,
-                "ttc_at_fill": None, "exit_kind": None, "exit_price": None,
-                "exit_time": None, "pnl_cents": None, "qty": 1, "outcome": "skipped",
-                "event_time": ticker_meta.get(tk),
-            })
+            q = quality.get(tk, {})
+            if q.get("bad"):
+                feed.append({
+                    "ticker": tk, "side": None, "fill_time": None, "fill_price": None,
+                    "ttc_at_fill": None, "exit_kind": None, "exit_price": None,
+                    "exit_time": None, "pnl_cents": None, "qty": 1, "outcome": "bad_data",
+                    "reason": q.get("reason"), "event_time": ticker_meta.get(tk),
+                })
+            else:
+                feed.append({
+                    "ticker": tk, "side": None, "fill_time": None, "fill_price": None,
+                    "ttc_at_fill": None, "exit_kind": None, "exit_price": None,
+                    "exit_time": None, "pnl_cents": None, "qty": 1, "outcome": "skipped",
+                    "event_time": ticker_meta.get(tk),
+                })
     feed.sort(key=lambda t: t.get("fill_time") or t.get("event_time") or "", reverse=True)
 
+    excluded = sum(1 for q in quality.values() if q["bad"])
     return jsonify({
         "summary": _bt_aggregate(all_trades),
         "rules":   rule_results,
         "trades":  feed,
+        "excluded_markets": excluded,
+        "data_quality": {"max_gap_secs": max_gap_secs, "min_snaps": min_snaps},
     })

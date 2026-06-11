@@ -17,7 +17,8 @@ export interface SimTrade {
   exit_time: string | null
   pnl_cents: number | null
   qty: number
-  outcome: 'sold' | 'expired' | 'won' | 'lost' | 'stopped' | 'skipped'
+  outcome: 'sold' | 'expired' | 'won' | 'lost' | 'stopped' | 'skipped' | 'bad_data'
+  reason?: string | null
   event_time?: string | null
 }
 
@@ -28,6 +29,7 @@ const OUTCOME_COLOR: Record<string, string> = {
   lost: '#ff4444',
   stopped: '#fbbf24',
   skipped: '#64748b',
+  bad_data: '#b45309',
 }
 const OUTCOME_LABEL: Record<string, string> = {
   sold: 'Sold',
@@ -36,6 +38,7 @@ const OUTCOME_LABEL: Record<string, string> = {
   lost: 'Lost',
   stopped: 'Stopped',
   skipped: 'Skipped',
+  bad_data: 'Bad data',
 }
 
 function pnlColor(c: number | null | undefined): string | undefined {
@@ -83,14 +86,15 @@ interface Props {
 export default function SimulatorExecutions({ trades, globalSnapshots = [], ttcWindows = [] }: Props) {
   const [expanded, setExpanded] = useState<string | null>(null)
 
-  const filledCount = trades.filter(t => t.outcome !== 'skipped').length
+  const filledCount = trades.filter(t => t.outcome !== 'skipped' && t.outcome !== 'bad_data').length
+  const badCount = trades.filter(t => t.outcome === 'bad_data').length
 
   return (
     <section className="table-panel">
       <div className="snapshot-panel-head">
         <span className="section-toggle-label">Simulated Markets</span>
         <span style={{ fontSize: 11, color: '#64748b' }}>
-          {trades.length.toLocaleString()} market{trades.length === 1 ? '' : 's'} · {filledCount.toLocaleString()} filled · newest first
+          {trades.length.toLocaleString()} market{trades.length === 1 ? '' : 's'} · {filledCount.toLocaleString()} filled{badCount ? ` · ${badCount.toLocaleString()} excluded (bad data)` : ''} · newest first
         </span>
       </div>
       <div className="table-wrap">
@@ -114,13 +118,13 @@ export default function SimulatorExecutions({ trades, globalSnapshots = [], ttcW
             ) : trades.map((t, i) => {
               const key = `${t.ticker}-${t.fill_time ?? t.event_time}-${t.side}-${i}`
               const isOpen = expanded === key
-              const skipped = t.outcome === 'skipped'
+              const nonFill = t.outcome === 'skipped' || t.outcome === 'bad_data'
               return (
                 <Fragment key={key}>
                   <tr
                     className={`snapshot-market-row${isOpen ? ' snapshot-row-active' : ''}`}
                     onClick={() => setExpanded(isOpen ? null : key)}
-                    style={skipped ? { opacity: 0.6 } : undefined}
+                    style={nonFill ? { opacity: 0.6 } : undefined}
                   >
                     <td className="cell-chevron">{isOpen ? '▾' : '▸'}</td>
                     <td className="cell-ticker">
@@ -134,7 +138,9 @@ export default function SimulatorExecutions({ trades, globalSnapshots = [], ttcW
                     <td className="cell-dim hide-sm">{fmtDur(t.ttc_at_fill)}</td>
                     <td style={{ color: pnlColor(t.pnl_cents) }}>{t.pnl_cents != null ? `${t.pnl_cents > 0 ? '+' : ''}${t.pnl_cents}¢` : '—'}</td>
                     <td>
-                      <span style={{ fontSize: 11, fontWeight: 600, padding: '2px 7px', borderRadius: 10, background: OUTCOME_COLOR[t.outcome] + '22', color: OUTCOME_COLOR[t.outcome] }}>
+                      <span
+                        title={t.outcome === 'bad_data' && t.reason ? t.reason : undefined}
+                        style={{ fontSize: 11, fontWeight: 600, padding: '2px 7px', borderRadius: 10, background: OUTCOME_COLOR[t.outcome] + '22', color: OUTCOME_COLOR[t.outcome] }}>
                         {OUTCOME_LABEL[t.outcome]}
                       </span>
                     </td>
