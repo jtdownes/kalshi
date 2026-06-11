@@ -26,7 +26,7 @@ body {
   margin-bottom: 24px;
 }
 .header-left  { display: flex; align-items: center; gap: 12px; }
-.header-logo  { font-size: 24px; color: #00d4a0; }
+.header-logo  { width: 28px; height: 28px; border-radius: 6px; display: block; }
 .header-title { font-size: 20px; font-weight: 700; letter-spacing: -0.4px; }
 .header-sub {
   font-size: 11px; color: #64748b;
@@ -1365,7 +1365,7 @@ select optgroup {
     margin-bottom: 0;
   }
   .header-left { min-width: 0; }
-  .header-logo { font-size: 20px; }
+  .header-logo { width: 24px; height: 24px; }
   .header-title { font-size: 17px; }
   .header-sub { display: none; }
   .header-right { gap: 6px; }

@@ -131,7 +131,7 @@ export default function App() {
     <div className="app">
       <header className="header">
         <div className="header-left">
-          <span className="header-logo">⧟</span>
+          <img className="header-logo" src="/icons/icon-192.png" alt="Kalshi Bot" />
           <span className="header-title">Kalshi Bot</span>
         </div>
         <nav className="header-nav">
