@@ -41,46 +41,80 @@ _BT_OP = {"lt": "<", "lte": "<=", "gt": ">", "gte": ">=", "eq": "="}
 _BT_CRAZE_FIELDS = {"btc_volatility", "btc_range", "btc_drift", "strike_crossings", "buffer_ratio"}
 
 # Data-quality gate: the simulator replays each market's 1s snapshot series
-# tick-by-tick, so a market with a big hole (collector was down/restarting) or
-# barely any snapshots produces fabricated fills/exits that skew results. Drop a
-# market when its largest inter-snapshot gap exceeds _BT_MAX_GAP_SECS, or it has
-# fewer than _BT_MIN_SNAPS rows. Healthy 15-min markets have ~280+ snapshots and
-# gaps well under 30s, so these thresholds only catch the broken ones. Both are
-# overridable per-request (max_gap_secs / min_snaps).
-_BT_MAX_GAP_SECS = 120
-_BT_MIN_SNAPS    = 60
+# tick-by-tick, so bad coverage produces fabricated fills/exits that skew
+# results. A market is dropped when:
+#   - its largest inter-snapshot gap exceeds _BT_MAX_GAP_SECS (collector was
+#     down/restarting — a hole the replay flies blind through), or
+#   - it has fewer than _BT_MIN_SNAPS snapshots (barely tracked), or
+#   - its quote is frozen: the same yes_bid repeats for >= _BT_MAX_FROZEN_FRAC of
+#     its life at a mid-range (undecided) value. That's a stale feed (e.g. during
+#     a Kalshi outage) where the rows keep landing but the price stops updating,
+#     so the simulator reads the frozen final bid as a bogus win/loss. Pinning at
+#     an extreme (<=_BT_FROZEN_LO or >=_BT_FROZEN_HI) is a genuinely-decided
+#     market and left alone.
+# Healthy 15-min markets have ~280+ snapshots, sub-30s gaps, and hold any single
+# quote ~12% of the time, so these thresholds only catch the broken ones. The
+# gap/count cutoffs are overridable per-request (max_gap_secs / min_snaps).
+_BT_MAX_GAP_SECS    = 120
+_BT_MIN_SNAPS       = 60
+_BT_MAX_FROZEN_FRAC = 0.5
+_BT_FROZEN_LO       = 10
+_BT_FROZEN_HI       = 90
 
 
 def _bt_market_quality(cur, series_like, max_gap_secs, min_snaps, tickers=None):
-    """Return {ticker: {snaps, max_gap, bad, reason}} for the series.
+    """Return {ticker: {snaps, max_gap, frozen_frac, bad, reason}} for the series.
 
-    A market is flagged bad (excluded from the simulation) if its biggest gap
-    between consecutive snapshots exceeds `max_gap_secs`, or it has fewer than
-    `min_snaps` snapshots total. Scoped to `tickers` when given, else the whole
-    series (via the LIKE pattern)."""
+    Scoped to `tickers` when given, else the whole series (via the LIKE pattern).
+    See the module-level note for what flags a market bad."""
     where, params = ("m.ticker = ANY(%s)", [list(tickers)]) if tickers is not None \
         else ("m.ticker LIKE %s", [series_like])
+    # Gaps-and-islands: a new "run" starts whenever yes_bid changes, so the
+    # largest run per ticker is its longest stretch of an unchanged quote.
     cur.execute(f"""
-        WITH gaps AS (
-            SELECT m.ticker,
-                   EXTRACT(EPOCH FROM (m.scanned_at::timestamp
-                       - lag(m.scanned_at::timestamp)
-                             OVER (PARTITION BY m.ticker ORDER BY m.scanned_at::timestamp))) AS gap
+        WITH lagged AS (
+            SELECT m.ticker, m.scanned_at, m.yes_bid,
+                   EXTRACT(EPOCH FROM (m.scanned_at::timestamp - lag(m.scanned_at::timestamp)
+                       OVER (PARTITION BY m.ticker ORDER BY m.scanned_at::timestamp))) AS gap,
+                   lag(m.yes_bid) OVER (PARTITION BY m.ticker ORDER BY m.scanned_at::timestamp) AS prev_bid
             FROM market_snapshots m
             WHERE {where}
+        ),
+        base AS (
+            SELECT ticker, scanned_at, yes_bid, gap,
+                   sum(CASE WHEN yes_bid IS DISTINCT FROM prev_bid THEN 1 ELSE 0 END)
+                       OVER (PARTITION BY ticker ORDER BY scanned_at::timestamp
+                             ROWS UNBOUNDED PRECEDING) AS grp
+            FROM lagged
+        ),
+        runs AS (
+            SELECT ticker, yes_bid, count(*) AS run_len FROM base GROUP BY ticker, grp, yes_bid
+        ),
+        toprun AS (
+            SELECT DISTINCT ON (ticker) ticker, run_len AS max_run, yes_bid AS frozen_val
+            FROM runs ORDER BY ticker, run_len DESC
+        ),
+        agg AS (
+            SELECT ticker, count(*) AS snaps, COALESCE(max(gap), 0)::int AS max_gap FROM base GROUP BY ticker
         )
-        SELECT ticker, count(*) AS snaps, COALESCE(max(gap), 0)::int AS max_gap
-        FROM gaps GROUP BY ticker
+        SELECT a.ticker, a.snaps, a.max_gap, tr.max_run, tr.frozen_val
+        FROM agg a JOIN toprun tr ON tr.ticker = a.ticker
     """, params)
     out = {}
     for r in cur.fetchall():
         snaps, max_gap = r["snaps"], r["max_gap"]
+        frozen_frac = (r["max_run"] / snaps) if snaps else 0.0
+        fval = r["frozen_val"]
         reason = None
         if snaps < min_snaps:
             reason = f"only {snaps} snapshots"
         elif max_gap > max_gap_secs:
             reason = f"{max_gap}s data gap"
+        elif (frozen_frac >= _BT_MAX_FROZEN_FRAC and fval is not None
+              and _BT_FROZEN_LO <= float(fval) <= _BT_FROZEN_HI):
+            reason = f"quote frozen {round(frozen_frac * 100)}% of life at {round(float(fval))}¢"
         out[r["ticker"]] = {"snaps": snaps, "max_gap": max_gap,
+                            "frozen_frac": round(frozen_frac, 3),
                             "bad": reason is not None, "reason": reason}
     return out
 
