@@ -16,6 +16,32 @@ interface SimRow {
   outcome: Outcome
   pnl_cents: number | null
   reason?: string | null
+  side?: 'yes' | 'no' | null
+  fill_time?: string | null
+  fill_price?: number | null
+  exit_time?: string | null
+  exit_price?: number | null
+}
+
+// Synthetic Buy/Sell markers so the price chart shows where the strategy would
+// have entered (and exited), the same dots the Simulator feed draws. Mirrors
+// SimulatorExecutions.markersFor — skipped/bad-data rows have no fill, no marker.
+function simMarkers(row: SimRow | undefined): Order[] {
+  if (!row || !row.fill_time || row.fill_price == null || !row.side) return []
+  const won = (row.pnl_cents ?? 0) > 0
+  const markers: Order[] = [{
+    market_ticker: row.ticker, side: row.side, order_role: 'entry',
+    entry_price_cents: row.fill_price, filled_at: row.fill_time, placed_at: row.fill_time,
+    status: 'filled', outcome: won ? 'win' : 'loss',
+  } as unknown as Order]
+  if (row.exit_time && row.exit_price != null) {
+    markers.push({
+      market_ticker: row.ticker, side: row.side, order_role: 'exit',
+      entry_price_cents: row.exit_price, filled_at: row.exit_time, placed_at: row.exit_time,
+      status: 'filled', outcome: won ? 'win' : 'loss',
+    } as unknown as Order)
+  }
+  return markers
 }
 
 const OUTCOME_COLOR: Record<Outcome, string> = {
@@ -249,7 +275,7 @@ export default function Snapshots({ snapshots, orders = [], openOrders = [], pro
 
       {selectedTicker && (
         <section className="chart-panel">
-          <PriceActionChart ticker={selectedTicker} globalSnapshots={snapshots} openOrders={openOrders} historyOrders={orders} />
+          <PriceActionChart ticker={selectedTicker} globalSnapshots={snapshots} openOrders={openOrders} historyOrders={[...orders, ...simMarkers(outcomes[selectedTicker])]} />
         </section>
       )}
 
@@ -315,7 +341,7 @@ export default function Snapshots({ snapshots, orders = [], openOrders = [], pro
                               ticker={t.ticker}
                               globalSnapshots={snapshots}
                               openOrders={openOrders}
-                              historyOrders={orders}
+                              historyOrders={[...orders, ...simMarkers(outcomes[t.ticker])]}
                             />
                             <div className="snapshot-history-scroll">
                             <table className="snapshot-history-table">
