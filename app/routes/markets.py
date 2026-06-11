@@ -95,13 +95,16 @@ def snapshots():
 
 @markets_bp.get("/api/snapshots/tickers")
 def snapshot_tickers():
-    """One summary row per distinct ticker, ordered by most recent scan."""
+    """One summary row per distinct ticker, ordered by most recent scan.
+
+    `result` is the official settlement (yes/no) when the market has closed and
+    been backfilled, else null for markets still open."""
     with cursor_conn() as c:
         c.execute("""
-            SELECT ticker, title, strike_str,
-                   yes_ask, yes_bid, no_ask,
-                   volume, open_interest, time_to_close_secs,
-                   scanned_at
+            SELECT latest.ticker, latest.title, latest.strike_str,
+                   latest.yes_ask, latest.yes_bid, latest.no_ask,
+                   latest.volume, latest.open_interest, latest.time_to_close_secs,
+                   latest.scanned_at, s.result
             FROM (
                 SELECT DISTINCT ON (ticker)
                        ticker, title, strike_str,
@@ -111,7 +114,8 @@ def snapshot_tickers():
                 FROM market_snapshots
                 ORDER BY ticker, id DESC
             ) latest
-            ORDER BY scanned_at DESC
+            LEFT JOIN market_settlements s ON s.ticker = latest.ticker
+            ORDER BY latest.scanned_at DESC
         """)
         rows = c.fetchall()
     return jsonify([dict(r) for r in rows])

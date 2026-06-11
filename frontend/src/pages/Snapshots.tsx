@@ -65,6 +65,23 @@ interface TickerSummary {
   open_interest: number | null
   time_to_close_secs: number | null
   scanned_at: string
+  result: string | null
+}
+
+// Official settlement of a market: yes (green) / no (red), or a dash while the
+// market is still open / not yet backfilled.
+function MarketResult({ result }: { result: string | null | undefined }) {
+  if (result !== 'yes' && result !== 'no') return <span className="cell-dim">—</span>
+  const yes = result === 'yes'
+  const color = yes ? '#00d4a0' : '#ff4444'
+  return (
+    <span style={{
+      fontSize: 11, fontWeight: 700, padding: '2px 7px', borderRadius: 10,
+      background: color + '22', color,
+    }}>
+      {yes ? 'YES' : 'NO'}
+    </span>
+  )
 }
 
 interface Props {
@@ -102,6 +119,14 @@ export default function Snapshots({ snapshots, orders = [], openOrders = [], fil
     }
     return map
   }, [orders])
+
+  // ticker → official settlement result, sourced from the tickers feed so both
+  // the live and historical tables can show it from one place.
+  const resultByTicker = useMemo(() => {
+    const map: Record<string, string> = {}
+    for (const t of allTickers) if (t.result) map[t.ticker] = t.result
+    return map
+  }, [allTickers])
 
   // Fetch all distinct tickers from the DB for the historical panel
   const filteredAllTickers = useMemo(() => {
@@ -184,9 +209,7 @@ export default function Snapshots({ snapshots, orders = [], openOrders = [], fil
                 <th>Market</th>
                 <th>Strike</th>
                 <th>Live Price</th>
-                <th>Yes Ask</th>
-                <th>Yes Bid</th>
-                <th>No Ask</th>
+                <th>Result</th>
                 <th className="hide-sm">Volume</th>
                 <th className="hide-sm">OI</th>
                 <th>My Trade</th>
@@ -195,7 +218,7 @@ export default function Snapshots({ snapshots, orders = [], openOrders = [], fil
             </thead>
             <tbody>
               {marketSnapshots.length === 0 ? (
-                <tr><td colSpan={10} className="cell-empty">No live snapshots</td></tr>
+                <tr><td colSpan={8} className="cell-empty">No live snapshots</td></tr>
               ) : marketSnapshots.map(snapshot => (
                 <tr 
                   key={snapshot.id} 
@@ -210,9 +233,7 @@ export default function Snapshots({ snapshots, orders = [], openOrders = [], fil
                   </td>
                   <td className="cell-dim">{snapshot.strike_str ?? '—'}</td>
                   <td className="cell-dim">{(() => { const p = cryptoPriceForTicker(snapshot.ticker, snapshot as unknown as Record<string, unknown>); return p != null ? `$${p.toLocaleString()}` : '—' })()}</td>
-                  <td>{fmtCents(snapshot.yes_ask)}</td>
-                  <td className="cell-dim">{fmtCents(snapshot.yes_bid)}</td>
-                  <td className="cell-dim">{fmtCents(snapshot.no_ask)}</td>
+                  <td><MarketResult result={resultByTicker[snapshot.ticker]} /></td>
                   <td className="cell-dim hide-sm">{snapshot.volume != null ? snapshot.volume.toLocaleString() : '—'}</td>
                   <td className="cell-dim hide-sm">{snapshot.open_interest != null ? snapshot.open_interest.toLocaleString() : '—'}</td>
                   <td><TradeStatus trade={tradeByTicker[snapshot.ticker]} /></td>
@@ -241,9 +262,7 @@ export default function Snapshots({ snapshots, orders = [], openOrders = [], fil
                 <th className="cell-chevron-th" />
                 <th>Market</th>
                 <th>Strike</th>
-                <th>Yes Ask</th>
-                <th>Yes Bid</th>
-                <th>No Ask</th>
+                <th>Result</th>
                 <th className="hide-sm">Volume</th>
                 <th className="hide-sm">OI</th>
                 <th>My Trade</th>
@@ -252,9 +271,9 @@ export default function Snapshots({ snapshots, orders = [], openOrders = [], fil
             </thead>
             <tbody>
               {allTickers.length === 0 ? (
-                <tr><td colSpan={10} className="cell-empty">Loading markets…</td></tr>
+                <tr><td colSpan={8} className="cell-empty">Loading markets…</td></tr>
               ) : filteredAllTickers.length === 0 ? (
-                <tr><td colSpan={10} className="cell-empty">No markets for this filter</td></tr>
+                <tr><td colSpan={8} className="cell-empty">No markets for this filter</td></tr>
               ) : filteredAllTickers.map(t => (
                 <>
                   <tr
@@ -269,9 +288,7 @@ export default function Snapshots({ snapshots, orders = [], openOrders = [], fil
                       </a>
                     </td>
                     <td className="cell-dim">{t.strike_str ?? '—'}</td>
-                    <td>{fmtCents(t.yes_ask)}</td>
-                    <td className="cell-dim">{fmtCents(t.yes_bid)}</td>
-                    <td className="cell-dim">{fmtCents(t.no_ask)}</td>
+                    <td><MarketResult result={t.result} /></td>
                     <td className="cell-dim hide-sm">{t.volume != null ? t.volume.toLocaleString() : '—'}</td>
                     <td className="cell-dim hide-sm">{t.open_interest != null ? t.open_interest.toLocaleString() : '—'}</td>
                     <td><TradeStatus trade={tradeByTicker[t.ticker]} /></td>
@@ -279,7 +296,7 @@ export default function Snapshots({ snapshots, orders = [], openOrders = [], fil
                   </tr>
                   {expandedTicker === t.ticker && (
                     <tr key={`${t.ticker}-history`} className="snapshot-history-row">
-                      <td colSpan={10} className="snapshot-history-cell">
+                      <td colSpan={8} className="snapshot-history-cell">
                         {expandedLoading ? (
                           <div className="snapshot-history-status">Loading…</div>
                         ) : expandedError ? (
