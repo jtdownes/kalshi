@@ -60,6 +60,14 @@ export default function Dashboard({ orders, trades, openOrders, positions, snaps
   const [selectedTicker, setSelectedTicker] = useState<string | null>(null)
   const [selectedTrade, setSelectedTrade] = useState<string | null>(null)
 
+  // Wall-clock tick so the live table drops expired markets exactly on close,
+  // not whenever the next snapshot poll happens to arrive.
+  const [now, setNow] = useState(() => Date.now())
+  useEffect(() => {
+    const id = setInterval(() => setNow(Date.now()), 1000)
+    return () => clearInterval(id)
+  }, [])
+
   const activeProfile = profiles.find(p => p.id === settings?.active_profile_id)
   // The dashboard tracks the market(s) of every active strategy — the bot scans
   // all is_active profiles, so the live table should reflect the union of their
@@ -84,13 +92,21 @@ export default function Dashboard({ orders, trades, openOrders, positions, snaps
     return snapshots.filter(s => series.some(ser => s.ticker.startsWith(ser + '-')))
   }, [snapshots, trackedKey])
 
-  // Drop markets that have already expired (ttc <= 0). A KXBTC/KXETH 15-minute
-  // contract that just closed lingers in the snapshot feed for a tick showing
-  // "0s", which otherwise sits in the live table and flickers the auto-selected
-  // chart between the dead market and the freshly-opened one.
+  // Drop markets that have already expired. We compare the market's close_time
+  // (unix seconds) against the live wall clock rather than the snapshot's stored
+  // time_to_close_secs — that value is frozen at scan time, so once a 15-minute
+  // contract closes the bot stops scanning it and the last snapshot keeps a small
+  // positive ttc forever, leaving the dead market lingering in the live table and
+  // flickering the auto-selected chart. close_time vs now expires it on the second.
   const liveSnapshots = useMemo(
-    () => dashSnapshots.filter(s => s.time_to_close_secs == null || s.time_to_close_secs > 0),
-    [dashSnapshots],
+    () => dashSnapshots.filter(s => {
+      if (s.close_time) {
+        const closeTs = parseInt(s.close_time, 10)
+        if (!isNaN(closeTs)) return closeTs * 1000 > now
+      }
+      return s.time_to_close_secs == null || s.time_to_close_secs > 0
+    }),
+    [dashSnapshots, now],
   )
 
   const marketSnapshots = useMemo(() => {
