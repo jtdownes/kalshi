@@ -8,6 +8,8 @@ Auth flow:
 
 import base64
 import logging
+import random
+import threading
 import time
 
 import requests
@@ -20,8 +22,70 @@ import config
 log = logging.getLogger(__name__)
 
 
+# Per-tier per-second token budgets (read, write) from the Kalshi docs:
+# official-docs/concepts/rate-limits-and-tiers.md
+_TIER_BUDGETS = {
+    "basic":    (200,  100),
+    "advanced": (300,  300),
+    "premier":  (1000, 1000),
+    "paragon":  (2000, 2000),
+    "prime":    (4000, 4000),
+}
+# Token cost per request. Most endpoints cost 10; cancellations are cheaper.
+_DEFAULT_COST = 10
+_CANCEL_COST  = 2
+
+# Statuses we transparently retry. 429 = our own rate limit (back off until the
+# bucket refills — there is no Retry-After header, per the docs). 5xx = Kalshi's
+# exchange flapping; a couple of backed-off retries smooth transient blips.
+_RETRY_429 = 5
+_RETRY_5XX = 2
+_BACKOFF_BASE = 0.5   # seconds; doubles each attempt
+_BACKOFF_CAP  = 8.0
+
+# Circuit breaker: when the exchange returns sustained 503s, stop hammering it
+# (every retry into a down exchange is what drains the write bucket and earns a
+# 429). After N consecutive write failures we open the breaker and fail writes
+# locally — no network, no tokens spent — until a short cool-off elapses.
+_CB_THRESHOLD = 5
+_CB_COOLOFF   = 15.0
+
+
 class KalshiError(Exception):
-    pass
+    def __init__(self, message, status_code=None):
+        super().__init__(message)
+        self.status_code = status_code
+
+
+class _TokenBucket:
+    """Continuously-refilling token bucket matching a Kalshi read/write budget.
+
+    Refills at `rate` tokens/sec up to `capacity`. The write bucket holds two
+    seconds of budget (one on Basic) of burst headroom, per the docs.
+    """
+
+    def __init__(self, rate: float, capacity: float):
+        self._rate = float(rate)
+        self._capacity = float(capacity)
+        self._tokens = float(capacity)
+        self._last = time.monotonic()
+        self._lock = threading.Lock()
+
+    def acquire(self, cost: float):
+        """Block until `cost` tokens are available, then spend them."""
+        while True:
+            with self._lock:
+                now = time.monotonic()
+                self._tokens = min(
+                    self._capacity,
+                    self._tokens + (now - self._last) * self._rate,
+                )
+                self._last = now
+                if self._tokens >= cost:
+                    self._tokens -= cost
+                    return
+                wait = (cost - self._tokens) / self._rate
+            time.sleep(min(wait, 1.0))
 
 
 class KalshiClient:
@@ -31,6 +95,21 @@ class KalshiClient:
         self._key_id = config.KALSHI_KEY_ID
         self._session = requests.Session()
         self._session.headers.update({"Content-Type": "application/json"})
+
+        # Client-side throttling so we never out-run our budget and earn a 429.
+        read_budget, write_budget = _TIER_BUDGETS.get(
+            config.KALSHI_TIER, _TIER_BUDGETS["basic"])
+        # Basic's write bucket holds 1s of budget; every other tier holds 2s.
+        write_burst = 1.0 if config.KALSHI_TIER == "basic" else 2.0
+        self._read_bucket = _TokenBucket(read_budget, read_budget * 2.0)
+        self._write_bucket = _TokenBucket(write_budget, write_budget * write_burst)
+        log.info("Kalshi client throttle: tier=%s read=%d/s write=%d/s",
+                 config.KALSHI_TIER, read_budget, write_budget)
+
+        # Write circuit breaker state.
+        self._cb_lock = threading.Lock()
+        self._cb_failures = 0
+        self._cb_open_until = 0.0
 
     def _auth_headers(self, method: str, path: str) -> dict:
         # Kalshi signs only the URL path, not the query string. /trade-api/v2 prefix included.
@@ -51,31 +130,74 @@ class KalshiClient:
             "KALSHI-ACCESS-SIGNATURE": base64.b64encode(sig).decode(),
         }
 
-    def _get(self, path: str, params: dict = None) -> dict:
-        url = config.KALSHI_API_BASE + path
-        r = self._session.get(url, headers=self._auth_headers("GET", path),
-                              params=params, timeout=10)
-        self._raise_for_status(r)
-        return r.json()
+    # ── Circuit breaker (writes) ────────────────────────────────────────────
+    def _breaker_guard(self):
+        """Raise immediately if the write breaker is open (exchange is down)."""
+        with self._cb_lock:
+            remaining = self._cb_open_until - time.monotonic()
+            if remaining > 0:
+                raise KalshiError(
+                    f"write circuit open (exchange unavailable), {remaining:.1f}s left",
+                    status_code=503)
 
-    def _post(self, path: str, body: dict) -> dict:
-        url = config.KALSHI_API_BASE + path
-        r = self._session.post(url, headers=self._auth_headers("POST", path),
-                               json=body, timeout=10)
-        self._raise_for_status(r)
-        return r.json()
+    def _breaker_record(self, ok: bool):
+        with self._cb_lock:
+            if ok:
+                if self._cb_failures or self._cb_open_until:
+                    log.info("Kalshi write circuit reset")
+                self._cb_failures = 0
+                self._cb_open_until = 0.0
+            else:
+                self._cb_failures += 1
+                if self._cb_failures >= _CB_THRESHOLD and not self._cb_open_until:
+                    self._cb_open_until = time.monotonic() + _CB_COOLOFF
+                    log.warning("Kalshi write circuit OPEN after %d consecutive failures; "
+                                "cooling off %.0fs", self._cb_failures, _CB_COOLOFF)
 
-    def _delete(self, path: str) -> dict:
+    # ── Request core ────────────────────────────────────────────────────────
+    def _request(self, method: str, path: str, *, write: bool, cost: int,
+                 params: dict = None, body: dict = None) -> dict:
+        bucket = self._write_bucket if write else self._read_bucket
         url = config.KALSHI_API_BASE + path
-        r = self._session.delete(url, headers=self._auth_headers("DELETE", path),
-                                 timeout=10)
-        self._raise_for_status(r)
-        return r.json()
+        attempt = 0
+        while True:
+            if write:
+                self._breaker_guard()
+            bucket.acquire(cost)
+            r = self._session.request(
+                method, url, headers=self._auth_headers(method, path),
+                params=params, json=body, timeout=10)
 
-    @staticmethod
-    def _raise_for_status(r: requests.Response):
-        if not r.ok:
-            raise KalshiError(f"HTTP {r.status_code} – {r.text[:300]}")
+            if r.ok:
+                if write:
+                    self._breaker_record(ok=True)
+                return r.json()
+
+            status = r.status_code
+            is_5xx = 500 <= status < 600
+            if write and is_5xx:
+                self._breaker_record(ok=False)
+
+            limit = _RETRY_429 if status == 429 else (_RETRY_5XX if is_5xx else 0)
+            if attempt < limit:
+                delay = min(_BACKOFF_BASE * (2 ** attempt) + random.uniform(0, _BACKOFF_BASE),
+                            _BACKOFF_CAP)
+                log.warning("Kalshi %s %s -> HTTP %d; backoff %.2fs (retry %d/%d)",
+                            method, path, status, delay, attempt + 1, limit)
+                time.sleep(delay)
+                attempt += 1
+                continue
+
+            raise KalshiError(f"HTTP {status} – {r.text[:300]}", status_code=status)
+
+    def _get(self, path: str, params: dict = None, cost: int = _DEFAULT_COST) -> dict:
+        return self._request("GET", path, write=False, cost=cost, params=params)
+
+    def _post(self, path: str, body: dict, cost: int = _DEFAULT_COST) -> dict:
+        return self._request("POST", path, write=True, cost=cost, body=body)
+
+    def _delete(self, path: str, cost: int = _DEFAULT_COST) -> dict:
+        return self._request("DELETE", path, write=True, cost=cost)
 
     def get_balance(self) -> dict:
         return self._get("/portfolio/balance")
@@ -113,7 +235,7 @@ class KalshiClient:
         return self._get(f"/portfolio/orders/{order_id}")
 
     def cancel_order(self, order_id: str) -> dict:
-        return self._delete(f"/portfolio/orders/{order_id}")
+        return self._delete(f"/portfolio/orders/{order_id}", cost=_CANCEL_COST)
 
     def get_fills(self, ticker: str = None, limit: int = 200) -> dict:
         params: dict = {"limit": limit}

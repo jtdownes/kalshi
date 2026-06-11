@@ -8,6 +8,10 @@ KALSHI_API_BASE        = "https://api.elections.kalshi.com/trade-api/v2"
 KALSHI_WS_URL          = os.environ.get("KALSHI_WS_URL", "wss://api.elections.kalshi.com/trade-api/ws/v2")
 KALSHI_KEY_ID          = os.environ["KALSHI_KEY_ID"]
 KALSHI_PRIVATE_KEY_PATH = os.environ.get("KALSHI_PRIVATE_KEY_PATH", "/data/kalshi_private_key.pem")
+# Account tier → per-second Read/Write token budgets (see official-docs/concepts/
+# rate-limits-and-tiers.md). Drives client-side throttling so we never out-run our
+# budget and earn a 429. "basic" is the safe default for a fresh account.
+KALSHI_TIER            = os.environ.get("KALSHI_TIER", "basic").lower()
 
 # ── Storage ───────────────────────────────────────────────────────────────────
 DB_TYPE     = os.environ.get("DB_TYPE", "postgres")
