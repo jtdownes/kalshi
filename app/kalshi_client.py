@@ -178,6 +178,12 @@ class KalshiClient:
             if write and is_5xx:
                 self._breaker_record(ok=False)
 
+            # Reads NEVER retry-in-call: the 1s market-data loop is the edge and
+            # must keep its cadence, so a read error fails fast and the loop
+            # retries on its own next tick. Backoff/breaker are write-only.
+            if not write:
+                raise KalshiError(f"HTTP {status} – {r.text[:300]}", status_code=status)
+
             limit = _RETRY_429 if status == 429 else (_RETRY_5XX if is_5xx else 0)
             if attempt < limit:
                 delay = min(_BACKOFF_BASE * (2 ** attempt) + random.uniform(0, _BACKOFF_BASE),
