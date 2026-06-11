@@ -10,7 +10,7 @@ import type { Position, Order, Trade, Snapshot, Settings, Profile, Quotes } from
 import { fmtTime } from './utils'
 export type { Position, Order, Trade, Snapshot, Settings, Profile, Quotes }
 export type { RuleField, RuleOp, RuleCondition, RuleEntry, RuleExit, RuleAction, StrategyRule } from './types'
-export { centsToUSD, fmtPnL, fmtCents, fmtTime, fmtUnixTime, fmtDur, fmtTickers, kalshiMarketUrl } from './utils'
+export { centsToUSD, fmtPnL, fmtCents, fmtTime, fmtDateTime, fmtUnixTime, fmtDur, fmtTickers, kalshiMarketUrl } from './utils'
 
 // Shared by the desktop header nav and the mobile bottom tab bar.
 const NAV_ITEMS = [

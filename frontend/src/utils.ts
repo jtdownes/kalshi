@@ -22,6 +22,15 @@ export function fmtTime(iso: string | null | undefined): string {
   return d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })
 }
 
+export function fmtDateTime(iso: string | null | undefined): string {
+  if (!iso) return '—'
+  const d = new Date(iso.endsWith('Z') ? iso : iso + 'Z')
+  return d.toLocaleString([], {
+    year: 'numeric', month: 'short', day: 'numeric',
+    hour: '2-digit', minute: '2-digit', second: '2-digit',
+  })
+}
+
 export function fmtUnixTime(raw: string | null | undefined): string {
   if (!raw) return '—'
   const ts = parseInt(raw, 10)

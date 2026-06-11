@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react'
 import type { Settings, Profile, StrategyRule } from '../types'
-import { centsToUSD, fmtTime, fmtTickers, STRATEGY_MARKETS } from '../utils'
+import { centsToUSD, fmtTime, fmtDateTime, fmtTickers, STRATEGY_MARKETS } from '../utils'
 import RuleBuilder, { defaultRule, ruleSummary } from '../components/RuleBuilder'
 import StrategyBacktest from '../components/StrategyBacktest'
 
@@ -295,7 +295,7 @@ export default function Strategies({ settings, profiles, refresh }: Props) {
               <div className="strategy-card-head">
                 <div className="strategy-title-block">
                   <div className="strategy-name">{p.name}</div>
-                  <div className="strategy-created">Created {fmtTime(p.created_at)}</div>
+                  <div className="strategy-created">Created {fmtDateTime(p.created_at)}</div>
                 </div>
                 <div className="strategy-card-head-right">
                   {isActive && <span className="badge badge-live">ACTIVE</span>}
@@ -379,7 +379,7 @@ export default function Strategies({ settings, profiles, refresh }: Props) {
                     )}
                   </h3>
                   <div style={{ color: '#64748b', fontSize: 12, marginTop: 4 }}>
-                    Created {fmtTime(viewModal.profile.created_at)} · {fmtTickers(viewModal.profile.btc_series_tickers)}
+                    Created {fmtDateTime(viewModal.profile.created_at)} · {fmtTickers(viewModal.profile.btc_series_tickers)}
                   </div>
                 </div>
               </div>
