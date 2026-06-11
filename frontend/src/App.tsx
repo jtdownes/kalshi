@@ -30,7 +30,6 @@ export default function App() {
   const [settings,    setSettings]    = useState<Settings | null>(null)
   const [profiles,    setProfiles]    = useState<Profile[]>([])
   const [balance,     setBalance]     = useState<number | null>(null)
-  const [autoRefresh, setAutoRefresh] = useState(true)
   const [lastRefresh, setLastRefresh] = useState<Date | null>(null)
   const [loading,     setLoading]     = useState(false)
   const [error,       setError]       = useState<string | null>(null)
@@ -71,7 +70,6 @@ export default function App() {
 
   // Periodic refresh for dashboard data not covered by the SSE stream.
   useEffect(() => {
-    if (!autoRefresh) return
     const id = setInterval(async () => {
       try {
         const [o, tr, st, pr] = await Promise.all([
@@ -88,7 +86,7 @@ export default function App() {
       } catch { /* silent */ }
     }, dashboardRefreshMs)
     return () => clearInterval(id)
-  }, [autoRefresh, dashboardRefreshMs])
+  }, [dashboardRefreshMs])
 
   // Real-time positions + quotes via SSE → Kalshi WebSocket
   useEffect(() => {
@@ -161,12 +159,6 @@ export default function App() {
               {loading ? 'Refreshing…' : `Updated ${fmtTime(lastRefresh.toISOString())}`}
             </span>
           )}
-          <button
-            className={`btn${autoRefresh ? ' btn-active' : ''}`}
-            onClick={() => setAutoRefresh(a => !a)}
-          >
-            {autoRefresh ? '⏸ Auto' : '▶ Auto'}
-          </button>
           <button className="btn" onClick={refresh}>↻</button>
         </div>
       </header>
