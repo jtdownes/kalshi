@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { NavLink } from 'react-router-dom'
 import type { Snapshot, Order } from '../types'
 import { fmtCents, fmtDur, fmtTime, fmtUnixTime, fmtPnL, kalshiMarketUrl, cryptoPriceForTicker } from '../utils'
