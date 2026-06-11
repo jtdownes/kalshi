@@ -1,80 +1,54 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useMemo, useState } from 'react'
 import { NavLink } from 'react-router-dom'
-import type { Snapshot, Order, Profile, StrategyRule } from '../types'
-import { fmtCents, fmtDur, fmtTime, fmtUnixTime, kalshiMarketUrl, cryptoPriceForTicker } from '../utils'
+import type { Snapshot, Order } from '../types'
+import { fmtCents, fmtDur, fmtTime, fmtUnixTime, fmtPnL, kalshiMarketUrl, cryptoPriceForTicker } from '../utils'
 import PriceActionChart from '../components/PriceActionChart'
 import ScannedMarkets from '../components/ScannedMarkets'
 
-// Series the rule backtester can replay — used to show, per market, what the
-// active strategy would have done (Won / Lost / Skipped / Bad data).
-const BACKTESTABLE_SERIES = ['KXBTC15M', 'KXETH15M'] as const
+// Factual per-market trade status, derived from the user's real orders — NOT a
+// backtest. 'won'/'lost' are settled fills; 'open' is a filled position not yet
+// resolved; 'resting' is a placed-but-unfilled order.
+type TradeState = 'won' | 'lost' | 'open' | 'resting'
 
-type Outcome = 'sold' | 'expired' | 'won' | 'lost' | 'stopped' | 'skipped' | 'bad_data'
-
-interface SimRow {
+interface MarketTrade {
   ticker: string
-  outcome: Outcome
-  pnl_cents: number | null
-  reason?: string | null
-  side?: 'yes' | 'no' | null
-  fill_time?: string | null
-  fill_price?: number | null
-  exit_time?: string | null
-  exit_price?: number | null
+  state: TradeState
+  side: string
+  net_profit_cents: number | null
 }
 
-// Synthetic Buy/Sell markers so the price chart shows where the strategy would
-// have entered (and exited), the same dots the Simulator feed draws. Mirrors
-// SimulatorExecutions.markersFor — skipped/bad-data rows have no fill, no marker.
-function simMarkers(row: SimRow | undefined): Order[] {
-  if (!row || !row.fill_time || row.fill_price == null || !row.side) return []
-  const won = (row.pnl_cents ?? 0) > 0
-  const markers: Order[] = [{
-    market_ticker: row.ticker, side: row.side, order_role: 'entry',
-    entry_price_cents: row.fill_price, filled_at: row.fill_time, placed_at: row.fill_time,
-    status: 'filled', outcome: won ? 'win' : 'loss',
-  } as unknown as Order]
-  if (row.exit_time && row.exit_price != null) {
-    markers.push({
-      market_ticker: row.ticker, side: row.side, order_role: 'exit',
-      entry_price_cents: row.exit_price, filled_at: row.exit_time, placed_at: row.exit_time,
-      status: 'filled', outcome: won ? 'win' : 'loss',
-    } as unknown as Order)
-  }
-  return markers
+const STATE_COLOR: Record<TradeState, string> = {
+  won: '#00d4a0', lost: '#ff4444', open: '#60a5fa', resting: '#f5c842',
+}
+const STATE_LABEL: Record<TradeState, string> = {
+  won: 'Won', lost: 'Lost', open: 'Open', resting: 'Resting',
+}
+// Settled (won/lost) beats an open position beats a resting order when a market
+// has more than one entry order against it.
+const STATE_RANK: Record<TradeState, number> = { won: 3, lost: 3, open: 2, resting: 1 }
+
+// Classify one entry order into a trade state, or null if it doesn't count
+// (canceled / pending — nothing real happened on the market).
+function entryState(o: Order): TradeState | null {
+  if (o.status === 'filled' && o.outcome === 'win') return 'won'
+  if (o.status === 'filled' && o.outcome === 'loss') return 'lost'
+  if (o.status === 'filled') return 'open'
+  if (o.status === 'resting') return 'resting'
+  return null
 }
 
-const OUTCOME_COLOR: Record<Outcome, string> = {
-  sold: '#00d4a0', won: '#00d4a0',
-  expired: '#ff4444', lost: '#ff4444',
-  stopped: '#fbbf24', skipped: '#64748b', bad_data: '#b45309',
-}
-const OUTCOME_LABEL: Record<Outcome, string> = {
-  sold: 'Won', won: 'Won', expired: 'Lost', lost: 'Lost',
-  stopped: 'Stopped', skipped: 'Skipped', bad_data: 'Bad data',
-}
-// When several rules touch the same market, show the most meaningful result:
-// a real fill beats a bad-data exclusion, which beats a plain skip.
-const OUTCOME_RANK: Record<Outcome, number> = {
-  won: 3, sold: 3, lost: 3, expired: 3, stopped: 3, bad_data: 2, skipped: 1,
-}
-
-function seriesOf(ticker: string): string {
-  return ticker.split('-')[0]
-}
-
-function StrategyOutcome({ row }: { row: SimRow | undefined }) {
-  if (!row) return <span className="cell-dim">—</span>
+function TradeStatus({ trade }: { trade: MarketTrade | undefined }) {
+  if (!trade) return <span className="cell-dim">—</span>
+  const color = STATE_COLOR[trade.state]
   return (
     <span
-      title={row.outcome === 'bad_data' && row.reason ? row.reason
-        : row.pnl_cents != null ? `${row.pnl_cents > 0 ? '+' : ''}${row.pnl_cents}¢` : undefined}
+      title={trade.net_profit_cents != null ? `${trade.side.toUpperCase()} · ${fmtPnL(trade.net_profit_cents)}` : trade.side.toUpperCase()}
       style={{
         fontSize: 11, fontWeight: 600, padding: '2px 7px', borderRadius: 10,
-        background: OUTCOME_COLOR[row.outcome] + '22', color: OUTCOME_COLOR[row.outcome],
+        background: color + '22', color,
       }}
     >
-      {OUTCOME_LABEL[row.outcome]}
+      {STATE_LABEL[trade.state]}
     </span>
   )
 }
@@ -97,60 +71,37 @@ interface Props {
   snapshots: Snapshot[]
   orders?: Order[]
   openOrders?: Order[]
-  profiles?: Profile[]
   filterFn?: (ticker: string, title: string) => boolean
 }
 
-export default function Snapshots({ snapshots, orders = [], openOrders = [], profiles = [], filterFn }: Props) {
+export default function Snapshots({ snapshots, orders = [], openOrders = [], filterFn }: Props) {
   const [allTickers, setAllTickers] = useState<TickerSummary[]>([])
   const [selectedTicker, setSelectedTicker] = useState<string | null>(null)
   const [expandedTicker, setExpandedTicker] = useState<string | null>(null)
   const [expandedHistory, setExpandedHistory] = useState<Snapshot[]>([])
   const [expandedLoading, setExpandedLoading] = useState(false)
   const [expandedError, setExpandedError] = useState<string | null>(null)
-  // ticker → what the active strategy would have done on that market.
-  const [outcomes, setOutcomes] = useState<Record<string, SimRow>>({})
 
-  // The active strategy's rules drive the per-market outcome column. Combine
-  // every active profile's rules so a market shows a trade if any of them fired.
-  const activeRules = useMemo<StrategyRule[]>(() => {
-    const active = profiles.filter(p => p.is_active && p.rules?.length)
-    return active.flatMap(p => p.rules ?? [])
-  }, [profiles])
-  const rulesKey = useMemo(() => JSON.stringify(activeRules), [activeRules])
-
-  // Backtest the active rules over each replayable series and fold the result
-  // into a ticker→outcome map. The backtester already emits skipped / bad_data
-  // rows for markets that didn't trade, so the whole feed gets a status.
-  useEffect(() => {
-    if (!activeRules.length) {
-      setOutcomes({})
-      return
-    }
-    let cancelled = false
-    Promise.all(
-      BACKTESTABLE_SERIES.map(series =>
-        fetch('/api/backtest/strategy', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ rules: activeRules, series, market_limit: 1000 }),
-        })
-          .then(r => (r.ok ? r.json() : null))
-          .catch(() => null),
-      ),
-    ).then(results => {
-      if (cancelled) return
-      const map: Record<string, SimRow> = {}
-      for (const res of results) {
-        for (const t of (res?.trades ?? []) as SimRow[]) {
-          const prev = map[t.ticker]
-          if (!prev || OUTCOME_RANK[t.outcome] > OUTCOME_RANK[prev.outcome]) map[t.ticker] = t
+  // ticker → the user's actual trade on that market, folded from real entry
+  // orders. Settled outcomes win over open/resting when a market has several.
+  const tradeByTicker = useMemo(() => {
+    const map: Record<string, MarketTrade> = {}
+    for (const o of orders) {
+      if (o.order_role !== 'entry') continue
+      const state = entryState(o)
+      if (!state) continue
+      const prev = map[o.market_ticker]
+      if (!prev || STATE_RANK[state] > STATE_RANK[prev.state]) {
+        map[o.market_ticker] = {
+          ticker: o.market_ticker,
+          state,
+          side: o.side,
+          net_profit_cents: o.net_profit_cents,
         }
       }
-      setOutcomes(map)
-    })
-    return () => { cancelled = true }
-  }, [rulesKey]) // eslint-disable-line react-hooks/exhaustive-deps
+    }
+    return map
+  }, [orders])
 
   // Fetch all distinct tickers from the DB for the historical panel
   const filteredAllTickers = useMemo(() => {
@@ -238,7 +189,7 @@ export default function Snapshots({ snapshots, orders = [], openOrders = [], pro
                 <th>No Ask</th>
                 <th className="hide-sm">Volume</th>
                 <th className="hide-sm">OI</th>
-                <th>Strategy</th>
+                <th>My Trade</th>
                 <th className="hide-sm">Scanned</th>
               </tr>
             </thead>
@@ -264,7 +215,7 @@ export default function Snapshots({ snapshots, orders = [], openOrders = [], pro
                   <td className="cell-dim">{fmtCents(snapshot.no_ask)}</td>
                   <td className="cell-dim hide-sm">{snapshot.volume != null ? snapshot.volume.toLocaleString() : '—'}</td>
                   <td className="cell-dim hide-sm">{snapshot.open_interest != null ? snapshot.open_interest.toLocaleString() : '—'}</td>
-                  <td><StrategyOutcome row={outcomes[snapshot.ticker]} /></td>
+                  <td><TradeStatus trade={tradeByTicker[snapshot.ticker]} /></td>
                   <td className="cell-dim hide-sm">{fmtTime(snapshot.scanned_at)}</td>
                 </tr>
               ))}
@@ -275,7 +226,7 @@ export default function Snapshots({ snapshots, orders = [], openOrders = [], pro
 
       {selectedTicker && (
         <section className="chart-panel">
-          <PriceActionChart ticker={selectedTicker} globalSnapshots={snapshots} openOrders={openOrders} historyOrders={[...orders, ...simMarkers(outcomes[selectedTicker])]} />
+          <PriceActionChart ticker={selectedTicker} globalSnapshots={snapshots} openOrders={openOrders} historyOrders={orders} />
         </section>
       )}
 
@@ -295,7 +246,7 @@ export default function Snapshots({ snapshots, orders = [], openOrders = [], pro
                 <th>No Ask</th>
                 <th className="hide-sm">Volume</th>
                 <th className="hide-sm">OI</th>
-                <th>Strategy</th>
+                <th>My Trade</th>
                 <th className="hide-sm">Scanned</th>
               </tr>
             </thead>
@@ -323,7 +274,7 @@ export default function Snapshots({ snapshots, orders = [], openOrders = [], pro
                     <td className="cell-dim">{fmtCents(t.no_ask)}</td>
                     <td className="cell-dim hide-sm">{t.volume != null ? t.volume.toLocaleString() : '—'}</td>
                     <td className="cell-dim hide-sm">{t.open_interest != null ? t.open_interest.toLocaleString() : '—'}</td>
-                    <td><StrategyOutcome row={outcomes[t.ticker]} /></td>
+                    <td><TradeStatus trade={tradeByTicker[t.ticker]} /></td>
                     <td className="cell-dim hide-sm">{fmtTime(t.scanned_at)}</td>
                   </tr>
                   {expandedTicker === t.ticker && (
@@ -341,7 +292,7 @@ export default function Snapshots({ snapshots, orders = [], openOrders = [], pro
                               ticker={t.ticker}
                               globalSnapshots={snapshots}
                               openOrders={openOrders}
-                              historyOrders={[...orders, ...simMarkers(outcomes[t.ticker])]}
+                              historyOrders={orders}
                             />
                             <div className="snapshot-history-scroll">
                             <table className="snapshot-history-table">
