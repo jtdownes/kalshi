@@ -114,7 +114,10 @@ export default function Dashboard({ orders, trades, openOrders, positions, snaps
     for (const snapshot of liveSnapshots) {
       if (!latestByTicker.has(snapshot.ticker)) latestByTicker.set(snapshot.ticker, snapshot)
     }
-    return Array.from(latestByTicker.values())
+    // Sort by ticker so rows hold a stable position. The snapshot feed arrives in
+    // scan order, which reshuffles whenever markets scan out of sync — sorting by
+    // market name keeps the table from jumping around tick to tick.
+    return Array.from(latestByTicker.values()).sort((a, b) => a.ticker.localeCompare(b.ticker))
   }, [liveSnapshots])
 
   // Keep the chart on the market the user is watching, but follow contract
