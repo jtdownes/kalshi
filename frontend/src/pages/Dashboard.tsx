@@ -107,9 +107,11 @@ export default function Dashboard({ orders, trades, openOrders, positions, snaps
           return sum
         }, 0)
         const pnlColor = (v: number) => v > 0 ? '#00d4a0' : v < 0 ? '#ff4444' : undefined
-        const cards: { label: string; value: string; color?: string }[] = [
+        const activeStrategyCount = profiles.filter(p => p.is_active).length
+        const cards: { label: string; value: string; color?: string; onClick?: () => void }[] = [
           { label: 'Portfolio Balance', value: balance != null ? `$${((balance / 100) + totalExposure + totalUnrealizedPnL).toFixed(2)}` : '—' },
           { label: 'Cash Balance',      value: balance != null ? `$${(balance / 100).toFixed(2)}` : '—' },
+          { label: 'Active Strategies', value: String(activeStrategyCount), onClick: () => navigate('/strategies') },
           { label: 'Open Positions',    value: posArr.length > 0 ? `$${totalExposure.toFixed(2)}` : '—' },
           { label: 'Unrealized P&L',    value: posArr.length > 0 ? `${totalUnrealizedPnL >= 0 ? '+' : ''}$${totalUnrealizedPnL.toFixed(2)}` : '—', color: pnlColor(totalUnrealizedPnL) },
           { label: 'Realized P&L',      value: posArr.length > 0 ? `${totalRealizedPnL >= 0 ? '+' : ''}$${totalRealizedPnL.toFixed(2)}` : '—', color: pnlColor(totalRealizedPnL) },
@@ -117,7 +119,13 @@ export default function Dashboard({ orders, trades, openOrders, positions, snaps
         return (
           <div className="stats-row">
             {cards.map(c => (
-              <div key={c.label} className="stat-card">
+              <div
+                key={c.label}
+                className="stat-card"
+                onClick={c.onClick}
+                style={c.onClick ? { cursor: 'pointer' } : undefined}
+                title={c.onClick ? 'Manage strategies' : undefined}
+              >
                 <div className="stat-label">{c.label}</div>
                 <div className="stat-value" style={c.color ? { color: c.color } : undefined}>{c.value}</div>
               </div>
@@ -141,28 +149,6 @@ export default function Dashboard({ orders, trades, openOrders, positions, snaps
         </div>
         {!collapsedSections.calendar && <PnLCalendar />}
       </div>
-
-      {/* Active Strategy Widget */}
-      {settings && (
-        <section className="strategy-active-panel">
-          <div className="strategy-active-main">
-            <div className="stat-label">Active Strategy</div>
-            <h2>{activeProfile?.name || settings.name || 'Current settings'}</h2>
-            <p>
-              This is the live bot configuration. Head to Strategies to create, edit, or switch strategies.
-            </p>
-            <div className="strategy-primary-actions">
-              <button className="btn btn-active" onClick={() => navigate('/strategies')}>
-                Manage Strategies →
-              </button>
-            </div>
-          </div>
-          <div className="strategy-metrics">
-            <div><span>Max Bid</span><strong>{settings.max_entry_cents}¢</strong></div>
-            <div><span>Mode</span><strong>{settings.proactive_mode ? 'Proactive' : 'Reactive'}</strong></div>
-          </div>
-        </section>
-      )}
 
       {/* Live Markets */}
       <div className="table-panel">
