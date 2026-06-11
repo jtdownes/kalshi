@@ -59,7 +59,13 @@ export default function RuleBacktest({ rule, series = 'KXBTC15M', marketLimit, g
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [showTrades, setShowTrades] = useState(false)
+  // Bumped to force a re-run of the backtest on demand (manual Run/Retry).
+  const [runNonce, setRunNonce] = useState(0)
+  // When off, edits to the rule no longer auto-simulate — only the Run button
+  // fires a backtest. Lets you adjust many params before spending a request.
+  const [auto, setAuto] = useState(true)
   const reqId = useRef(0)
+  const prevNonce = useRef(runNonce)
 
   const ruleId = rule.id
   // Only THIS rule's shape drives the fetch — editing a sibling rule leaves
@@ -75,7 +81,15 @@ export default function RuleBacktest({ rule, series = 'KXBTC15M', marketLimit, g
       onResult?.(ruleId, null)
       return
     }
+    // Was this effect fire caused by a manual Run (nonce bump) vs. a rule edit?
+    const manual = runNonce !== prevNonce.current
+    prevNonce.current = runNonce
+    // With auto off, ignore edit-driven fires and wait for an explicit Run.
+    if (!auto && !manual) return
     const id = ++reqId.current
+    // A manual trigger should fire immediately; the debounce only matters for
+    // the auto-runs that follow keystrokes in the rule editor.
+    const delay = manual ? 0 : 450
     const timer = setTimeout(async () => {
       setLoading(true)
       setError(null)
@@ -85,7 +99,7 @@ export default function RuleBacktest({ rule, series = 'KXBTC15M', marketLimit, g
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ rules: [rule], series, market_limit: marketLimit }),
         })
-        if (!resp.ok) throw new Error('Backtest failed')
+        if (!resp.ok) throw new Error(`Backtest failed (${resp.status})`)
         const data: Result = await resp.json()
         if (id !== reqId.current) return
         setResult(data)
@@ -97,10 +111,10 @@ export default function RuleBacktest({ rule, series = 'KXBTC15M', marketLimit, g
       } finally {
         if (id === reqId.current) setLoading(false)
       }
-    }, 450)
+    }, delay)
     return () => clearTimeout(timer)
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [ruleKey, series, marketLimit, disabled])
+  }, [ruleKey, series, marketLimit, disabled, runNonce, auto])
 
   // Drop this rule's contribution to the total when the card unmounts (deleted).
   useEffect(() => () => onResult?.(ruleId, null), [ruleId]) // eslint-disable-line react-hooks/exhaustive-deps
@@ -126,6 +140,34 @@ export default function RuleBacktest({ rule, series = 'KXBTC15M', marketLimit, g
             {s!.trade_count.toLocaleString()} trades
           </span>
         )}
+        <button
+          type="button"
+          className="btn"
+          onClick={() => setRunNonce(n => n + 1)}
+          disabled={loading}
+          style={{ fontSize: 10, padding: '2px 8px', marginLeft: 'auto' }}
+          title="Re-run this rule's backtest now"
+        >
+          {loading ? 'Running…' : error ? 'Retry' : 'Run'}
+        </button>
+        <button
+          type="button"
+          className="btn"
+          onClick={() => setAuto(v => !v)}
+          aria-pressed={auto}
+          style={{
+            fontSize: 10,
+            padding: '2px 8px',
+            opacity: auto ? 1 : 0.55,
+            borderColor: auto ? '#00d4a0' : undefined,
+            color: auto ? '#00d4a0' : undefined,
+          }}
+          title={auto
+            ? 'Auto-simulate on edit is ON — click to pause and adjust params freely'
+            : 'Auto-simulate is OFF — edits won’t run until you press Run'}
+        >
+          Auto {auto ? 'On' : 'Off'}
+        </button>
       </div>
 
       {error && <div style={{ fontSize: 12, color: '#ff4444' }}>{error}</div>}
