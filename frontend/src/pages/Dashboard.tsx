@@ -62,26 +62,48 @@ export default function Dashboard({ orders, trades, openOrders, positions, snaps
   const [selectedTrade, setSelectedTrade] = useState<string | null>(null)
 
   const activeProfile = profiles.find(p => p.id === settings?.active_profile_id)
-  // The dashboard tracks the active strategy's market(s) only. Other scanned
-  // series (e.g. weather, which polls on its own slower cadence) would otherwise
-  // churn the live table and flip the auto-selected chart on every weather tick.
-  const trackedKey = (settings?.btc_series_tickers ?? []).join(',')
+  // The dashboard tracks the market(s) of every active strategy — the bot scans
+  // all is_active profiles, so the live table should reflect the union of their
+  // series, not just the single `active_profile_id`. Other scanned series (e.g.
+  // weather, which polls on its own slower cadence) are excluded so they don't
+  // churn the live table or flip the auto-selected chart on every weather tick.
+  const trackedKey = useMemo(() => {
+    const series = new Set<string>()
+    for (const p of profiles) {
+      if (!p.is_active) continue
+      for (const t of (p.btc_series_tickers ?? '').split(',').map(s => s.trim()).filter(Boolean)) {
+        series.add(t)
+      }
+    }
+    // Fall back to the legacy single-profile setting if no active profile carries series.
+    if (series.size === 0) for (const t of (settings?.btc_series_tickers ?? [])) series.add(t)
+    return Array.from(series).sort().join(',')
+  }, [profiles, settings?.btc_series_tickers])
   const dashSnapshots = useMemo(() => {
     const series = trackedKey ? trackedKey.split(',') : []
     if (series.length === 0) return snapshots
     return snapshots.filter(s => series.some(ser => s.ticker.startsWith(ser + '-')))
   }, [snapshots, trackedKey])
 
+  // Drop markets that have already expired (ttc <= 0). A KXBTC/KXETH 15-minute
+  // contract that just closed lingers in the snapshot feed for a tick showing
+  // "0s", which otherwise sits in the live table and flickers the auto-selected
+  // chart between the dead market and the freshly-opened one.
+  const liveSnapshots = useMemo(
+    () => dashSnapshots.filter(s => s.time_to_close_secs == null || s.time_to_close_secs > 0),
+    [dashSnapshots],
+  )
+
   const marketSnapshots = useMemo(() => {
     const latestByTicker = new Map<string, Snapshot>()
-    for (const snapshot of dashSnapshots) {
+    for (const snapshot of liveSnapshots) {
       if (!latestByTicker.has(snapshot.ticker)) latestByTicker.set(snapshot.ticker, snapshot)
     }
     return Array.from(latestByTicker.values())
-  }, [dashSnapshots])
+  }, [liveSnapshots])
 
   // Auto-select the most-recently-scanned tracked ticker unless the user pinned one
-  const mostRecentTicker = dashSnapshots.length > 0 ? dashSnapshots[0].ticker : null
+  const mostRecentTicker = liveSnapshots.length > 0 ? liveSnapshots[0].ticker : null
   useEffect(() => {
     if (!pinnedTicker && mostRecentTicker) setSelectedTicker(mostRecentTicker)
   }, [mostRecentTicker, pinnedTicker])
