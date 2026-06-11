@@ -168,6 +168,32 @@ def get_latest_snapshots_for_series(series_tickers: list[str], max_age_seconds: 
     return [dict(r) for r in rows]
 
 
+def recent_snapshot_health(ticker: str, window_secs: int) -> dict:
+    """Coverage health for a ticker over the last `window_secs`, for the live
+    bad-data guard: {count, span_secs, max_gap}. span_secs is the time between
+    the oldest and newest recent snapshot; max_gap is the largest interval
+    between consecutive ones. After an outage span is small (few fresh rows) and
+    a resumed feed shows a large max_gap — both let the bot hold off trading."""
+    query = """
+        WITH recent AS (
+            SELECT scanned_at::timestamp AS ts
+            FROM market_snapshots
+            WHERE ticker = %s
+              AND scanned_at::timestamp >= ((CURRENT_TIMESTAMP AT TIME ZONE 'UTC') - (%s || ' seconds')::interval)
+        ),
+        g AS (SELECT ts, EXTRACT(EPOCH FROM (ts - lag(ts) OVER (ORDER BY ts))) AS gap FROM recent)
+        SELECT count(*) AS count,
+               COALESCE(EXTRACT(EPOCH FROM (max(ts) - min(ts))), 0)::int AS span_secs,
+               COALESCE(max(gap), 0)::int AS max_gap
+        FROM g
+    """
+    with _lock, _conn() as conn:
+        cur = conn.cursor(cursor_factory=psycopg2.extras.DictCursor)
+        cur.execute(query, [ticker, str(window_secs)])
+        row = cur.fetchone()
+    return dict(row) if row else {"count": 0, "span_secs": 0, "max_gap": 0}
+
+
 def _window_resolution(cur, series_prefix: str, window_close: str):
     """
     Resolve a single window to 1 (YES) or 0 (NO) using the final snapshot's price.

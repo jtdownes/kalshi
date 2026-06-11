@@ -63,6 +63,20 @@ MIN_SECONDS_TO_CLOSE = int(os.environ.get("MIN_SECONDS_TO_CLOSE", "60"))
 
 ORDER_CHECK_INTERVAL_SECONDS = int(os.environ.get("ORDER_CHECK_INTERVAL_SECONDS", "15"))
 
+# ── Live bad-data guard (don't trade on broken/discontinuous data) ────────────
+# Before the bot acts on a market it confirms the data is healthy, so a power
+# outage / crash / feed stall can't make it resume and immediately fire a trade
+# on stale or placeholder data. A market is skipped this tick if:
+#   - no real two-sided book yet (yes_ask/no_ask <= 0 — the 0/100 placeholder), or
+#   - zero volume (nothing has traded — not a real market yet), or
+#   - we don't have continuous recent coverage: snapshots must span at least
+#     LIVE_MIN_SPAN_SECS within the last LIVE_DATA_WINDOW_SECS with no single gap
+#     over LIVE_MAX_GAP_SECS. After an outage this holds off trading until ~30s of
+#     continuous data has been rebuilt; in steady state it never triggers.
+LIVE_DATA_WINDOW_SECS = int(os.environ.get("LIVE_DATA_WINDOW_SECS", "120"))
+LIVE_MIN_SPAN_SECS    = int(os.environ.get("LIVE_MIN_SPAN_SECS", "30"))
+LIVE_MAX_GAP_SECS     = int(os.environ.get("LIVE_MAX_GAP_SECS", "20"))
+
 def get_all_settings():
     """
     Returns a merged dictionary of environment defaults and database settings.

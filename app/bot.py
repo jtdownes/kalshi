@@ -552,6 +552,37 @@ def _handle_filled_order(client: KalshiClient, order: dict, filled_at: str = Non
             )
 
 
+def _live_data_ok(market: dict) -> bool:
+    """Bad-data guard before the bot acts on a market. Returns False (skip this
+    market this tick) when the data is broken or discontinuous — so a power
+    outage / crash / feed stall can't make the bot resume and immediately trade
+    on stale or placeholder data. See config.LIVE_* for the thresholds."""
+    ticker = market.get("ticker", "")
+    ya, na = market.get("yes_ask"), market.get("no_ask")
+    vol = market.get("volume")
+
+    # No real two-sided book — the 0/100 placeholder before the market opens.
+    if not ya or not na or ya <= 0 or na <= 0:
+        log.warning("skip %s: no real quotes (yes_ask=%s no_ask=%s)", ticker, ya, na)
+        return False
+    # Nothing has traded yet — not a real market.
+    if vol is not None and vol <= 0:
+        log.warning("skip %s: zero volume (no real market yet)", ticker)
+        return False
+    # Continuous recent coverage: don't trade until we've rebuilt enough history
+    # after any outage/gap.
+    try:
+        h = db.recent_snapshot_health(ticker, config.LIVE_DATA_WINDOW_SECS)
+    except Exception as e:
+        log.warning("skip %s: snapshot health check failed: %s", ticker, e)
+        return False
+    if h["span_secs"] < config.LIVE_MIN_SPAN_SECS or h["max_gap"] > config.LIVE_MAX_GAP_SECS:
+        log.warning("skip %s: data not continuous (span=%ss max_gap=%ss in last %ss)",
+                    ticker, h["span_secs"], h["max_gap"], config.LIVE_DATA_WINDOW_SECS)
+        return False
+    return True
+
+
 def _scan(client: KalshiClient, settings: dict):
     now_ts    = int(time.time())
     max_close = now_ts + config.LOOK_AHEAD_SECONDS
@@ -571,6 +602,12 @@ def _scan(client: KalshiClient, settings: dict):
 
         time_to_close = seconds_until(close_ts)
         if time_to_close < min_secs:
+            continue
+
+        # Bad-data guard: never act on a market whose data is broken or
+        # discontinuous (placeholder quotes, zero volume, or a recent gap from an
+        # outage). Keeps a restart from firing a trade on stale data.
+        if not _live_data_ok(market):
             continue
 
         yes_ask = market.get("yes_ask")
