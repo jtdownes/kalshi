@@ -97,20 +97,32 @@ def snapshots():
 def snapshot_tickers():
     """One summary row per distinct ticker, ordered by most recent scan.
 
-    `result` is the official settlement (yes/no) when the market has closed and
-    been backfilled, else null for markets still open."""
+    `result` is the market's yes/no outcome: the official settlement when it's
+    been backfilled, otherwise derived from the final quote once the market has
+    closed (last bid/ask >= 50 ⇒ yes), the same way the backtester settles.
+    It's null only while a market is still open. The settlements table covers a
+    historical window, so most recent markets rely on the derived value."""
     with cursor_conn() as c:
         c.execute("""
             SELECT latest.ticker, latest.title, latest.strike_str,
                    latest.yes_ask, latest.yes_bid, latest.no_ask,
                    latest.volume, latest.open_interest, latest.time_to_close_secs,
-                   latest.scanned_at, s.result
+                   latest.scanned_at,
+                   COALESCE(
+                       s.result,
+                       CASE
+                           WHEN latest.close_time ~ '^[0-9]+$'
+                                AND latest.close_time::bigint < EXTRACT(EPOCH FROM now())
+                           THEN CASE WHEN COALESCE(latest.yes_bid, latest.yes_ask) >= 50
+                                     THEN 'yes' ELSE 'no' END
+                       END
+                   ) AS result
             FROM (
                 SELECT DISTINCT ON (ticker)
                        ticker, title, strike_str,
                        yes_ask, yes_bid, no_ask,
                        volume, open_interest, time_to_close_secs,
-                       scanned_at
+                       scanned_at, close_time
                 FROM market_snapshots
                 ORDER BY ticker, id DESC
             ) latest
