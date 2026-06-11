@@ -102,11 +102,15 @@ export default function Dashboard({ orders, trades, openOrders, positions, snaps
     return Array.from(latestByTicker.values())
   }, [liveSnapshots])
 
-  // Auto-select the most-recently-scanned tracked ticker unless the user pinned one
+  // Seed the chart with the most-recently-scanned tracked ticker, but only once
+  // (when nothing is selected yet). With multiple active markets the "most recent"
+  // ticker alternates every scan tick, so re-selecting on each change would flip
+  // the chart back and forth. After the initial seed, selection only changes when
+  // the user clicks a row.
   const mostRecentTicker = liveSnapshots.length > 0 ? liveSnapshots[0].ticker : null
   useEffect(() => {
-    if (!pinnedTicker && mostRecentTicker) setSelectedTicker(mostRecentTicker)
-  }, [mostRecentTicker, pinnedTicker])
+    if (!pinnedTicker && !selectedTicker && mostRecentTicker) setSelectedTicker(mostRecentTicker)
+  }, [mostRecentTicker, pinnedTicker, selectedTicker])
 
   function toggleSection(section: CollapsibleSection) {
     setCollapsedSections(prev => ({ ...prev, [section]: !prev[section] }))
