@@ -52,14 +52,23 @@ _BT_CRAZE_FIELDS = {"btc_volatility", "btc_range", "btc_drift", "strike_crossing
 #     so the simulator reads the frozen final bid as a bogus win/loss. Pinning at
 #     an extreme (<=_BT_FROZEN_LO or >=_BT_FROZEN_HI) is a genuinely-decided
 #     market and left alone.
-# Healthy 15-min markets have ~280+ snapshots, sub-30s gaps, and hold any single
-# quote ~12% of the time, so these thresholds only catch the broken ones. The
-# gap/count cutoffs are overridable per-request (max_gap_secs / min_snaps).
-_BT_MAX_GAP_SECS    = 120
-_BT_MIN_SNAPS       = 60
-_BT_MAX_FROZEN_FRAC = 0.5
-_BT_FROZEN_LO       = 10
-_BT_FROZEN_HI       = 90
+#   - it has a long opening dead-zone: yes_ask sits at 0 (the 0/100 placeholder
+#     stored before the order book exists — no real two-sided market, volume 0)
+#     for more than _BT_OPEN_DEADZONE_SECS at the open. Normal markets get real
+#     quotes within ~1-3s; a multi-minute dead-zone is the obvious "0/100 for the
+#     first few minutes" error. This is keyed on the OPENING stretch specifically
+#     so a genuine loser (real quotes throughout, settles to 0 at the end) is not
+#     touched.
+# Healthy 15-min markets have ~280+ snapshots, sub-30s gaps, hold any single
+# quote ~12% of the time, and open within seconds, so these thresholds only catch
+# the broken ones. The gap/count cutoffs are overridable per-request
+# (max_gap_secs / min_snaps).
+_BT_MAX_GAP_SECS       = 120
+_BT_MIN_SNAPS          = 60
+_BT_MAX_FROZEN_FRAC    = 0.5
+_BT_FROZEN_LO          = 10
+_BT_FROZEN_HI          = 90
+_BT_OPEN_DEADZONE_SECS = 30
 
 
 def _bt_market_quality(cur, series_like, max_gap_secs, min_snaps, tickers=None):
@@ -73,7 +82,7 @@ def _bt_market_quality(cur, series_like, max_gap_secs, min_snaps, tickers=None):
     # largest run per ticker is its longest stretch of an unchanged quote.
     cur.execute(f"""
         WITH lagged AS (
-            SELECT m.ticker, m.scanned_at, m.yes_bid,
+            SELECT m.ticker, m.scanned_at, m.yes_bid, m.yes_ask, m.time_to_close_secs AS ttc,
                    EXTRACT(EPOCH FROM (m.scanned_at::timestamp - lag(m.scanned_at::timestamp)
                        OVER (PARTITION BY m.ticker ORDER BY m.scanned_at::timestamp))) AS gap,
                    lag(m.yes_bid) OVER (PARTITION BY m.ticker ORDER BY m.scanned_at::timestamp) AS prev_bid
@@ -81,7 +90,7 @@ def _bt_market_quality(cur, series_like, max_gap_secs, min_snaps, tickers=None):
             WHERE {where}
         ),
         base AS (
-            SELECT ticker, scanned_at, yes_bid, gap,
+            SELECT ticker, scanned_at, yes_bid, yes_ask, ttc, gap,
                    sum(CASE WHEN yes_bid IS DISTINCT FROM prev_bid THEN 1 ELSE 0 END)
                        OVER (PARTITION BY ticker ORDER BY scanned_at::timestamp
                              ROWS UNBOUNDED PRECEDING) AS grp
@@ -95,9 +104,11 @@ def _bt_market_quality(cur, series_like, max_gap_secs, min_snaps, tickers=None):
             FROM runs ORDER BY ticker, run_len DESC
         ),
         agg AS (
-            SELECT ticker, count(*) AS snaps, COALESCE(max(gap), 0)::int AS max_gap FROM base GROUP BY ticker
+            SELECT ticker, count(*) AS snaps, COALESCE(max(gap), 0)::int AS max_gap,
+                   max(ttc) AS open_ttc, max(ttc) FILTER (WHERE yes_ask > 0) AS first_real_ttc
+            FROM base GROUP BY ticker
         )
-        SELECT a.ticker, a.snaps, a.max_gap, tr.max_run, tr.frozen_val
+        SELECT a.ticker, a.snaps, a.max_gap, a.open_ttc, a.first_real_ttc, tr.max_run, tr.frozen_val
         FROM agg a JOIN toprun tr ON tr.ticker = a.ticker
     """, params)
     out = {}
@@ -105,16 +116,25 @@ def _bt_market_quality(cur, series_like, max_gap_secs, min_snaps, tickers=None):
         snaps, max_gap = r["snaps"], r["max_gap"]
         frozen_frac = (r["max_run"] / snaps) if snaps else 0.0
         fval = r["frozen_val"]
+        # Opening dead-zone: seconds at the open with no real yes_ask (0/100
+        # placeholder). first_real_ttc is None if the market never had a quote.
+        if r["first_real_ttc"] is None:
+            open_dead = r["open_ttc"] or 0
+        else:
+            open_dead = (r["open_ttc"] or 0) - r["first_real_ttc"]
         reason = None
         if snaps < min_snaps:
             reason = f"only {snaps} snapshots"
         elif max_gap > max_gap_secs:
             reason = f"{max_gap}s data gap"
+        elif open_dead > _BT_OPEN_DEADZONE_SECS:
+            reason = f"no quotes for first {open_dead}s (0/100 at open)"
         elif (frozen_frac >= _BT_MAX_FROZEN_FRAC and fval is not None
               and _BT_FROZEN_LO <= float(fval) <= _BT_FROZEN_HI):
             reason = f"quote frozen {round(frozen_frac * 100)}% of life at {round(float(fval))}¢"
         out[r["ticker"]] = {"snaps": snaps, "max_gap": max_gap,
                             "frozen_frac": round(frozen_frac, 3),
+                            "open_dead_secs": open_dead,
                             "bad": reason is not None, "reason": reason}
     return out
 
