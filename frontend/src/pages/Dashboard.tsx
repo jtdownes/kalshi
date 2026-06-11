@@ -58,7 +58,6 @@ export default function Dashboard({ orders, trades, openOrders, positions, snaps
   })
 
   const [selectedTicker, setSelectedTicker] = useState<string | null>(null)
-  const [pinnedTicker, setPinnedTicker] = useState<string | null>(null)
   const [selectedTrade, setSelectedTrade] = useState<string | null>(null)
 
   const activeProfile = profiles.find(p => p.id === settings?.active_profile_id)
@@ -102,15 +101,22 @@ export default function Dashboard({ orders, trades, openOrders, positions, snaps
     return Array.from(latestByTicker.values())
   }, [liveSnapshots])
 
-  // Seed the chart with the most-recently-scanned tracked ticker, but only once
-  // (when nothing is selected yet). With multiple active markets the "most recent"
-  // ticker alternates every scan tick, so re-selecting on each change would flip
-  // the chart back and forth. After the initial seed, selection only changes when
-  // the user clicks a row.
-  const mostRecentTicker = liveSnapshots.length > 0 ? liveSnapshots[0].ticker : null
+  // Keep the chart on the market the user is watching, but follow contract
+  // rollovers. A ticker's series is the part before the first '-'
+  // (e.g. KXBTC15M-26JUN102030-30 -> KXBTC15M). While the selected contract is
+  // still live we leave it alone — this is what stops the chart flipping between
+  // BTC and ETH every scan tick. Once it expires (drops out of liveSnapshots) we
+  // jump to the newest live contract of the *same* series, so the chart never
+  // gets stuck on an expired market and never hops to the other asset on its own.
   useEffect(() => {
-    if (!pinnedTicker && !selectedTicker && mostRecentTicker) setSelectedTicker(mostRecentTicker)
-  }, [mostRecentTicker, pinnedTicker, selectedTicker])
+    if (liveSnapshots.length === 0) return
+    if (selectedTicker && liveSnapshots.some(s => s.ticker === selectedTicker)) return
+    const series = selectedTicker ? selectedTicker.split('-')[0] : null
+    const sameSeries = series
+      ? liveSnapshots.find(s => s.ticker.split('-')[0] === series)
+      : null
+    setSelectedTicker((sameSeries ?? liveSnapshots[0]).ticker)
+  }, [liveSnapshots, selectedTicker])
 
   function toggleSection(section: CollapsibleSection) {
     setCollapsedSections(prev => ({ ...prev, [section]: !prev[section] }))
@@ -204,7 +210,7 @@ export default function Dashboard({ orders, trades, openOrders, positions, snaps
               ) : marketSnapshots.map(s => (
                 <tr
                   key={s.id}
-                  onClick={() => { setPinnedTicker(s.ticker); setSelectedTicker(s.ticker) }}
+                  onClick={() => setSelectedTicker(s.ticker)}
                   style={{ cursor: 'pointer', background: selectedTicker === s.ticker ? 'rgba(0,212,160,0.07)' : undefined }}
                 >
                   <td className="cell-ticker" style={{ color: selectedTicker === s.ticker ? '#00d4a0' : undefined }}>
