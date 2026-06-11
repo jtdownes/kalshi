@@ -112,22 +112,6 @@ export default function StrategyBacktest({ rules, series = 'KXBTC15M', globalSna
         )}
       </div>
 
-      <div style={{
-        fontSize: 11,
-        color: '#64748b',
-        lineHeight: 1.55,
-        background: 'rgba(255,255,255,0.02)',
-        border: '1px solid rgba(255,255,255,0.06)',
-        borderRadius: 8,
-        padding: '8px 12px',
-        marginBottom: 10,
-      }}>
-        Replays these rules against {marketLimit ? `the last ${marketLimit} markets` : 'every 1-second snapshot we have recorded'}. An entry counts as filled the first time
-        a market's ask reaches your price while the conditions hold. Limit-sell exits fill when the bid later reaches your
-        sell price; positions that never sell before the contract closes are counted as a <strong style={{ color: '#94a3b8' }}>full loss</strong> (conservative).
-        {marketLimit ? ' Markets no rule matched are listed as Skipped.' : ''}
-      </div>
-
       {error && (
         <div style={{ fontSize: 12, color: '#ff4444', padding: '8px 0' }}>{error}</div>
       )}
