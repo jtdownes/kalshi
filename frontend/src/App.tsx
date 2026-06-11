@@ -196,15 +196,15 @@ export default function App() {
         />
         <Route
           path="/markets"
-          element={<Snapshots snapshots={snapshots} orders={orders} openOrders={orders.filter(o => o.status === 'resting')} />}
+          element={<Snapshots snapshots={snapshots} orders={orders} openOrders={orders.filter(o => o.status === 'resting')} profiles={profiles} />}
         />
         <Route
           path="/markets/climate"
-          element={<MarketsClimate snapshots={snapshots} orders={orders} openOrders={orders.filter(o => o.status === 'resting')} />}
+          element={<MarketsClimate snapshots={snapshots} orders={orders} openOrders={orders.filter(o => o.status === 'resting')} profiles={profiles} />}
         />
         <Route
           path="/markets/crypto"
-          element={<MarketsCrypto snapshots={snapshots} orders={orders} openOrders={orders.filter(o => o.status === 'resting')} />}
+          element={<MarketsCrypto snapshots={snapshots} orders={orders} openOrders={orders.filter(o => o.status === 'resting')} profiles={profiles} />}
         />
       </Routes>
 

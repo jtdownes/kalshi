@@ -1,9 +1,57 @@
 import { useEffect, useMemo, useState } from 'react'
 import { NavLink } from 'react-router-dom'
-import type { Snapshot, Order } from '../types'
+import type { Snapshot, Order, Profile, StrategyRule } from '../types'
 import { fmtCents, fmtDur, fmtTime, fmtUnixTime, kalshiMarketUrl, cryptoPriceForTicker } from '../utils'
 import PriceActionChart from '../components/PriceActionChart'
 import ScannedMarkets from '../components/ScannedMarkets'
+
+// Series the rule backtester can replay — used to show, per market, what the
+// active strategy would have done (Won / Lost / Skipped / Bad data).
+const BACKTESTABLE_SERIES = ['KXBTC15M', 'KXETH15M'] as const
+
+type Outcome = 'sold' | 'expired' | 'won' | 'lost' | 'stopped' | 'skipped' | 'bad_data'
+
+interface SimRow {
+  ticker: string
+  outcome: Outcome
+  pnl_cents: number | null
+  reason?: string | null
+}
+
+const OUTCOME_COLOR: Record<Outcome, string> = {
+  sold: '#00d4a0', won: '#00d4a0',
+  expired: '#ff4444', lost: '#ff4444',
+  stopped: '#fbbf24', skipped: '#64748b', bad_data: '#b45309',
+}
+const OUTCOME_LABEL: Record<Outcome, string> = {
+  sold: 'Won', won: 'Won', expired: 'Lost', lost: 'Lost',
+  stopped: 'Stopped', skipped: 'Skipped', bad_data: 'Bad data',
+}
+// When several rules touch the same market, show the most meaningful result:
+// a real fill beats a bad-data exclusion, which beats a plain skip.
+const OUTCOME_RANK: Record<Outcome, number> = {
+  won: 3, sold: 3, lost: 3, expired: 3, stopped: 3, bad_data: 2, skipped: 1,
+}
+
+function seriesOf(ticker: string): string {
+  return ticker.split('-')[0]
+}
+
+function StrategyOutcome({ row }: { row: SimRow | undefined }) {
+  if (!row) return <span className="cell-dim">—</span>
+  return (
+    <span
+      title={row.outcome === 'bad_data' && row.reason ? row.reason
+        : row.pnl_cents != null ? `${row.pnl_cents > 0 ? '+' : ''}${row.pnl_cents}¢` : undefined}
+      style={{
+        fontSize: 11, fontWeight: 600, padding: '2px 7px', borderRadius: 10,
+        background: OUTCOME_COLOR[row.outcome] + '22', color: OUTCOME_COLOR[row.outcome],
+      }}
+    >
+      {OUTCOME_LABEL[row.outcome]}
+    </span>
+  )
+}
 
 
 interface TickerSummary {
@@ -23,16 +71,60 @@ interface Props {
   snapshots: Snapshot[]
   orders?: Order[]
   openOrders?: Order[]
+  profiles?: Profile[]
   filterFn?: (ticker: string, title: string) => boolean
 }
 
-export default function Snapshots({ snapshots, orders = [], openOrders = [], filterFn }: Props) {
+export default function Snapshots({ snapshots, orders = [], openOrders = [], profiles = [], filterFn }: Props) {
   const [allTickers, setAllTickers] = useState<TickerSummary[]>([])
   const [selectedTicker, setSelectedTicker] = useState<string | null>(null)
   const [expandedTicker, setExpandedTicker] = useState<string | null>(null)
   const [expandedHistory, setExpandedHistory] = useState<Snapshot[]>([])
   const [expandedLoading, setExpandedLoading] = useState(false)
   const [expandedError, setExpandedError] = useState<string | null>(null)
+  // ticker → what the active strategy would have done on that market.
+  const [outcomes, setOutcomes] = useState<Record<string, SimRow>>({})
+
+  // The active strategy's rules drive the per-market outcome column. Combine
+  // every active profile's rules so a market shows a trade if any of them fired.
+  const activeRules = useMemo<StrategyRule[]>(() => {
+    const active = profiles.filter(p => p.is_active && p.rules?.length)
+    return active.flatMap(p => p.rules ?? [])
+  }, [profiles])
+  const rulesKey = useMemo(() => JSON.stringify(activeRules), [activeRules])
+
+  // Backtest the active rules over each replayable series and fold the result
+  // into a ticker→outcome map. The backtester already emits skipped / bad_data
+  // rows for markets that didn't trade, so the whole feed gets a status.
+  useEffect(() => {
+    if (!activeRules.length) {
+      setOutcomes({})
+      return
+    }
+    let cancelled = false
+    Promise.all(
+      BACKTESTABLE_SERIES.map(series =>
+        fetch('/api/backtest/strategy', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ rules: activeRules, series, market_limit: 1000 }),
+        })
+          .then(r => (r.ok ? r.json() : null))
+          .catch(() => null),
+      ),
+    ).then(results => {
+      if (cancelled) return
+      const map: Record<string, SimRow> = {}
+      for (const res of results) {
+        for (const t of (res?.trades ?? []) as SimRow[]) {
+          const prev = map[t.ticker]
+          if (!prev || OUTCOME_RANK[t.outcome] > OUTCOME_RANK[prev.outcome]) map[t.ticker] = t
+        }
+      }
+      setOutcomes(map)
+    })
+    return () => { cancelled = true }
+  }, [rulesKey]) // eslint-disable-line react-hooks/exhaustive-deps
 
   // Fetch all distinct tickers from the DB for the historical panel
   const filteredAllTickers = useMemo(() => {
@@ -120,7 +212,7 @@ export default function Snapshots({ snapshots, orders = [], openOrders = [], fil
                 <th>No Ask</th>
                 <th className="hide-sm">Volume</th>
                 <th className="hide-sm">OI</th>
-                <th>TTC</th>
+                <th>Strategy</th>
                 <th className="hide-sm">Scanned</th>
               </tr>
             </thead>
@@ -146,7 +238,7 @@ export default function Snapshots({ snapshots, orders = [], openOrders = [], fil
                   <td className="cell-dim">{fmtCents(snapshot.no_ask)}</td>
                   <td className="cell-dim hide-sm">{snapshot.volume != null ? snapshot.volume.toLocaleString() : '—'}</td>
                   <td className="cell-dim hide-sm">{snapshot.open_interest != null ? snapshot.open_interest.toLocaleString() : '—'}</td>
-                  <td className="cell-dim">{fmtDur(snapshot.time_to_close_secs)}</td>
+                  <td><StrategyOutcome row={outcomes[snapshot.ticker]} /></td>
                   <td className="cell-dim hide-sm">{fmtTime(snapshot.scanned_at)}</td>
                 </tr>
               ))}
@@ -177,7 +269,7 @@ export default function Snapshots({ snapshots, orders = [], openOrders = [], fil
                 <th>No Ask</th>
                 <th className="hide-sm">Volume</th>
                 <th className="hide-sm">OI</th>
-                <th>TTC</th>
+                <th>Strategy</th>
                 <th className="hide-sm">Scanned</th>
               </tr>
             </thead>
@@ -205,7 +297,7 @@ export default function Snapshots({ snapshots, orders = [], openOrders = [], fil
                     <td className="cell-dim">{fmtCents(t.no_ask)}</td>
                     <td className="cell-dim hide-sm">{t.volume != null ? t.volume.toLocaleString() : '—'}</td>
                     <td className="cell-dim hide-sm">{t.open_interest != null ? t.open_interest.toLocaleString() : '—'}</td>
-                    <td className="cell-dim">{fmtDur(t.time_to_close_secs)}</td>
+                    <td><StrategyOutcome row={outcomes[t.ticker]} /></td>
                     <td className="cell-dim hide-sm">{fmtTime(t.scanned_at)}</td>
                   </tr>
                   {expandedTicker === t.ticker && (
