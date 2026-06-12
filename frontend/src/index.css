@@ -1450,7 +1450,7 @@ select optgroup {
   .pnl-cal { padding: 8px; }
   .pnl-cal-grid { grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 3px; }
   .pnl-cal-weekcol { display: none; }
-  .pnl-cal-day { min-height: 44px; padding: 3px 4px; cursor: pointer; }
+  .pnl-cal-day { min-height: 44px; padding: 3px 4px; cursor: pointer; align-items: center; justify-content: center; text-align: center; }
   .pnl-cal-amount { font-size: 10px; }
   .pnl-cal-winrate { font-size: 10px; }
   .pnl-cal-wfrac { display: none; }
