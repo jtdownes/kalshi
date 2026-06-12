@@ -48,6 +48,8 @@ const INTERVALS: { secs: number; label: string }[] = [
 
 // Lookback window (seconds) → label
 const LOOKBACKS: { secs: number; label: string }[] = [
+  { secs: 900,    label: '15m' },
+  { secs: 1800,   label: '30m' },
   { secs: 3600,   label: '1h' },
   { secs: 14400,  label: '4h' },
   { secs: 43200,  label: '12h' },
