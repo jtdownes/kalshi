@@ -31,7 +31,9 @@ const INTERVALS: { secs: number; label: string }[] = [
   { secs: 5,   label: '5s'  },
   { secs: 30,  label: '30s' },
   { secs: 60,  label: '1m'  },
+  { secs: 180, label: '3m'  },
   { secs: 300, label: '5m'  },
+  { secs: 900, label: '15m' },
 ];
 
 // Lookback window (seconds) → label
@@ -40,6 +42,7 @@ const LOOKBACKS: { secs: number; label: string }[] = [
   { secs: 14400,  label: '4h' },
   { secs: 43200,  label: '12h' },
   { secs: 86400,  label: '1d' },
+  { secs: 604800, label: '1w' },
 ];
 
 const UP = '#00d4a0';
@@ -62,10 +65,16 @@ export default function CryptoCandleChart({ ticker, strikeNum = null }: Props) {
   const [data, setData] = useState<Candle[]>([]);
   const [loading, setLoading] = useState(false);
 
+  // Keep the candle count sane: a tiny interval over a wide window (e.g. 5s
+  // over 1w ≈ 120k bars) is unreadable and slow, so floor the interval at
+  // whatever keeps us under MAX_BARS for the chosen lookback.
+  const MAX_BARS = 1500;
+  const effInterval = Math.max(interval, Math.ceil(lookback / MAX_BARS));
+
   useEffect(() => {
     if (!assetKey) return;
     setLoading(true);
-    const url = `/api/crypto/ohlc?asset=${assetKey}&interval=${interval}&lookback=${lookback}`;
+    const url = `/api/crypto/ohlc?asset=${assetKey}&interval=${effInterval}&lookback=${lookback}`;
     fetch(url)
       .then(r => r.json())
       .then((rows: Candle[]) => {
@@ -73,7 +82,7 @@ export default function CryptoCandleChart({ ticker, strikeNum = null }: Props) {
         setLoading(false);
       })
       .catch(() => setLoading(false));
-  }, [assetKey, interval, lookback]);
+  }, [assetKey, effInterval, lookback]);
 
   // Floating-bar ranges: wick spans low→high, body spans open↔close.
   const chartData = useMemo(() => data.map(c => ({
@@ -154,6 +163,9 @@ export default function CryptoCandleChart({ ticker, strikeNum = null }: Props) {
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4, flexWrap: 'wrap', gap: 8 }}>
         <span style={{ fontSize: 11, color: '#888' }}>
           {assetInfo ? `${assetInfo.label} candles (USD)` : 'Candles (USD)'} — {data.length} bars
+          {effInterval !== interval && (
+            <span style={{ color: '#f5c842' }}> · auto {effInterval >= 60 ? `${Math.round(effInterval / 60)}m` : `${effInterval}s`}</span>
+          )}
         </span>
         <div style={{ display: 'flex', gap: 12 }}>
           {ToggleRow(INTERVALS, interval, setInterval)}
