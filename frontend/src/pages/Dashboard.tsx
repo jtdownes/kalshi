@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom'
 import type { Order, Trade, Position, Snapshot, Settings, Profile, Quotes } from '../types'
 import PriceActionChart from '../components/PriceActionChart'
 import PnLCalendar from '../components/PnLCalendar'
-import { centsToUSD, fmtCents, fmtPnL, fmtTime, fmtUnixTime, fmtDur, kalshiMarketUrl, cryptoPriceForTicker } from '../utils'
+import { centsToUSD, fmtCents, fmtPnL, fmtTime, fmtUnixTime, fmtDur, kalshiMarketUrl, cryptoPriceForTicker, midCents } from '../utils'
 
 type CollapsibleSection = 'trades' | 'calendar'
 
@@ -214,9 +214,8 @@ export default function Dashboard({ orders, trades, openOrders, positions, snaps
                 <th>Market</th>
                 <th>Strike</th>
                 <th>Live Price</th>
-                <th>Yes Ask</th>
-                <th>Yes Bid</th>
-                <th>No Ask</th>
+                <th>Yes</th>
+                <th>No</th>
                 <th className="hide-sm">Volume</th>
                 <th className="hide-sm">OI</th>
                 <th>TTC</th>
@@ -225,7 +224,7 @@ export default function Dashboard({ orders, trades, openOrders, positions, snaps
             </thead>
             <tbody>
               {marketSnapshots.length === 0 ? (
-                <tr><td colSpan={10} className="cell-empty">No live snapshots</td></tr>
+                <tr><td colSpan={9} className="cell-empty">No live snapshots</td></tr>
               ) : marketSnapshots.map(s => (
                 <tr
                   key={s.id}
@@ -267,9 +266,8 @@ export default function Dashboard({ orders, trades, openOrders, positions, snaps
                     const px = cryptoPriceForTicker(s.ticker, s as unknown as Record<string, unknown>)
                     return px != null ? `$${px.toLocaleString()}` : '—'
                   })()}</td>
-                  <td>{fmtCents(s.yes_ask)}</td>
-                  <td className="cell-dim">{fmtCents(s.yes_bid)}</td>
-                  <td className="cell-dim">{fmtCents(s.no_ask)}</td>
+                  <td>{fmtCents(midCents(s.yes_bid, s.yes_ask))}</td>
+                  <td className="cell-dim">{fmtCents(midCents(s.no_bid, s.no_ask))}</td>
                   <td className="cell-dim hide-sm">{s.volume != null ? s.volume.toLocaleString() : '—'}</td>
                   <td className="cell-dim hide-sm">{s.open_interest != null ? s.open_interest.toLocaleString() : '—'}</td>
                   <td className="cell-dim">{fmtDur(s.time_to_close_secs)}</td>

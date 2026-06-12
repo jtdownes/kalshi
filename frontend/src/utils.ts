@@ -16,6 +16,15 @@ export function fmtCents(c: number | null | undefined): string {
   return c < 10 ? `${c.toFixed(1)}¢` : `${c}¢`
 }
 
+/** Mid price (average of bid and ask) in cents. Falls back to whichever side
+ *  is present if only one exists; null if both are missing. */
+export function midCents(bid: number | null | undefined, ask: number | null | undefined): number | null {
+  if (bid != null && ask != null) return Math.round((bid + ask) / 2 * 10) / 10
+  if (bid != null) return bid
+  if (ask != null) return ask
+  return null
+}
+
 export function fmtTime(iso: string | null | undefined): string {
   if (!iso) return '—'
   const d = new Date(iso.endsWith('Z') ? iso : iso + 'Z')
