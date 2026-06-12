@@ -105,7 +105,11 @@ export default function Dashboard({ orders, trades, openOrders, positions, snaps
       for (const { series, windows } of byProfile) {
         if (!series.some(ser => ticker.startsWith(ser + '-'))) continue
         for (const w of windows) {
-          const key = `${w.minTtc}:${w.maxTtc}`
+          // Dedup on the FULL window, not just the time bounds — a two-sided
+          // strategy's YES and NO rules share the same time window and differ
+          // only in the price/distance band, so a ttc-only key would drop one
+          // side and shade just half the chart.
+          const key = `${w.minTtc}:${w.maxTtc}:${w.minCents}:${w.maxCents}:${w.minDist}:${w.maxDist}`
           if (seen.has(key)) continue
           seen.add(key)
           out.push(w)
