@@ -29,9 +29,6 @@ interface Props {
   // re-fetching. livePrice = consolidated USD price; liveTs = its scanned_at.
   livePrice?: number | null;
   liveTs?: string | null;
-  // Filled orders for this market — plotted at the candle whose time bucket
-  // contains the fill, so you can see where price sat when you traded.
-  executions?: Order[];
 }
 
 // scanned_at is a UTC wall-clock ISO string with no zone marker; JS would read
@@ -198,7 +195,7 @@ function Candle(props: {
   );
 }
 
-export default function CryptoCandleChart({ ticker, strikeNum = null, livePrice = null, liveTs = null, executions = [] }: Props) {
+export default function CryptoCandleChart({ ticker, strikeNum = null, livePrice = null, liveTs = null }: Props) {
   const assetKey = detectCryptoAsset(ticker);
   const assetInfo = cryptoAssetConfig(ticker);
 
@@ -207,6 +204,7 @@ export default function CryptoCandleChart({ ticker, strikeNum = null, livePrice 
   const [lookback, setLookback] = useState(14400);
   const [data, setData] = useState<Candle[]>([]);
   const [loading, setLoading] = useState(false);
+  const [orders, setOrders] = useState<Order[]>([]);
 
   // Keep the candle count sane: a tiny interval over a wide window (e.g. 5s
   // over 1w ≈ 120k bars) is unreadable and slow, so floor the interval at
@@ -226,6 +224,21 @@ export default function CryptoCandleChart({ ticker, strikeNum = null, livePrice 
       })
       .catch(() => setLoading(false));
   }, [assetKey, effInterval, lookback]);
+
+  // Pull all of this asset's orders (across every market) so they can be plotted
+  // on the shared price timeline — the broad view spans many short-lived markets.
+  useEffect(() => {
+    if (!assetKey) return;
+    const prefix = `KX${assetKey}`;
+    fetch('/api/orders?limit=500')
+      .then(r => r.json())
+      .then((rows: Order[]) => {
+        setOrders(Array.isArray(rows)
+          ? rows.filter(o => (o.market_ticker ?? '').toUpperCase().startsWith(prefix))
+          : []);
+      })
+      .catch(() => setOrders([]));
+  }, [assetKey]);
 
   // Fold each new live tick into the in-progress candle (or open a new one when
   // the bucket rolls over). No network call — reuses the snapshot feed the line
@@ -272,23 +285,28 @@ export default function CryptoCandleChart({ ticker, strikeNum = null, livePrice 
     return [Math.floor(mn - pad), Math.ceil(mx + pad)];
   }, [chartData, strikeNum]);
 
-  // Map each fill onto the candle whose time bucket contains it, pinning the
-  // marker at that candle's close. Fills outside the current window simply drop.
+  // Place each order on the timeline at the candle nearest its placed_at, pinned
+  // to that candle's close. Snapping to the nearest candle (not just an exact
+  // bucket) keeps markers visible across data gaps. Orders whose time falls
+  // outside the visible window simply drop.
   const execDots = useMemo(() => {
     if (data.length === 0) return [];
-    const byBucket = new Map(data.map(c => [c.bucket, c]));
-    return executions.map(o => {
-      const stamp = o.filled_at ?? o.placed_at;
+    const lo = data[0].bucket;
+    const hi = data[data.length - 1].bucket;
+    return orders.map(o => {
+      const stamp = o.placed_at ?? o.filled_at;
       if (!stamp) return null;
       const ts = epochFromScanned(stamp);
-      if (!Number.isFinite(ts)) return null;
-      const bucket = Math.floor(ts / effInterval) * effInterval;
-      const candle = byBucket.get(bucket);
-      if (!candle) return null;
+      if (!Number.isFinite(ts) || ts < lo - effInterval || ts > hi + effInterval) return null;
+      // nearest candle by time
+      let best = data[0];
+      for (const c of data) {
+        if (Math.abs(c.bucket - ts) < Math.abs(best.bucket - ts)) best = c;
+      }
       const color = o.outcome === 'win' ? UP : o.outcome === 'loss' ? DOWN : '#9ca3af';
-      return { id: o.id, bucket, y: candle.close, color, buy: o.order_role === 'entry' };
+      return { id: o.id, bucket: best.bucket, y: best.close, color, buy: o.order_role === 'entry' };
     }).filter((d): d is { id: number; bucket: number; y: number; color: string; buy: boolean } => d != null);
-  }, [executions, data, effInterval]);
+  }, [orders, data, effInterval]);
 
   if (!assetKey) return null;
 
