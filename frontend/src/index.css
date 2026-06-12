@@ -798,6 +798,22 @@ tbody tr:hover { background: rgba(255,255,255,0.025); }
   outline: none;
 }
 
+/* Standalone styled select (e.g. Simulator toolbar) — matches .btn / .field select
+   so native dropdowns inherit the dark theme instead of browser defaults. */
+.select {
+  padding: 5px 12px;
+  min-height: 32px;
+  border-radius: 6px;
+  font-size: 12px;
+  cursor: pointer;
+  background: #1e1e2e;
+  border: 1px solid #2d2d3e;
+  color: #e2e8f0;
+  transition: all 0.15s;
+}
+.select:hover  { border-color: #00d4a0; }
+.select:focus  { border-color: #00d4a0; outline: none; }
+
 /* Native <option> popups don't inherit the select's text color, so on the dark
    theme they render dark-on-dark. Style options explicitly everywhere. */
 select option,
