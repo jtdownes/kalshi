@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   ComposedChart,
   Bar,
@@ -23,7 +23,18 @@ interface Candle {
 interface Props {
   ticker: string;
   strikeNum?: number | null;
+  // Latest live tick for the asset, so the in-progress candle updates without
+  // re-fetching. livePrice = consolidated USD price; liveTs = its scanned_at.
+  livePrice?: number | null;
+  liveTs?: string | null;
 }
+
+// scanned_at is a UTC wall-clock ISO string with no zone marker; JS would read
+// it as local time, so force UTC to match the server's bucket epochs.
+const epochFromScanned = (iso: string): number => {
+  const hasZone = /[zZ]$/.test(iso) || /[+-]\d\d:?\d\d$/.test(iso);
+  return Date.parse(hasZone ? iso : iso + 'Z') / 1000;
+};
 
 // Candle interval (seconds) → label
 const INTERVALS: { secs: number; label: string }[] = [
@@ -90,7 +101,7 @@ function Candle(props: {
   );
 }
 
-export default function CryptoCandleChart({ ticker, strikeNum = null }: Props) {
+export default function CryptoCandleChart({ ticker, strikeNum = null, livePrice = null, liveTs = null }: Props) {
   const assetKey = detectCryptoAsset(ticker);
   const assetInfo = cryptoAssetConfig(ticker);
 
@@ -117,6 +128,34 @@ export default function CryptoCandleChart({ ticker, strikeNum = null }: Props) {
       })
       .catch(() => setLoading(false));
   }, [assetKey, effInterval, lookback]);
+
+  // Fold each new live tick into the in-progress candle (or open a new one when
+  // the bucket rolls over). No network call — reuses the snapshot feed the line
+  // charts already consume. A ref guards against double-counting the same tick.
+  const lastFoldedTs = useRef<string | null>(null);
+  useEffect(() => {
+    if (livePrice == null || !Number.isFinite(livePrice) || !liveTs) return;
+    if (liveTs === lastFoldedTs.current) return;
+    const ts = epochFromScanned(liveTs);
+    if (!Number.isFinite(ts)) return;
+    lastFoldedTs.current = liveTs;
+    const bucket = Math.floor(ts / effInterval) * effInterval;
+    setData(prev => {
+      if (prev.length === 0) return prev;  // wait for the fetched baseline
+      const last = prev[prev.length - 1];
+      if (bucket < last.bucket) return prev;  // stale tick
+      if (bucket === last.bucket) {
+        return [...prev.slice(0, -1), {
+          ...last,
+          high: Math.max(last.high, livePrice),
+          low: Math.min(last.low, livePrice),
+          close: livePrice,
+          n: last.n + 1,
+        }];
+      }
+      return [...prev, { bucket, open: livePrice, high: livePrice, low: livePrice, close: livePrice, n: 1 }];
+    });
+  }, [livePrice, liveTs, effInterval]);
 
   // Floating-bar ranges: wick spans low→high, body spans open↔close.
   const chartData = useMemo(() => data.map(c => ({

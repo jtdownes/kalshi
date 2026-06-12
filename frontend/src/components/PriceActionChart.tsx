@@ -117,6 +117,14 @@ export default function PriceActionChart({ ticker, globalSnapshots, openOrders =
   const strike = data.find(d => d.strike_str != null)?.strike_str ?? null;
   const strikeNum = strike != null ? parseFloat(strike) : null;
 
+  // Latest live tick for this market's underlying asset — fed to the candle
+  // chart so it folds new prices into the in-progress bar without re-fetching.
+  const latestSnap = globalSnapshots.find(s => s.ticker === ticker);
+  const livePrice = latestSnap
+    ? Number((assetKey === 'ETH' ? latestSnap.eth_price : latestSnap.btc_price) ?? NaN)
+    : NaN;
+  const liveTs = latestSnap?.scanned_at ?? null;
+
   // Map each allowed time-to-close window onto the x-axis. ttc decreases over a
   // market's life, so the eligible rows form one contiguous span — shade from
   // its first to its last scanned_at.
@@ -470,7 +478,12 @@ export default function PriceActionChart({ ticker, globalSnapshots, openOrders =
 
           {/* ── Broad-scale candle chart (independent of this market's life) ── */}
           <div style={{ gridColumn: '1 / -1' }}>
-            <CryptoCandleChart ticker={ticker} strikeNum={strikeNum} />
+            <CryptoCandleChart
+              ticker={ticker}
+              strikeNum={strikeNum}
+              livePrice={Number.isFinite(livePrice) ? livePrice : null}
+              liveTs={liveTs}
+            />
           </div>
 
         </div>
