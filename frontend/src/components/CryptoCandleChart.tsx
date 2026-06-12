@@ -7,9 +7,11 @@ import {
   CartesianGrid,
   Tooltip,
   ReferenceLine,
+  ReferenceDot,
   ResponsiveContainer,
 } from 'recharts';
 import { detectCryptoAsset, cryptoAssetConfig } from '../utils';
+import type { Order } from '../types';
 
 interface Candle {
   bucket: number;  // epoch seconds (bucket start)
@@ -27,6 +29,9 @@ interface Props {
   // re-fetching. livePrice = consolidated USD price; liveTs = its scanned_at.
   livePrice?: number | null;
   liveTs?: string | null;
+  // Filled orders for this market — plotted at the candle whose time bucket
+  // contains the fill, so you can see where price sat when you traded.
+  executions?: Order[];
 }
 
 // scanned_at is a UTC wall-clock ISO string with no zone marker; JS would read
@@ -193,7 +198,7 @@ function Candle(props: {
   );
 }
 
-export default function CryptoCandleChart({ ticker, strikeNum = null, livePrice = null, liveTs = null }: Props) {
+export default function CryptoCandleChart({ ticker, strikeNum = null, livePrice = null, liveTs = null, executions = [] }: Props) {
   const assetKey = detectCryptoAsset(ticker);
   const assetInfo = cryptoAssetConfig(ticker);
 
@@ -266,6 +271,24 @@ export default function CryptoCandleChart({ ticker, strikeNum = null, livePrice 
     const pad = Math.max((mx - mn) * 0.08, mn * 0.001);
     return [Math.floor(mn - pad), Math.ceil(mx + pad)];
   }, [chartData, strikeNum]);
+
+  // Map each fill onto the candle whose time bucket contains it, pinning the
+  // marker at that candle's close. Fills outside the current window simply drop.
+  const execDots = useMemo(() => {
+    if (data.length === 0) return [];
+    const byBucket = new Map(data.map(c => [c.bucket, c]));
+    return executions.map(o => {
+      const stamp = o.filled_at ?? o.placed_at;
+      if (!stamp) return null;
+      const ts = epochFromScanned(stamp);
+      if (!Number.isFinite(ts)) return null;
+      const bucket = Math.floor(ts / effInterval) * effInterval;
+      const candle = byBucket.get(bucket);
+      if (!candle) return null;
+      const color = o.outcome === 'win' ? UP : o.outcome === 'loss' ? DOWN : '#9ca3af';
+      return { id: o.id, bucket, y: candle.close, color, buy: o.order_role === 'entry' };
+    }).filter((d): d is { id: number; bucket: number; y: number; color: string; buy: boolean } => d != null);
+  }, [executions, data, effInterval]);
 
   if (!assetKey) return null;
 
@@ -350,6 +373,21 @@ export default function CryptoCandleChart({ ticker, strikeNum = null, livePrice 
                   shape draws the wick + open/close body itself so the two
                   parts overlap (separate Bar series would render side-by-side). */}
               <Bar dataKey="wick" isAnimationActive={false} shape={<Candle />} />
+
+              {/* Execution markers: B = entry, S = exit; colored by outcome */}
+              {execDots.map(d => (
+                <ReferenceDot
+                  key={d.id}
+                  x={d.bucket}
+                  y={d.y}
+                  r={4}
+                  fill={d.color}
+                  stroke="#111"
+                  strokeWidth={1}
+                  ifOverflow="extendDomain"
+                  label={{ value: d.buy ? 'B' : 'S', position: 'top', fill: d.color, fontSize: 9 }}
+                />
+              ))}
             </ComposedChart>
           </ResponsiveContainer>
         )}

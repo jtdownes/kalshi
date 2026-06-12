@@ -483,6 +483,7 @@ export default function PriceActionChart({ ticker, globalSnapshots, openOrders =
               strikeNum={strikeNum}
               livePrice={Number.isFinite(livePrice) ? livePrice : null}
               liveTs={liveTs}
+              executions={tickerHist}
             />
           </div>
 
