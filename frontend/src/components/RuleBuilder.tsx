@@ -1,3 +1,4 @@
+import { useState } from 'react'
 import type { ReactNode } from 'react'
 import type {
   StrategyRule, RuleCondition, RuleField, RuleOp, RuleAction, RuleEntry, RuleExit,
@@ -149,6 +150,14 @@ interface Props {
 export default function RuleBuilder({ rules, onChange, readOnly = false, lockStructure = false, renderRuleFooter }: Props) {
   // Structural controls are locked in both read-only and limited-edit modes.
   const structLocked = readOnly || lockStructure
+
+  // Explicit per-condition time-unit choice. Without this, the unit is derived
+  // purely from the stored seconds value, so typing a whole-minute value (e.g.
+  // 60) while in "sec" mode would snap the dropdown back to "min". Keyed by
+  // `${rule.id}:${ci}`; falls back to the derived unit when not set.
+  const [unitOverrides, setUnitOverrides] = useState<Record<string, 'min' | 'sec'>>({})
+  const setUnitOverride = (key: string, u: 'min' | 'sec') =>
+    setUnitOverrides(prev => ({ ...prev, [key]: u }))
   const patchRule = (i: number, patch: Partial<StrategyRule>) =>
     onChange(rules.map((r, idx) => (idx === i ? { ...r, ...patch } : r)))
 
@@ -266,7 +275,8 @@ export default function RuleBuilder({ rules, onChange, readOnly = false, lockStr
               {rule.conditions.map((c, ci) => {
                 const meta = FIELD_META[c.field]
                 const isTime = meta.unit === 'time'
-                const unit = timeUnitOf(c.value)
+                const unitKey = `${rule.id}:${ci}`
+                const unit = unitOverrides[unitKey] ?? timeUnitOf(c.value)
                 return (
                   <div key={ci} className="rule-cond-row">
                     <select className="rule-input rule-field" value={c.field} disabled={structLocked}
@@ -309,6 +319,7 @@ export default function RuleBuilder({ rules, onChange, readOnly = false, lockStr
                         <select className="rule-unit" value={unit} disabled={structLocked}
                           onChange={e => {
                             const nextUnit = e.target.value as 'min' | 'sec'
+                            setUnitOverride(unitKey, nextUnit)
                             // reinterpret the displayed number in the new unit
                             const disp = secsToDisplay(c.value, unit)
                             const disp2 = secsToDisplay(c.value2, unit)
