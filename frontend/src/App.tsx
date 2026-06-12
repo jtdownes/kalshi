@@ -159,7 +159,7 @@ export default function App() {
               {loading ? 'Refreshing…' : `Updated ${fmtTime(lastRefresh.toISOString())}`}
             </span>
           )}
-          <button className="btn" onClick={refresh}>↻</button>
+          <button className="btn" onClick={() => window.location.reload()} title="Hard reload page">↻</button>
         </div>
       </header>
 
