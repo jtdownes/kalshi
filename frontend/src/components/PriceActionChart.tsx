@@ -13,6 +13,7 @@ import {
   ReferenceArea,
 } from 'recharts';
 import { fmtTime, detectCryptoAsset, cryptoAssetConfig } from '../utils';
+import CryptoCandleChart from './CryptoCandleChart';
 import type { Snapshot, Order } from '../types';
 import type { TtcWindow } from '../utils';
 
@@ -465,6 +466,11 @@ export default function PriceActionChart({ ticker, globalSnapshots, openOrders =
                 }
               </LineChart>
             </ResponsiveContainer>
+          </div>
+
+          {/* ── Broad-scale candle chart (independent of this market's life) ── */}
+          <div style={{ gridColumn: '1 / -1' }}>
+            <CryptoCandleChart ticker={ticker} strikeNum={strikeNum} />
           </div>
 
         </div>

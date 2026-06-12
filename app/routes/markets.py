@@ -3,12 +3,13 @@ Markets routes: snapshots, scanned-series management, weather.
 """
 
 import time
-from datetime import datetime
+from datetime import datetime, timedelta
 
 from flask import Blueprint, jsonify, request
 
 import database
 from database.core import cursor_conn
+from crypto_assets import CRYPTO_ASSETS, DEFAULT_ASSET
 from kalshi_client import KalshiClient
 
 markets_bp = Blueprint('markets', __name__)
@@ -165,3 +166,66 @@ def snapshot_series():
         rows = c.fetchall()
 
     return jsonify([dict(r) for r in reversed(rows)])
+
+
+@markets_bp.get("/api/crypto/ohlc")
+def crypto_ohlc():
+    """Broad-scale OHLC candles for a crypto asset, aggregated straight from
+    the 1-second snapshot table (not tied to any single market's life).
+
+    Query params:
+      asset    — BTC / ETH (default BTC)
+      interval — candle width in seconds (default 60)
+      lookback — how far back to look, in seconds (default 14400 = 4h)
+    """
+    asset = request.args.get("asset", DEFAULT_ASSET).strip().upper()
+    cfg = CRYPTO_ASSETS.get(asset)
+    if not cfg:
+        return jsonify({"error": f"unknown asset '{asset}'"}), 400
+
+    try:
+        interval = max(1, min(int(request.args.get("interval", 60)), 3600))
+    except ValueError:
+        interval = 60
+    try:
+        lookback = max(60, min(int(request.args.get("lookback", 14400)), 7 * 86400))
+    except ValueError:
+        lookback = 14400
+
+    table = cfg["snapshot_table"]  # registry-controlled, not user input
+    cutoff = (datetime.utcnow() - timedelta(seconds=lookback)).isoformat()
+
+    # scanned_at is a UTC ISO string (no tz); cast as plain timestamp so epoch
+    # bucketing is consistent. ISO strings sort lexically, so the >= cutoff
+    # filter rides the scanned_at index.
+    with cursor_conn() as c:
+        c.execute(f"""
+            WITH pts AS (
+                SELECT consolidated_price AS price,
+                       extract(epoch FROM scanned_at::timestamp) AS ts
+                FROM {table}
+                WHERE scanned_at >= %s AND consolidated_price IS NOT NULL
+            )
+            SELECT (floor(ts / %s) * %s)::bigint           AS bucket,
+                   (array_agg(price ORDER BY ts ASC))[1]   AS open,
+                   max(price)                              AS high,
+                   min(price)                              AS low,
+                   (array_agg(price ORDER BY ts DESC))[1]  AS close,
+                   count(*)                                AS n
+            FROM pts
+            GROUP BY bucket
+            ORDER BY bucket
+        """, (cutoff, interval, interval))
+        rows = c.fetchall()
+
+    return jsonify([
+        {
+            "bucket": int(r["bucket"]),
+            "open": r["open"],
+            "high": r["high"],
+            "low": r["low"],
+            "close": r["close"],
+            "n": int(r["n"]),
+        }
+        for r in rows
+    ])
