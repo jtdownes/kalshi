@@ -2,7 +2,6 @@ import { useEffect, useMemo, useState } from 'react';
 import {
   ComposedChart,
   Bar,
-  Cell,
   XAxis,
   YAxis,
   CartesianGrid,
@@ -56,6 +55,41 @@ const fmtClock = (epochSecs: number) => {
 const fmtPrice = (val: number) =>
   val >= 1000 ? `$${(val / 1000).toFixed(2)}k` : `$${val.toFixed(0)}`;
 
+// Custom shape for a single candle. Recharts gives us the floating bar's pixel
+// box for the low→high range (y = pixel of `high`, height = span down to `low`),
+// so we can build a local price→pixel map from this candle's own high/low and
+// place the open/close body without needing the chart's y-scale.
+function Candle(props: {
+  x?: number; y?: number; width?: number; height?: number;
+  payload?: { open: number; high: number; low: number; close: number; up: boolean };
+}) {
+  const { x, y, width, height, payload } = props;
+  if (x == null || y == null || width == null || height == null || !payload) return null;
+  const { open, high, low, close, up } = payload;
+  const color = up ? UP : DOWN;
+  const cx = x + width / 2;
+  const range = high - low;
+  // price → pixel within [y (top=high) .. y+height (bottom=low)]
+  const priceY = (p: number) => range === 0 ? y : y + ((high - p) / range) * height;
+  const bodyTop = priceY(Math.max(open, close));
+  const bodyBot = priceY(Math.min(open, close));
+  const bodyW = Math.max(1, Math.min(width * 0.7, 12));
+  return (
+    <g>
+      {/* wick */}
+      <line x1={cx} y1={y} x2={cx} y2={y + height} stroke={color} strokeWidth={1} />
+      {/* body (min 1px tall so doji candles stay visible) */}
+      <rect
+        x={cx - bodyW / 2}
+        y={bodyTop}
+        width={bodyW}
+        height={Math.max(1, bodyBot - bodyTop)}
+        fill={color}
+      />
+    </g>
+  );
+}
+
 export default function CryptoCandleChart({ ticker, strikeNum = null }: Props) {
   const assetKey = detectCryptoAsset(ticker);
   const assetInfo = cryptoAssetConfig(ticker);
@@ -88,7 +122,6 @@ export default function CryptoCandleChart({ ticker, strikeNum = null }: Props) {
   const chartData = useMemo(() => data.map(c => ({
     ...c,
     wick: [c.low, c.high] as [number, number],
-    body: [Math.min(c.open, c.close), Math.max(c.open, c.close)] as [number, number],
     up: c.close >= c.open,
   })), [data]);
 
@@ -206,18 +239,10 @@ export default function CryptoCandleChart({ ticker, strikeNum = null }: Props) {
                   strokeWidth={1}
                 />
               )}
-              {/* Wick: thin floating bar low→high */}
-              <Bar dataKey="wick" barSize={1} isAnimationActive={false}>
-                {chartData.map((c, i) => (
-                  <Cell key={`w-${i}`} fill={c.up ? UP : DOWN} />
-                ))}
-              </Bar>
-              {/* Body: floating bar open↔close */}
-              <Bar dataKey="body" isAnimationActive={false} maxBarSize={14}>
-                {chartData.map((c, i) => (
-                  <Cell key={`b-${i}`} fill={c.up ? UP : DOWN} />
-                ))}
-              </Bar>
+              {/* One floating bar per candle spanning low→high; the custom
+                  shape draws the wick + open/close body itself so the two
+                  parts overlap (separate Bar series would render side-by-side). */}
+              <Bar dataKey="wick" isAnimationActive={false} shape={<Candle />} />
             </ComposedChart>
           </ResponsiveContainer>
         )}
