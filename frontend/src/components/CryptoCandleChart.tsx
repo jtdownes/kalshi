@@ -205,6 +205,7 @@ export default function CryptoCandleChart({ ticker, strikeNum = null, livePrice 
   const [data, setData] = useState<Candle[]>([]);
   const [loading, setLoading] = useState(false);
   const [orders, setOrders] = useState<Order[]>([]);
+  const [showExecs, setShowExecs] = useState(true);
 
   // Keep the candle count sane: a tiny interval over a wide window (e.g. 5s
   // over 1w ≈ 120k bars) is unreadable and slow, so floor the interval at
@@ -351,6 +352,18 @@ export default function CryptoCandleChart({ ticker, strikeNum = null, livePrice 
         <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, justifyContent: 'flex-end' }}>
           <Picker opts={INTERVALS} value={interval} onPick={setInterval} mobile={mobile} />
           <Picker opts={LOOKBACKS} value={lookback} onPick={setLookback} mobile={mobile} />
+          <button
+            onClick={() => setShowExecs(s => !s)}
+            title="Toggle execution markers"
+            style={{
+              fontSize: mobile ? 11 : 10, padding: mobile ? '4px 10px' : '2px 8px',
+              cursor: 'pointer', borderRadius: 4, border: '1px solid #333',
+              background: showExecs ? '#374151' : 'transparent',
+              color: showExecs ? '#fff' : '#888',
+            }}
+          >
+            Execs
+          </button>
         </div>
       </div>
       <div style={{ height: mobile ? 200 : 260 }}>
@@ -393,7 +406,7 @@ export default function CryptoCandleChart({ ticker, strikeNum = null, livePrice 
               <Bar dataKey="wick" isAnimationActive={false} shape={<Candle />} />
 
               {/* Execution markers: B = entry, S = exit; colored by outcome */}
-              {execDots.map(d => (
+              {showExecs && execDots.map(d => (
                 <ReferenceDot
                   key={d.id}
                   x={d.bucket}
