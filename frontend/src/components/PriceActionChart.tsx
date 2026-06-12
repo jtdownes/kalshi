@@ -248,6 +248,33 @@ export default function PriceActionChart({ ticker, globalSnapshots, openOrders =
   const ABOVE = '#00d4a0';  // above strike → green
   const BELOW = '#ff4444';  // below strike → red
 
+  // Ticks where the consolidated price flipped across the strike — marked with a
+  // small yellow X on the crypto chart so strike crossings are visible at a glance.
+  const crossings: string[] = (() => {
+    if (strikeNum == null) return [];
+    const out: string[] = [];
+    let prevSide = 0;
+    for (const d of chartData) {
+      const p = d.consolidated;
+      if (p == null) continue;
+      const side = p >= strikeNum ? 1 : -1;
+      if (prevSide !== 0 && side !== prevSide) out.push(d.scanned_at);
+      prevSide = side;
+    }
+    return out;
+  })();
+
+  const CrossMark = ({ cx, cy }: { cx?: number; cy?: number }) => {
+    if (cx == null || cy == null) return null;
+    const r = 4;
+    return (
+      <g stroke="#f5c842" strokeWidth={1.6} strokeLinecap="round">
+        <line x1={cx - r} y1={cy - r} x2={cx + r} y2={cy + r} />
+        <line x1={cx - r} y1={cy + r} x2={cx + r} y2={cy - r} />
+      </g>
+    );
+  };
+
   const BtcTick = ({ x, y, payload }: { x?: number; y?: number; payload?: { value: number } }) => {
     if (x == null || y == null || payload == null) return null;
     const isStrike = strikeNum != null && Math.abs(payload.value - strikeNum) < 1;
@@ -472,6 +499,18 @@ export default function PriceActionChart({ ticker, globalSnapshots, openOrders =
                     } : undefined}
                   />
                 )}
+
+                {/* Strike-crossing markers */}
+                {strikeNum != null && crossings.map((ts, i) => (
+                  <ReferenceDot
+                    key={`cross-${i}`}
+                    x={ts}
+                    y={strikeNum}
+                    r={0}
+                    shape={<CrossMark />}
+                    ifOverflow="extendDomain"
+                  />
+                ))}
 
                 {priceView === 'consolidated'
                   ? <Line key="consolidated" type="monotone" dataKey="consolidated" name="Consolidated (avg available)" stroke={consolidatedSplit != null ? `url(#${gradientId})` : (assetInfo?.color ?? '#ffffff')} dot={false} strokeWidth={2.5} isAnimationActive={false} connectNulls />
