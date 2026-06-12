@@ -129,7 +129,6 @@ export default function Strategies({ settings, profiles, refresh }: Props) {
     return () => { document.body.style.overflow = prev }
   }, [viewModal, newStrategyDraft, renameModal])
 
-  const activeProfile = profiles.find(p => p.id === settings?.active_profile_id)
 
   const updateDraft = (patch: Partial<StrategyDraft>) =>
     setNewStrategyDraft(d => d ? { ...d, ...patch } : d)
@@ -258,30 +257,17 @@ export default function Strategies({ settings, profiles, refresh }: Props) {
     }
   }
 
-  const activeRuleCount = (settings?.rules?.length) ?? 0
-
   return (
     <div className="strategies-view">
       {settings && (
-        <section className="strategy-active-panel">
-          <div className="strategy-active-main">
-            <div className="stat-label">Active Strategy</div>
-            <h2>{activeProfile?.name || settings.name || 'Current settings'}</h2>
-            <div className="strategy-primary-actions">
-              <button
-                className="btn btn-active"
-                onClick={() => { setEditingProfileId(null); setLimitedEdit(false); setNewStrategyDraft(settingsToDraft(settings)) }}
-              >
-                New Strategy
-              </button>
-            </div>
-          </div>
-          <div className="strategy-metrics-wrap">
-            <div className="strategy-metrics strategy-metrics-compact">
-              <div><span>Rules</span><strong>{activeRuleCount}</strong></div>
-            </div>
-          </div>
-        </section>
+        <div className="strategies-toolbar">
+          <button
+            className="btn btn-active"
+            onClick={() => { setEditingProfileId(null); setLimitedEdit(false); setNewStrategyDraft(settingsToDraft(settings)) }}
+          >
+            New Strategy
+          </button>
+        </div>
       )}
 
       <section className="strategies-grid" aria-label="Saved strategies">

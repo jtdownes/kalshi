@@ -309,6 +309,11 @@ tbody tr:hover { background: rgba(255,255,255,0.025); }
 .snapshot-history-table tbody tr:last-child td { border-bottom: none; }
 .snapshot-history-table tbody tr:hover { background: rgba(255,255,255,0.02); }
 
+.strategies-toolbar {
+  display: flex;
+  justify-content: flex-end;
+}
+
 .strategy-active-panel {
   display: grid;
   grid-template-columns: minmax(260px, 1.2fr) minmax(360px, 1fr);
