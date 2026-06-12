@@ -183,7 +183,7 @@ export default function CryptoCandleChart({ ticker, strikeNum = null, livePrice 
     value: number,
     onPick: (v: number) => void,
   ) => (
-    <div style={{ display: 'flex', borderRadius: 4, overflow: 'hidden', border: '1px solid #333' }}>
+    <div style={{ display: 'flex', flexWrap: 'wrap', borderRadius: 4, overflow: 'hidden', border: '1px solid #333' }}>
       {opts.map(o => (
         <button
           key={o.secs}
@@ -233,7 +233,7 @@ export default function CryptoCandleChart({ ticker, strikeNum = null, livePrice 
   };
 
   return (
-    <div className="chart-card" style={{ marginTop: 12 }}>
+    <div className="chart-card" style={{ marginTop: 12, minWidth: 0, overflowX: 'hidden' }}>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4, flexWrap: 'wrap', gap: 8 }}>
         <span style={{ fontSize: 11, color: '#888' }}>
           {assetInfo ? `${assetInfo.label} candles (USD)` : 'Candles (USD)'} — {data.length} bars
@@ -241,7 +241,7 @@ export default function CryptoCandleChart({ ticker, strikeNum = null, livePrice 
             <span style={{ color: '#f5c842' }}> · auto {effInterval >= 60 ? `${Math.round(effInterval / 60)}m` : `${effInterval}s`}</span>
           )}
         </span>
-        <div style={{ display: 'flex', gap: 12 }}>
+        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, justifyContent: 'flex-end' }}>
           {ToggleRow(INTERVALS, interval, setInterval)}
           {ToggleRow(LOOKBACKS, lookback, setLookback)}
         </div>
