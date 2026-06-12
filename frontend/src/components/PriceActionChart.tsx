@@ -128,6 +128,14 @@ export default function PriceActionChart({ ticker, globalSnapshots, openOrders =
   // Map each allowed time-to-close window onto the x-axis. ttc decreases over a
   // market's life, so the eligible rows form one contiguous span — shade from
   // its first to its last scanned_at.
+  // distance_to_strike is signed USD (btc − strike), so it maps onto the crypto
+  // price axis as strike + distance. A finite bound becomes a price edge; an open
+  // bound (null) leaves that side spanning to the axis edge — so `distance >= D`
+  // shades the upper area and `distance <= −D` shades the lower, leaving the
+  // near-strike middle clear.
+  const distToPrice = (d: number | null): number | undefined =>
+    d != null && strikeNum != null ? strikeNum + d : undefined;
+
   const ttcBands = ttcWindows.map(w => {
     let x1: string | null = null;
     let x2: string | null = null;
@@ -140,25 +148,30 @@ export default function PriceActionChart({ ticker, globalSnapshots, openOrders =
       x2 = d.scanned_at;
     }
     return x1 != null && x2 != null
-      ? { x1, x2, minCents: w.minCents, maxCents: w.maxCents }
+      ? {
+          x1, x2,
+          cMin: w.minCents ?? undefined, cMax: w.maxCents ?? undefined,
+          pMin: distToPrice(w.minDist), pMax: distToPrice(w.maxDist),
+        }
       : null;
-  }).filter((b): b is { x1: string; x2: string; minCents: number | null; maxCents: number | null } => b != null);
+  }).filter(<T,>(b: T | null): b is T => b != null);
 
-  // Shared band builder. The contract chart can clamp the band to the rule's
-  // ask-price range on the y-axis (cents); the crypto/USD chart can't (asks have
-  // no meaning there), so it always spans full height.
-  const makeBands = (withCents: boolean) => ttcBands.map((b, i) => (
+  // Shared band builder. On the contract chart the band clamps to the rule's
+  // ask-price range (cents); on the crypto/USD chart it clamps to the
+  // distance-to-strike range mapped to price. Either bound may be open (full
+  // extent on that side).
+  const makeBands = (chart: 'contract' | 'crypto') => ttcBands.map((b, i) => (
     <ReferenceArea
       key={`ttc-${i}`}
       x1={b.x1}
       x2={b.x2}
-      y1={withCents && b.minCents != null ? b.minCents : undefined}
-      y2={withCents && b.maxCents != null ? b.maxCents : undefined}
+      y1={chart === 'contract' ? b.cMin : b.pMin}
+      y2={chart === 'contract' ? b.cMax : b.pMax}
       fill="#94a3b8"
       fillOpacity={0.12}
       stroke="#94a3b8"
       strokeOpacity={0.25}
-      ifOverflow="extendDomain"
+      ifOverflow={chart === 'crypto' ? 'hidden' : 'extendDomain'}
       label={i === 0 ? { value: 'entry window', position: 'insideTopRight', fill: '#94a3b8', fontSize: 9 } : undefined}
     />
   ));
@@ -363,7 +376,7 @@ export default function PriceActionChart({ ticker, globalSnapshots, openOrders =
             <ResponsiveContainer width="100%" height="93%">
               <LineChart data={data} margin={{ top: 5, right: 10, left: 0, bottom: 5 }} syncId="priceAction">
                 <CartesianGrid strokeDasharray="3 3" stroke="#333" vertical={false} />
-                {makeBands(true)}
+                {makeBands('contract')}
                 <XAxis
                   dataKey="scanned_at"
                   tickFormatter={fmtTime}
@@ -471,7 +484,7 @@ export default function PriceActionChart({ ticker, globalSnapshots, openOrders =
                   </defs>
                 )}
                 <CartesianGrid strokeDasharray="3 3" stroke="#333" vertical={false} />
-                {makeBands(false)}
+                {makeBands('crypto')}
                 <XAxis
                   dataKey="scanned_at"
                   tickFormatter={fmtTime}

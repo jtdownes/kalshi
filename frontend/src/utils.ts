@@ -71,6 +71,8 @@ export interface TtcWindow {
   maxTtc: number | null    // upper bound on time-to-close (seconds), null = open
   minCents: number | null  // lower bound on entry ask price (¢), null = open
   maxCents: number | null  // upper bound on entry ask price (¢), null = open
+  minDist: number | null   // lower bound on distance_to_strike (signed USD), null = open
+  maxDist: number | null   // upper bound on distance_to_strike (signed USD), null = open
 }
 
 // Collapse all of a rule's conditions on `field` into a single [min, max] range.
@@ -119,14 +121,17 @@ export function ttcWindowsFromRules(rules: StrategyRule[]): TtcWindow[] {
     const ttc = fieldBounds(rule, 'time_to_close')
     const askField = rule.action?.side === 'no' ? 'no_ask' : 'yes_ask'
     const ask = fieldBounds(rule, askField)
-    if (!ttc.bounded && !ask.bounded) continue
-    const key = `${ttc.min}:${ttc.max}:${ask.min}:${ask.max}`
+    const dist = fieldBounds(rule, 'distance_to_strike')
+    if (!ttc.bounded && !ask.bounded && !dist.bounded) continue
+    const key = `${ttc.min}:${ttc.max}:${ask.min}:${ask.max}:${dist.min}:${dist.max}`
     if (seen.has(key)) continue
     seen.add(key)
     out.push({
       minTtc: ttc.min, maxTtc: ttc.max,
       minCents: ask.bounded ? ask.min : null,
       maxCents: ask.bounded ? ask.max : null,
+      minDist: dist.bounded ? dist.min : null,
+      maxDist: dist.bounded ? dist.max : null,
     })
   }
   return out
