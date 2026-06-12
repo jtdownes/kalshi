@@ -3,7 +3,8 @@ import { useNavigate } from 'react-router-dom'
 import type { Order, Trade, Position, Snapshot, Settings, Profile, Quotes } from '../types'
 import PriceActionChart from '../components/PriceActionChart'
 import PnLCalendar from '../components/PnLCalendar'
-import { centsToUSD, fmtCents, fmtPnL, fmtTime, fmtUnixTime, fmtDur, kalshiMarketUrl, cryptoPriceForTicker, midCents } from '../utils'
+import { centsToUSD, fmtCents, fmtPnL, fmtTime, fmtUnixTime, fmtDur, kalshiMarketUrl, cryptoPriceForTicker, midCents, ttcWindowsFromRules } from '../utils'
+import type { TtcWindow } from '../utils'
 
 type CollapsibleSection = 'trades' | 'calendar'
 
@@ -86,6 +87,34 @@ export default function Dashboard({ orders, trades, openOrders, positions, snaps
     if (series.size === 0) for (const t of (settings?.btc_series_tickers ?? [])) series.add(t)
     return Array.from(series).sort().join(',')
   }, [profiles, settings?.btc_series_tickers])
+  // Map a market ticker to the entry window(s) of whichever active strategies
+  // trade its series, so the live price-action chart can shade the eligible span
+  // the same way the simulator backtest does. A ticker like
+  // "KXBTC15M-26JUN121230-30" belongs to series "KXBTC15M"; an active profile
+  // owns it when that series is in its btc_series_tickers list.
+  const ttcWindowsFor = useMemo(() => {
+    const byProfile = profiles
+      .filter(p => p.is_active && p.rules && p.rules.length > 0)
+      .map(p => ({
+        series: (p.btc_series_tickers ?? '').split(',').map(s => s.trim()).filter(Boolean),
+        windows: ttcWindowsFromRules(p.rules ?? []),
+      }))
+    return (ticker: string): TtcWindow[] => {
+      const out: TtcWindow[] = []
+      const seen = new Set<string>()
+      for (const { series, windows } of byProfile) {
+        if (!series.some(ser => ticker.startsWith(ser + '-'))) continue
+        for (const w of windows) {
+          const key = `${w.minTtc}:${w.maxTtc}`
+          if (seen.has(key)) continue
+          seen.add(key)
+          out.push(w)
+        }
+      }
+      return out
+    }
+  }, [profiles])
+
   const dashSnapshots = useMemo(() => {
     const series = trackedKey ? trackedKey.split(',') : []
     if (series.length === 0) return snapshots
@@ -281,7 +310,7 @@ export default function Dashboard({ orders, trades, openOrders, positions, snaps
 
       {/* Market Chart */}
       {selectedTicker && (
-        <PriceActionChart ticker={selectedTicker} globalSnapshots={dashSnapshots} openOrders={openOrders} historyOrders={orders} />
+        <PriceActionChart ticker={selectedTicker} globalSnapshots={dashSnapshots} openOrders={openOrders} historyOrders={orders} ttcWindows={ttcWindowsFor(selectedTicker)} />
       )}
 
       {/* Active Positions */}
@@ -487,6 +516,7 @@ export default function Dashboard({ orders, trades, openOrders, positions, snaps
                                 globalSnapshots={snapshots}
                                 openOrders={openOrders}
                                 historyOrders={orders}
+                                ttcWindows={ttcWindowsFor(t.market_ticker)}
                               />
                             </div>
                             <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
