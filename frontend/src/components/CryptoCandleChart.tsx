@@ -299,7 +299,7 @@ export default function CryptoCandleChart({ ticker, strikeNum = null, livePrice 
   };
 
   return (
-    <div className="chart-card" style={{ marginTop: 12, minWidth: 0, overflowX: 'hidden' }}>
+    <div className="chart-card" style={{ marginTop: 12, minWidth: 0, height: 'auto', overflow: 'hidden' }}>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4, flexWrap: 'wrap', gap: 8 }}>
         <span style={{ fontSize: 11, color: '#888' }}>
           {assetInfo ? `${assetInfo.label} candles (USD)` : 'Candles (USD)'} — {data.length} bars
@@ -312,7 +312,7 @@ export default function CryptoCandleChart({ ticker, strikeNum = null, livePrice 
           <Picker opts={LOOKBACKS} value={lookback} onPick={setLookback} mobile={mobile} />
         </div>
       </div>
-      <div style={{ height: 260 }}>
+      <div style={{ height: mobile ? 200 : 260 }}>
         {loading && data.length === 0 ? (
           <div style={{ color: '#888', textAlign: 'center', paddingTop: 100 }}>Loading candles…</div>
         ) : chartData.length === 0 ? (
