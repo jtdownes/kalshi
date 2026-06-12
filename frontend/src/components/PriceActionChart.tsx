@@ -248,18 +248,24 @@ export default function PriceActionChart({ ticker, globalSnapshots, openOrders =
   const ABOVE = '#00d4a0';  // above strike → green
   const BELOW = '#ff4444';  // below strike → red
 
-  // Ticks where the consolidated price flipped across the strike — marked with a
-  // small yellow X on the crypto chart so strike crossings are visible at a glance.
+  // Ticks where the price flipped across the strike — marked with a small yellow
+  // X on the crypto chart. This mirrors the rules engine's `strike_crossings`
+  // counter exactly (app/rules.py): it walks the SAME stored consolidated price
+  // column the rule reads (COALESCE(consolidated_price, coinbase_price), exposed
+  // here as btc_price/eth_price — not the chart's recomputed venue mean), uses a
+  // strict > sign, and skips ticks exactly on the strike without flipping side.
   const crossings: string[] = (() => {
     if (strikeNum == null) return [];
     const out: string[] = [];
-    let prevSide = 0;
-    for (const d of chartData) {
-      const p = d.consolidated;
+    let prevSign: boolean | null = null;
+    for (const d of data) {
+      const p = toNum(d[aggKey]);
       if (p == null) continue;
-      const side = p >= strikeNum ? 1 : -1;
-      if (prevSide !== 0 && side !== prevSide) out.push(d.scanned_at);
-      prevSide = side;
+      const dist = p - strikeNum;
+      if (dist === 0) continue;        // exactly on strike → no side change
+      const sign = dist > 0;
+      if (prevSign !== null && sign !== prevSign) out.push(d.scanned_at);
+      prevSign = sign;
     }
     return out;
   })();
