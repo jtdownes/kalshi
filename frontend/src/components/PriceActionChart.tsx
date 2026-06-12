@@ -139,14 +139,21 @@ export default function PriceActionChart({ ticker, globalSnapshots, openOrders =
       if (x1 == null) x1 = d.scanned_at;
       x2 = d.scanned_at;
     }
-    return x1 != null && x2 != null ? { x1, x2 } : null;
-  }).filter((b): b is { x1: string; x2: string } => b != null);
+    return x1 != null && x2 != null
+      ? { x1, x2, minCents: w.minCents, maxCents: w.maxCents }
+      : null;
+  }).filter((b): b is { x1: string; x2: string; minCents: number | null; maxCents: number | null } => b != null);
 
-  const bandEls = ttcBands.map((b, i) => (
+  // Shared band builder. The contract chart can clamp the band to the rule's
+  // ask-price range on the y-axis (cents); the crypto/USD chart can't (asks have
+  // no meaning there), so it always spans full height.
+  const makeBands = (withCents: boolean) => ttcBands.map((b, i) => (
     <ReferenceArea
       key={`ttc-${i}`}
       x1={b.x1}
       x2={b.x2}
+      y1={withCents && b.minCents != null ? b.minCents : undefined}
+      y2={withCents && b.maxCents != null ? b.maxCents : undefined}
       fill="#94a3b8"
       fillOpacity={0.12}
       stroke="#94a3b8"
@@ -323,7 +330,7 @@ export default function PriceActionChart({ ticker, globalSnapshots, openOrders =
             <ResponsiveContainer width="100%" height="93%">
               <LineChart data={data} margin={{ top: 5, right: 10, left: 0, bottom: 5 }} syncId="priceAction">
                 <CartesianGrid strokeDasharray="3 3" stroke="#333" vertical={false} />
-                {bandEls}
+                {makeBands(true)}
                 <XAxis
                   dataKey="scanned_at"
                   tickFormatter={fmtTime}
@@ -431,7 +438,7 @@ export default function PriceActionChart({ ticker, globalSnapshots, openOrders =
                   </defs>
                 )}
                 <CartesianGrid strokeDasharray="3 3" stroke="#333" vertical={false} />
-                {bandEls}
+                {makeBands(false)}
                 <XAxis
                   dataKey="scanned_at"
                   tickFormatter={fmtTime}

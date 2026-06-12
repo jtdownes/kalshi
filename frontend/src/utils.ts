@@ -64,51 +64,70 @@ export function fmtTickers(raw: string | string[] | null | undefined): string {
 
 // ── Rule helpers ──────────────────────────────────────────────────────────────
 
-import type { StrategyRule } from './types'
+import type { StrategyRule, RuleCondition } from './types'
 
 export interface TtcWindow {
-  minTtc: number | null  // lower bound on time-to-close (seconds), null = open
-  maxTtc: number | null  // upper bound on time-to-close (seconds), null = open
+  minTtc: number | null    // lower bound on time-to-close (seconds), null = open
+  maxTtc: number | null    // upper bound on time-to-close (seconds), null = open
+  minCents: number | null  // lower bound on entry ask price (¢), null = open
+  maxCents: number | null  // upper bound on entry ask price (¢), null = open
 }
 
-// Derive the time-to-close window(s) a rule set allows, so a chart can shade the
-// span where an entry was eligible. Values are in seconds (same as the field).
+// Collapse all of a rule's conditions on `field` into a single [min, max] range.
+// Returns bounded=false if the field is never constrained. null on a bound means
+// open-ended in that direction.
+function fieldBounds(rule: StrategyRule, field: RuleCondition['field']):
+  { min: number | null; max: number | null; bounded: boolean } {
+  let min: number | null = null
+  let max: number | null = null
+  let bounded = false
+  for (const c of rule.conditions || []) {
+    if (c.field !== field) continue
+    const v = c.value
+    if (v == null) continue
+    if (c.op === 'between') {
+      if (c.value2 == null) continue
+      const lo = Math.min(v, c.value2)
+      const hi = Math.max(v, c.value2)
+      min = min == null ? lo : Math.max(min, lo)
+      max = max == null ? hi : Math.min(max, hi)
+      bounded = true
+    } else if (c.op === 'gt' || c.op === 'gte') {
+      min = min == null ? v : Math.max(min, v)
+      bounded = true
+    } else if (c.op === 'lt' || c.op === 'lte') {
+      max = max == null ? v : Math.min(max, v)
+      bounded = true
+    } else if (c.op === 'eq') {
+      min = min == null ? v : Math.max(min, v)
+      max = max == null ? v : Math.min(max, v)
+      bounded = true
+    }
+  }
+  return { min, max, bounded }
+}
+
+// Derive the entry window(s) a rule set allows, so a chart can shade the span
+// where an entry was eligible: a time-to-close span on the x-axis (seconds) and,
+// when the rule gates on contract ask price, a cents band on the y-axis. The ask
+// band uses whichever side the rule trades (yes_ask for yes/both, no_ask for no).
 export function ttcWindowsFromRules(rules: StrategyRule[]): TtcWindow[] {
   const out: TtcWindow[] = []
   const seen = new Set<string>()
   for (const rule of rules) {
     if (rule.enabled === false) continue
-    let min: number | null = null
-    let max: number | null = null
-    let bounded = false
-    for (const c of rule.conditions || []) {
-      if (c.field !== 'time_to_close') continue
-      const v = c.value
-      if (v == null) continue
-      if (c.op === 'between') {
-        if (c.value2 == null) continue
-        const lo = Math.min(v, c.value2)
-        const hi = Math.max(v, c.value2)
-        min = min == null ? lo : Math.max(min, lo)
-        max = max == null ? hi : Math.min(max, hi)
-        bounded = true
-      } else if (c.op === 'gt' || c.op === 'gte') {
-        min = min == null ? v : Math.max(min, v)
-        bounded = true
-      } else if (c.op === 'lt' || c.op === 'lte') {
-        max = max == null ? v : Math.min(max, v)
-        bounded = true
-      } else if (c.op === 'eq') {
-        min = min == null ? v : Math.max(min, v)
-        max = max == null ? v : Math.min(max, v)
-        bounded = true
-      }
-    }
-    if (!bounded) continue
-    const key = `${min}:${max}`
+    const ttc = fieldBounds(rule, 'time_to_close')
+    const askField = rule.action?.side === 'no' ? 'no_ask' : 'yes_ask'
+    const ask = fieldBounds(rule, askField)
+    if (!ttc.bounded && !ask.bounded) continue
+    const key = `${ttc.min}:${ttc.max}:${ask.min}:${ask.max}`
     if (seen.has(key)) continue
     seen.add(key)
-    out.push({ minTtc: min, maxTtc: max })
+    out.push({
+      minTtc: ttc.min, maxTtc: ttc.max,
+      minCents: ask.bounded ? ask.min : null,
+      maxCents: ask.bounded ? ask.max : null,
+    })
   }
   return out
 }
