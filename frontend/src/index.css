@@ -1360,6 +1360,7 @@ select optgroup {
 .pnl-cal-today { border-color: #60a5fa; }
 .pnl-cal-daynum { font-size: 10px; color: #64748b; font-weight: 600; }
 .pnl-cal-amount { font-size: 12px; font-weight: 700; white-space: nowrap; }
+.pnl-cal-winrate { font-size: 11px; font-weight: 700; white-space: nowrap; }
 .pnl-cal-count { font-size: 9px; color: #64748b; white-space: nowrap; }
 .pnl-cal-weekcol {
   background: rgba(255,255,255,0.02); border-color: #1a1a28;
@@ -1449,9 +1450,14 @@ select optgroup {
   .pnl-cal { padding: 8px; }
   .pnl-cal-grid { grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 3px; }
   .pnl-cal-weekcol { display: none; }
-  .pnl-cal-day { min-height: 44px; padding: 3px 4px; }
+  .pnl-cal-day { min-height: 44px; padding: 3px 4px; cursor: pointer; }
   .pnl-cal-amount { font-size: 10px; }
+  .pnl-cal-winrate { font-size: 10px; }
+  .pnl-cal-wfrac { display: none; }
   .pnl-cal-count { display: none; }
+  /* Mobile shows one metric at a time; tapping a day flips the whole grid. */
+  .pnl-cal.mode-pnl .pnl-cal-winrate { display: none; }
+  .pnl-cal.mode-win .pnl-cal-amount { display: none; }
   .pnl-cal-title { min-width: 0; }
 
   /* Modal footers hold several actions — let them wrap instead of overflowing. */

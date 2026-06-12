@@ -14,6 +14,7 @@ interface PnLRow {
 interface DayAgg {
   pnlCents: number
   orders: number
+  wins: number
 }
 
 const WEEKDAYS = ['Su', 'Mo', 'Tu', 'We', 'Th', 'Fr', 'Sa']
@@ -37,10 +38,21 @@ function pnlColor(cents: number): string {
   return cents > 0 ? '#00d4a0' : cents < 0 ? '#ff4444' : '#94a3b8'
 }
 
+function winRate(agg: DayAgg): number {
+  return agg.orders ? Math.round((agg.wins / agg.orders) * 100) : 0
+}
+
+function winColor(pct: number): string {
+  return pct >= 50 ? '#00d4a0' : '#ff4444'
+}
+
 export default function PnLCalendar() {
   const [rows, setRows] = useState<PnLRow[]>([])
   const [viewYear, setViewYear] = useState(() => new Date().getFullYear())
   const [viewMonth, setViewMonth] = useState(() => new Date().getMonth())
+  // Mobile-only: tapping a day toggles the whole grid between P&L and win rate.
+  // On desktop both lines show at once, so the mode (and the tap) are inert.
+  const [mobileMode, setMobileMode] = useState<'pnl' | 'win'>('pnl')
 
   useEffect(() => {
     let alive = true
@@ -60,9 +72,10 @@ export default function PnLCalendar() {
     for (const r of rows) {
       const iso = r.settled_at.endsWith('Z') ? r.settled_at : r.settled_at + 'Z'
       const key = localDateKey(new Date(iso))
-      const agg = map.get(key) ?? { pnlCents: 0, orders: 0 }
+      const agg = map.get(key) ?? { pnlCents: 0, orders: 0, wins: 0 }
       agg.pnlCents += r.net_profit_cents
       agg.orders += 1
+      if (r.net_profit_cents > 0) agg.wins += 1
       map.set(key, agg)
     }
     return map
@@ -112,7 +125,7 @@ export default function PnLCalendar() {
   }
 
   return (
-    <div className="pnl-cal">
+    <div className={`pnl-cal mode-${mobileMode}`}>
       <div className="pnl-cal-head">
         <div className="pnl-cal-nav">
           <button className="btn" onClick={() => shiftMonth(-1)} aria-label="Previous month">‹</button>
@@ -151,8 +164,13 @@ export default function PnLCalendar() {
                   agg && agg.pnlCents === 0 ? 'pnl-cal-flat' : '',
                   isToday ? 'pnl-cal-today' : '',
                 ].filter(Boolean).join(' ')
+                const pct = agg ? winRate(agg) : 0
                 return (
-                  <div key={di} className={cls}>
+                  <div
+                    key={di}
+                    className={cls}
+                    onClick={agg ? () => setMobileMode(m => (m === 'pnl' ? 'win' : 'pnl')) : undefined}
+                  >
                     {day != null && (
                       <>
                         <div className="pnl-cal-daynum">{day}</div>
@@ -160,6 +178,9 @@ export default function PnLCalendar() {
                           <>
                             <div className="pnl-cal-amount" style={{ color: pnlColor(agg.pnlCents) }}>
                               {fmtUsd(agg.pnlCents, true)}
+                            </div>
+                            <div className="pnl-cal-winrate" style={{ color: winColor(pct) }}>
+                              {pct}%<span className="pnl-cal-wfrac"> {agg.wins}/{agg.orders}</span>
                             </div>
                             <div className="pnl-cal-count">{agg.orders} {agg.orders === 1 ? 'order' : 'orders'}</div>
                           </>
