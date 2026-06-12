@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom'
 import type { Order, Trade, Position, Snapshot, Settings, Profile, Quotes } from '../types'
 import PriceActionChart from '../components/PriceActionChart'
 import PnLCalendar from '../components/PnLCalendar'
-import { centsToUSD, fmtCents, fmtPnL, fmtTime, fmtUnixTime, fmtDur, kalshiMarketUrl } from '../utils'
+import { centsToUSD, fmtCents, fmtPnL, fmtTime, fmtUnixTime, fmtDur, kalshiMarketUrl, cryptoPriceForTicker } from '../utils'
 
 type CollapsibleSection = 'trades' | 'calendar'
 
@@ -249,7 +249,8 @@ export default function Dashboard({ orders, trades, openOrders, positions, snaps
                     {(() => {
                       const strike = s.strike_str != null ? parseFloat(s.strike_str) : null
                       if (strike == null) return '—'
-                      const above = s.btc_price != null ? s.btc_price >= strike : null
+                      const px = cryptoPriceForTicker(s.ticker, s as unknown as Record<string, unknown>)
+                      const above = px != null ? px >= strike : null
                       return (
                         <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}>
                           ${strike.toLocaleString()}
@@ -262,7 +263,10 @@ export default function Dashboard({ orders, trades, openOrders, positions, snaps
                       )
                     })()}
                   </td>
-                  <td className="cell-dim">{s.btc_price != null ? `$${s.btc_price.toLocaleString()}` : '—'}</td>
+                  <td className="cell-dim">{(() => {
+                    const px = cryptoPriceForTicker(s.ticker, s as unknown as Record<string, unknown>)
+                    return px != null ? `$${px.toLocaleString()}` : '—'
+                  })()}</td>
                   <td>{fmtCents(s.yes_ask)}</td>
                   <td className="cell-dim">{fmtCents(s.yes_bid)}</td>
                   <td className="cell-dim">{fmtCents(s.no_ask)}</td>
