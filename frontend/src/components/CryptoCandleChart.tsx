@@ -72,6 +72,96 @@ const fmtPrice = (val: number) =>
 // box for the low→high range (y = pixel of `high`, height = span down to `low`),
 // so we can build a local price→pixel map from this candle's own high/low and
 // place the open/close body without needing the chart's y-scale.
+// True when the viewport is phone-sized (matches the CSS mobile breakpoint).
+function useIsMobile(): boolean {
+  const [m, setM] = useState(
+    () => typeof window !== 'undefined' && window.matchMedia('(max-width: 640px)').matches,
+  );
+  useEffect(() => {
+    const mq = window.matchMedia('(max-width: 640px)');
+    const onChange = (e: MediaQueryListEvent) => setM(e.matches);
+    mq.addEventListener('change', onChange);
+    return () => mq.removeEventListener('change', onChange);
+  }, []);
+  return m;
+}
+
+type Opt = { secs: number; label: string };
+
+// Timeframe control: a full segmented button row on desktop; on mobile it
+// collapses to the selected value and opens a dropdown on tap (TradingView-style)
+// to save horizontal space.
+function Picker({ opts, value, onPick, mobile }: {
+  opts: Opt[]; value: number; onPick: (v: number) => void; mobile: boolean;
+}) {
+  const [open, setOpen] = useState(false);
+  const cur = opts.find(o => o.secs === value);
+
+  if (!mobile) {
+    return (
+      <div style={{ display: 'flex', flexWrap: 'wrap', borderRadius: 4, overflow: 'hidden', border: '1px solid #333' }}>
+        {opts.map(o => (
+          <button
+            key={o.secs}
+            onClick={() => onPick(o.secs)}
+            style={{
+              fontSize: 10, padding: '2px 8px', cursor: 'pointer', border: 'none',
+              background: value === o.secs ? '#374151' : 'transparent',
+              color: value === o.secs ? '#fff' : '#888',
+            }}
+          >
+            {o.label}
+          </button>
+        ))}
+      </div>
+    );
+  }
+
+  return (
+    <div style={{ position: 'relative' }}>
+      <button
+        onClick={() => setOpen(o => !o)}
+        style={{
+          fontSize: 11, padding: '4px 10px', cursor: 'pointer',
+          borderRadius: 4, border: '1px solid #333', background: '#1f2937', color: '#fff',
+          display: 'flex', alignItems: 'center', gap: 6,
+        }}
+      >
+        {cur?.label ?? '—'}
+        <span style={{ color: '#888', fontSize: 9 }}>▾</span>
+      </button>
+      {open && (
+        <>
+          {/* click-catcher to close */}
+          <div onClick={() => setOpen(false)} style={{ position: 'fixed', inset: 0, zIndex: 20 }} />
+          <div
+            style={{
+              position: 'absolute', top: '100%', right: 0, marginTop: 4, zIndex: 21,
+              background: '#1a1a1a', border: '1px solid #333', borderRadius: 4,
+              overflow: 'hidden', minWidth: 64, boxShadow: '0 4px 12px rgba(0,0,0,0.5)',
+            }}
+          >
+            {opts.map(o => (
+              <button
+                key={o.secs}
+                onClick={() => { onPick(o.secs); setOpen(false); }}
+                style={{
+                  display: 'block', width: '100%', textAlign: 'left',
+                  fontSize: 12, padding: '7px 12px', cursor: 'pointer', border: 'none',
+                  background: value === o.secs ? '#374151' : 'transparent',
+                  color: value === o.secs ? '#fff' : '#bbb',
+                }}
+              >
+                {o.label}
+              </button>
+            ))}
+          </div>
+        </>
+      )}
+    </div>
+  );
+}
+
 function Candle(props: {
   x?: number; y?: number; width?: number; height?: number;
   payload?: { open: number; high: number; low: number; close: number; up: boolean };
@@ -107,6 +197,7 @@ export default function CryptoCandleChart({ ticker, strikeNum = null, livePrice 
   const assetKey = detectCryptoAsset(ticker);
   const assetInfo = cryptoAssetConfig(ticker);
 
+  const mobile = useIsMobile();
   const [interval, setInterval] = useState(60);
   const [lookback, setLookback] = useState(14400);
   const [data, setData] = useState<Candle[]>([]);
@@ -178,31 +269,6 @@ export default function CryptoCandleChart({ ticker, strikeNum = null, livePrice 
 
   if (!assetKey) return null;
 
-  const ToggleRow = (
-    opts: { secs: number; label: string }[],
-    value: number,
-    onPick: (v: number) => void,
-  ) => (
-    <div style={{ display: 'flex', flexWrap: 'wrap', borderRadius: 4, overflow: 'hidden', border: '1px solid #333' }}>
-      {opts.map(o => (
-        <button
-          key={o.secs}
-          onClick={() => onPick(o.secs)}
-          style={{
-            fontSize: 10,
-            padding: '2px 8px',
-            cursor: 'pointer',
-            border: 'none',
-            background: value === o.secs ? '#374151' : 'transparent',
-            color: value === o.secs ? '#fff' : '#888',
-          }}
-        >
-          {o.label}
-        </button>
-      ))}
-    </div>
-  );
-
   const CandleTooltip = ({ active, payload }: {
     active?: boolean;
     payload?: Array<{ payload: Candle }>;
@@ -242,8 +308,8 @@ export default function CryptoCandleChart({ ticker, strikeNum = null, livePrice 
           )}
         </span>
         <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, justifyContent: 'flex-end' }}>
-          {ToggleRow(INTERVALS, interval, setInterval)}
-          {ToggleRow(LOOKBACKS, lookback, setLookback)}
+          <Picker opts={INTERVALS} value={interval} onPick={setInterval} mobile={mobile} />
+          <Picker opts={LOOKBACKS} value={lookback} onPick={setLookback} mobile={mobile} />
         </div>
       </div>
       <div style={{ height: 260 }}>
