@@ -120,6 +120,15 @@ export default function Strategies({ settings, profiles, refresh }: Props) {
     return () => document.removeEventListener('keydown', handler)
   }, [viewModal, newStrategyDraft, renameModal])
 
+  // Lock background scroll while any modal is open so touch-scrolling the
+  // sheet doesn't bleed through to the page behind it (mobile).
+  useEffect(() => {
+    if (!viewModal && !newStrategyDraft && !renameModal) return
+    const prev = document.body.style.overflow
+    document.body.style.overflow = 'hidden'
+    return () => { document.body.style.overflow = prev }
+  }, [viewModal, newStrategyDraft, renameModal])
+
   const activeProfile = profiles.find(p => p.id === settings?.active_profile_id)
 
   const updateDraft = (patch: Partial<StrategyDraft>) =>

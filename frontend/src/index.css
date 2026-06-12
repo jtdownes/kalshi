@@ -594,6 +594,8 @@ tbody tr:hover { background: rgba(255,255,255,0.025); }
   max-width: 640px;
   max-height: 92vh;
   overflow-y: auto;
+  overscroll-behavior: contain;
+  -webkit-overflow-scrolling: touch;
   border-radius: 12px;
 }
 
