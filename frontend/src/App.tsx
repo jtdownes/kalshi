@@ -72,16 +72,18 @@ export default function App() {
   useEffect(() => {
     const id = setInterval(async () => {
       try {
-        const [o, tr, st, pr] = await Promise.all([
+        const [o, tr, st, pr, bal] = await Promise.all([
           fetch('/api/orders?limit=200').then(r => r.json()),
           fetch('/api/trades?limit=200').then(r => r.json()).catch(() => []),
           fetch('/api/settings').then(r => r.json()),
           fetch('/api/profiles').then(r => r.json()),
+          fetch('/api/balance').then(r => r.json()).catch(() => null),
         ])
         setOrders(o)
         setTrades(tr)
         setSettings(st)
         setProfiles(pr)
+        if (bal && !bal.error) setBalance(bal.balance ?? null)
         setLastRefresh(new Date())
       } catch { /* silent */ }
     }, dashboardRefreshMs)
