@@ -349,6 +349,24 @@ export default function CryptoCandleChart({ ticker, strikeNum = null, livePrice 
 
   if (!assetKey) return null;
 
+  // Build the y-axis ticks ourselves so the strike price always appears as a
+  // labelled tick (drawn white to match its dashed line). Evenly space a few
+  // ticks across the domain, then inject the strike, dropping any auto tick that
+  // would collide with it.
+  const [yTicks, isStrikeTick] = useMemo<[number[], (v: number) => boolean]>(() => {
+    if (priceDomain[0] === 'auto' || priceDomain[1] === 'auto') return [[], () => false];
+    const [lo, hi] = priceDomain as [number, number];
+    const span = hi - lo;
+    if (span <= 0) return [[], () => false];
+    const base: number[] = [];
+    for (let i = 0; i <= 4; i++) base.push(lo + (span * i) / 4);
+    if (strikeNum == null) return [base, () => false];
+    const minGap = span * 0.08;  // keep auto ticks from crowding the strike
+    const kept = base.filter(t => Math.abs(t - strikeNum) > minGap);
+    const ticks = [...kept, strikeNum].sort((a, b) => a - b);
+    return [ticks, (v: number) => v === strikeNum];
+  }, [priceDomain, strikeNum]);
+
   // For windows spanning a day or more, time-only ticks are ambiguous — switch
   // the axis to a date label so the user can tell which day a candle is on.
   const axisFmt = lookback >= 86400 ? fmtDay : fmtClock;
@@ -428,10 +446,26 @@ export default function CryptoCandleChart({ ticker, strikeNum = null, livePrice 
               <YAxis
                 stroke="#666"
                 domain={priceDomain}
+                ticks={yTicks.length ? yTicks : undefined}
                 tickFormatter={fmtPrice}
                 fontSize={10}
-                tick={{ fill: '#888' }}
                 width={52}
+                tick={(props: { x: number; y: number; payload: { value: number } }) => {
+                  const strike = isStrikeTick(props.payload.value);
+                  return (
+                    <text
+                      x={props.x}
+                      y={props.y}
+                      dy={3}
+                      textAnchor="end"
+                      fontSize={10}
+                      fontWeight={strike ? 700 : 400}
+                      fill={strike ? '#ffffff' : '#888'}
+                    >
+                      {fmtPrice(props.payload.value)}
+                    </text>
+                  );
+                }}
               />
               <Tooltip content={<CandleTooltip />} />
               {strikeNum != null && (
@@ -440,12 +474,6 @@ export default function CryptoCandleChart({ ticker, strikeNum = null, livePrice 
                   stroke="#ffffff"
                   strokeDasharray="6 3"
                   strokeWidth={1}
-                  label={{
-                    value: fmtPrice(strikeNum),
-                    position: 'right',
-                    fill: '#ffffff',
-                    fontSize: 10,
-                  }}
                 />
               )}
               {/* One floating bar per candle spanning low→high; the custom
