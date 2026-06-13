@@ -210,13 +210,23 @@ function Candle(props: {
   );
 }
 
-export default function CryptoCandleChart({ ticker, strikeNum = null, livePrice = null, liveTs = null }: Props) {
+interface PaneProps extends Props {
+  initialInterval?: number;
+  initialLookback?: number;
+  // When set, a control to close this pane (used by the split view).
+  onClose?: () => void;
+}
+
+function CandlePane({
+  ticker, strikeNum = null, livePrice = null, liveTs = null,
+  initialInterval = 60, initialLookback = 14400, onClose,
+}: PaneProps) {
   const assetKey = detectCryptoAsset(ticker);
   const assetInfo = cryptoAssetConfig(ticker);
 
   const mobile = useIsMobile();
-  const [interval, setInterval] = useState(60);
-  const [lookback, setLookback] = useState(14400);
+  const [interval, setInterval] = useState(initialInterval);
+  const [lookback, setLookback] = useState(initialLookback);
   const [data, setData] = useState<Candle[]>([]);
   const [loading, setLoading] = useState(false);
   const [orders, setOrders] = useState<Order[]>([]);
@@ -401,7 +411,7 @@ export default function CryptoCandleChart({ ticker, strikeNum = null, livePrice 
   };
 
   return (
-    <div className="chart-card" style={{ marginTop: 12, minWidth: 0, height: 'auto', overflow: 'hidden' }}>
+    <div className="chart-card" style={{ minWidth: 0, height: 'auto', overflow: 'hidden' }}>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4, flexWrap: 'wrap', gap: 8 }}>
         <span style={{ fontSize: 11, color: '#888' }}>
           {assetInfo ? `${assetInfo.label} candles (USD)` : 'Candles (USD)'} — {data.length} bars
@@ -424,6 +434,19 @@ export default function CryptoCandleChart({ ticker, strikeNum = null, livePrice 
           >
             Execs
           </button>
+          {onClose && (
+            <button
+              onClick={onClose}
+              title="Close this pane"
+              style={{
+                fontSize: mobile ? 13 : 12, padding: mobile ? '4px 10px' : '2px 8px',
+                cursor: 'pointer', borderRadius: 4, border: '1px solid #333',
+                background: 'transparent', color: '#888', lineHeight: 1,
+              }}
+            >
+              ✕
+            </button>
+          )}
         </div>
       </div>
       <div style={{ height: mobile ? 200 : 260 }}>
@@ -499,6 +522,39 @@ export default function CryptoCandleChart({ ticker, strikeNum = null, livePrice 
           </ResponsiveContainer>
         )}
       </div>
+    </div>
+  );
+}
+
+// Wrapper: renders one CandlePane by default, with a "split" toggle that opens
+// a second independent pane below it (each with its own interval/lookback) so
+// you can watch, say, a 15m chart next to a tick-by-tick one. The two panes
+// share the same ticker/strike/live feed but hold separate view state.
+export default function CryptoCandleChart(props: Props) {
+  const [split, setSplit] = useState(false);
+  if (!detectCryptoAsset(props.ticker)) return null;
+
+  return (
+    <div style={{ marginTop: 12, display: 'flex', flexDirection: 'column', gap: 8 }}>
+      <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
+        <button
+          onClick={() => setSplit(s => !s)}
+          title={split ? 'Single chart' : 'Split into two charts'}
+          style={{
+            fontSize: 10, padding: '2px 8px', cursor: 'pointer', borderRadius: 4,
+            border: '1px solid #333', display: 'flex', alignItems: 'center', gap: 5,
+            background: split ? '#374151' : 'transparent', color: split ? '#fff' : '#888',
+          }}
+        >
+          <span style={{ fontSize: 12, lineHeight: 1 }}>{split ? '▭' : '⊟'}</span>
+          {split ? 'Single' : 'Split'}
+        </button>
+      </div>
+      <CandlePane {...props} initialInterval={60} initialLookback={14400} />
+      {split && (
+        // Second pane defaults to a finer/closer view to complement the first.
+        <CandlePane {...props} initialInterval={5} initialLookback={1800} onClose={() => setSplit(false)} />
+      )}
     </div>
   );
 }
