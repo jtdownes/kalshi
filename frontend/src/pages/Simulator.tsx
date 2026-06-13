@@ -7,6 +7,7 @@ import { centsToUSD } from '../utils'
 const SUPPORTED_MARKETS = [
   { value: 'KXBTC15M', label: 'Bitcoin 15 Minute' },
   { value: 'KXETH15M', label: 'Ethereum 15 Minute' },
+  { value: 'KXSOL15M', label: 'Solana 15 Minute' },
 ] as const
 
 const RULES_STORAGE_KEY = 'simulator.rules.v1'

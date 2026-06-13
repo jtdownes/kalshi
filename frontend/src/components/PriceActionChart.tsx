@@ -33,6 +33,11 @@ interface SeriesData {
   eth_kraken_price: number | null;
   eth_bitstamp_price: number | null;
   eth_gemini_price: number | null;
+  sol_price: number | null;       // consolidated SOL multi-venue price
+  sol_coinbase_price: number | null;
+  sol_kraken_price: number | null;
+  sol_bitstamp_price: number | null;
+  sol_gemini_price: number | null;
   strike_str: string | null;
 }
 
@@ -103,6 +108,11 @@ export default function PriceActionChart({ ticker, globalSnapshots, openOrders =
           eth_kraken_price: null,
           eth_bitstamp_price: null,
           eth_gemini_price: null,
+          sol_price: latest.sol_price,
+          sol_coinbase_price: null,
+          sol_kraken_price: null,
+          sol_bitstamp_price: null,
+          sol_gemini_price: null,
           strike_str: latest.strike_str,
         }].slice(-1000);
       });
@@ -121,7 +131,9 @@ export default function PriceActionChart({ ticker, globalSnapshots, openOrders =
   // chart so it folds new prices into the in-progress bar without re-fetching.
   const latestSnap = globalSnapshots.find(s => s.ticker === ticker);
   const livePrice = latestSnap
-    ? Number((assetKey === 'ETH' ? latestSnap.eth_price : latestSnap.btc_price) ?? NaN)
+    ? Number((assetKey === 'ETH' ? latestSnap.eth_price
+            : assetKey === 'SOL' ? latestSnap.sol_price
+            : latestSnap.btc_price) ?? NaN)
     : NaN;
   const liveTs = latestSnap?.scanned_at ?? null;
 
@@ -176,25 +188,45 @@ export default function PriceActionChart({ ticker, globalSnapshots, openOrders =
     />
   ));
 
-  // Venue fields per asset — defines which raw columns to read for individual-venue view
-  const venueFields: { key: keyof SeriesData; label: string; color: string }[] = assetKey === 'ETH'
-    ? [
+  // Venue fields + aggregate column per asset. Each asset exposes its own
+  // per-venue columns (prefixed) plus a consolidated price; BTC keeps the
+  // legacy unprefixed names.
+  const VENUE_CFG: Record<string, { agg: keyof SeriesData; fields: { key: keyof SeriesData; label: string; color: string }[] }> = {
+    ETH: {
+      agg: 'eth_price',
+      fields: [
         { key: 'eth_coinbase_price', label: 'Coinbase', color: '#627eea' },
         { key: 'eth_kraken_price',   label: 'Kraken',   color: '#a855f7' },
         { key: 'eth_bitstamp_price', label: 'Bitstamp', color: '#86efac' },
         { key: 'eth_gemini_price',   label: 'Gemini',   color: '#38bdf8' },
-      ]
-    : [
+      ],
+    },
+    SOL: {
+      agg: 'sol_price',
+      fields: [
+        { key: 'sol_coinbase_price', label: 'Coinbase', color: '#9945ff' },
+        { key: 'sol_kraken_price',   label: 'Kraken',   color: '#a855f7' },
+        { key: 'sol_bitstamp_price', label: 'Bitstamp', color: '#86efac' },
+        { key: 'sol_gemini_price',   label: 'Gemini',   color: '#38bdf8' },
+      ],
+    },
+    BTC: {
+      agg: 'btc_price',
+      fields: [
         { key: 'coinbase_price', label: 'Coinbase', color: '#f7931a' },
         { key: 'kraken_price',   label: 'Kraken',   color: '#a855f7' },
         { key: 'bitstamp_price', label: 'Bitstamp', color: '#86efac' },
         { key: 'gemini_price',   label: 'Gemini',   color: '#38bdf8' },
-      ];
+      ],
+    },
+  };
+  const venueCfg = VENUE_CFG[assetKey ?? 'BTC'] ?? VENUE_CFG.BTC;
+  const venueFields = venueCfg.fields;
 
   // Rows appended live from globalSnapshots carry only the asset's aggregate
-  // price (btc_price / eth_price), not per-venue columns — fall back to it so
-  // the consolidated line extends to the latest tick instead of gapping.
-  const aggKey: keyof SeriesData = assetKey === 'ETH' ? 'eth_price' : 'btc_price';
+  // price (btc_price / eth_price / sol_price), not per-venue columns — fall back
+  // to it so the consolidated line extends to the latest tick instead of gapping.
+  const aggKey: keyof SeriesData = venueCfg.agg;
 
   // The API can serialize prices as numeric strings (Postgres NUMERIC →
   // Decimal → JSON string); coerce before doing math on them.

@@ -214,6 +214,35 @@ BEGIN
     END LOOP;
 END $$;
 
+-- Solana mirrors bitcoin_snapshots: one global price row per collection pass,
+-- joined to market_snapshots on scanned_at. See app/crypto_assets.py registry.
+CREATE TABLE IF NOT EXISTS solana_snapshots (
+    id                  SERIAL PRIMARY KEY,
+    scanned_at          TEXT NOT NULL,
+    coinbase_price      REAL,
+    kraken_price        REAL,
+    bitstamp_price      REAL,
+    gemini_price        REAL,
+    consolidated_price  REAL,
+    coinbase_volume     REAL,
+    kraken_volume       REAL,
+    bitstamp_volume     REAL,
+    gemini_volume       REAL
+);
+CREATE INDEX IF NOT EXISTS idx_solana_snapshots_scanned_at ON solana_snapshots (scanned_at);
+
+-- Self-heal a hand-created solana_snapshots whose columns were NUMERIC
+-- (psycopg2 returns Decimal -> serialized as strings, breaking frontend math).
+DO $$
+DECLARE col TEXT;
+BEGIN
+    FOR col IN SELECT column_name FROM information_schema.columns
+               WHERE table_name = 'solana_snapshots' AND data_type = 'numeric'
+    LOOP
+        EXECUTE format('ALTER TABLE solana_snapshots ALTER COLUMN %I TYPE REAL', col);
+    END LOOP;
+END $$;
+
 -- One-time backfill: lift bitcoin data still embedded in the legacy
 -- market_snapshots columns into bitcoin_snapshots, keyed by each row's
 -- scanned_at, so historical joins resolve. Only runs on a pre-split DB that
@@ -385,6 +414,10 @@ CREATE TABLE IF NOT EXISTS scanned_series (
 -- Seed the existing BTC series so behaviour is unchanged on first run.
 INSERT INTO scanned_series (series_ticker, label, look_ahead_seconds, interval_seconds, enabled, added_at)
 VALUES ('KXBTC15M', 'Bitcoin 15-Minute', 1200, 1, TRUE, '1970-01-01T00:00:00')
+ON CONFLICT (series_ticker) DO NOTHING;
+-- Solana 15-minute, enabled so SOL markets are scanned out of the box.
+INSERT INTO scanned_series (series_ticker, label, look_ahead_seconds, interval_seconds, enabled, added_at)
+VALUES ('KXSOL15M', 'Solana 15-Minute', 1200, 1, TRUE, '1970-01-01T00:00:00')
 ON CONFLICT (series_ticker) DO NOTHING;
 
 -- ── Weather observations ──────────────────────────────────────────────────────

@@ -206,4 +206,5 @@ export function isCryptoMarket(ticker: string, title: string): boolean {
 export const STRATEGY_MARKETS = [
   { value: 'KXBTC15M', label: 'Bitcoin 15 Minute' },
   { value: 'KXETH15M', label: 'Ethereum 15 Minute' },
+  { value: 'KXSOL15M', label: 'Solana 15 Minute' },
 ] as const

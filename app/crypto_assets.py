@@ -32,12 +32,23 @@ CRYPTO_ASSETS: dict[str, dict] = {
         "gemini_pair": "ethusd",
         "gemini_volume_key": "ETH",
     },
+    "SOL": {
+        "label": "Solana",
+        "snapshot_table": "solana_snapshots",
+        "price_field": "sol_price",
+        "coinbase_product": "SOL-USD",
+        "kraken_pair": "SOLUSD",
+        "bitstamp_pair": "solusd",
+        "gemini_pair": "solusd",
+        "gemini_volume_key": "SOL",
+    },
 }
 
 # Kalshi series-ticker prefix -> asset key. Order matters: first match wins.
 TICKER_PREFIX_TO_ASSET: list[tuple[str, str]] = [
     ("KXBTC", "BTC"),
     ("KXETH", "ETH"),
+    ("KXSOL", "SOL"),
 ]
 
 DEFAULT_ASSET = "BTC"
