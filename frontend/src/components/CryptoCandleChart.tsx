@@ -224,23 +224,26 @@ export default function CryptoCandleChart({ ticker, strikeNum = null, livePrice 
   // over 1w ≈ 120k bars) is unreadable and slow, so floor the interval at
   // whatever keeps us under MAX_BARS for the chosen lookback.
   const MAX_BARS = 1500;
+  const MIN_BARS = 3;  // an interval coarser than this many bars per window is useless
   const minInterval = Math.ceil(lookback / MAX_BARS);
+  const maxInterval = Math.floor(lookback / MIN_BARS);
   const effInterval = Math.max(interval, minInterval);
 
-  // Hide interval choices that would blow past MAX_BARS for the current window
-  // (e.g. on the 1w range, 5s–5m candles aren't offered — only 15m survives).
+  // Hide interval choices that don't fit the current window: too fine blows past
+  // MAX_BARS (1w only offers 15m+), too coarse yields too few candles to read
+  // (the 30m window won't offer 15m/30m candles — just 1–2 bars).
   const intervalOpts = useMemo(
-    () => INTERVALS.filter(o => o.secs >= minInterval),
-    [minInterval],
+    () => INTERVALS.filter(o => o.secs >= minInterval && o.secs <= maxInterval),
+    [minInterval, maxInterval],
   );
 
   // If the active interval is no longer valid for the new window, snap it to the
-  // smallest one that is.
+  // closest one that is.
   useEffect(() => {
-    if (interval < minInterval && intervalOpts.length > 0) {
-      setInterval(intervalOpts[0].secs);
-    }
-  }, [minInterval, interval, intervalOpts]);
+    if (intervalOpts.length === 0) return;
+    if (interval < minInterval) setInterval(intervalOpts[0].secs);
+    else if (interval > maxInterval) setInterval(intervalOpts[intervalOpts.length - 1].secs);
+  }, [minInterval, maxInterval, interval, intervalOpts]);
 
   useEffect(() => {
     if (!assetKey) return;
