@@ -223,8 +223,11 @@ export default function PriceActionChart({ ticker, globalSnapshots, openOrders =
     const candidates = strikeNum != null ? [...prices, strikeNum] : prices;
     const mn = Math.min(...candidates);
     const mx = Math.max(...candidates);
-    const pad = Math.max((mx - mn) * 0.2, mn * 0.002);
-    return [Math.floor(mn - pad), Math.ceil(mx + pad)];
+    // Pad by a small fraction of the actual range so the line fills the chart
+    // even on a quiet tape; only fall back to an absolute floor when flat.
+    const range = mx - mn;
+    const pad = range > 0 ? range * 0.06 : Math.max(mx * 0.0005, 1);
+    return [mn - pad, mx + pad];
   })();
 
   const btcDomain = priceDomain;  // kept for backward compat with BtcTick/BtcTooltip
