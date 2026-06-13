@@ -67,6 +67,18 @@ const fmtClock = (epochSecs: number) => {
   return d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
 };
 
+// Day-and-month label, e.g. "Jun 12".
+const fmtDay = (epochSecs: number) => {
+  const d = new Date(epochSecs * 1000);
+  return d.toLocaleDateString([], { month: 'short', day: 'numeric' });
+};
+
+// Date + time, for tooltips and wide-window axes where time alone is ambiguous.
+const fmtDayTime = (epochSecs: number) => {
+  const d = new Date(epochSecs * 1000);
+  return `${d.toLocaleDateString([], { month: 'short', day: 'numeric' })} ${d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`;
+};
+
 const fmtPrice = (val: number) =>
   val >= 1000 ? `$${(val / 1000).toFixed(2)}k` : `$${val.toFixed(0)}`;
 
@@ -311,6 +323,10 @@ export default function CryptoCandleChart({ ticker, strikeNum = null, livePrice 
 
   if (!assetKey) return null;
 
+  // For windows spanning a day or more, time-only ticks are ambiguous — switch
+  // the axis to a date label so the user can tell which day a candle is on.
+  const axisFmt = lookback >= 86400 ? fmtDay : fmtClock;
+
   const CandleTooltip = ({ active, payload }: {
     active?: boolean;
     payload?: Array<{ payload: Candle }>;
@@ -327,7 +343,7 @@ export default function CryptoCandleChart({ ticker, strikeNum = null, livePrice 
     return (
       <div style={{ backgroundColor: '#1a1a1a', border: '1px solid #444', color: '#eee', borderRadius: 4, padding: '6px 10px', fontSize: 11 }}>
         <div style={{ color: '#aaa', marginBottom: 4 }}>
-          {fmtClock(c.bucket)} · {c.n} ticks
+          {fmtDayTime(c.bucket)} · {c.n} ticks
         </div>
         {row('O', c.open)}
         {row('H', c.high)}
@@ -377,7 +393,7 @@ export default function CryptoCandleChart({ ticker, strikeNum = null, livePrice 
               <CartesianGrid strokeDasharray="3 3" stroke="#333" vertical={false} />
               <XAxis
                 dataKey="bucket"
-                tickFormatter={fmtClock}
+                tickFormatter={axisFmt}
                 stroke="#666"
                 fontSize={10}
                 minTickGap={50}
