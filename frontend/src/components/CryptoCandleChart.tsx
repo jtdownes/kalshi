@@ -215,16 +215,20 @@ interface PaneProps extends Props {
   initialLookback?: number;
   // When set, a control to close this pane (used by the split view).
   onClose?: () => void;
+  // Force the compact (dropdown) controls even on desktop — used by the split
+  // view, where each pane is too narrow for the full segmented button rows.
+  compact?: boolean;
 }
 
 function CandlePane({
   ticker, strikeNum = null, livePrice = null, liveTs = null,
-  initialInterval = 60, initialLookback = 14400, onClose,
+  initialInterval = 60, initialLookback = 14400, onClose, compact = false,
 }: PaneProps) {
   const assetKey = detectCryptoAsset(ticker);
   const assetInfo = cryptoAssetConfig(ticker);
 
-  const mobile = useIsMobile();
+  const isMobile = useIsMobile();
+  const mobile = isMobile || compact;  // compact controls when narrow
   const [interval, setInterval] = useState(initialInterval);
   const [lookback, setLookback] = useState(initialLookback);
   const [data, setData] = useState<Candle[]>([]);
@@ -563,10 +567,10 @@ export default function CryptoCandleChart(props: Props) {
           minWidth: 0,
         }}
       >
-        <CandlePane {...props} initialInterval={60} initialLookback={14400} />
+        <CandlePane {...props} initialInterval={60} initialLookback={14400} compact={horizontal} />
         {split && (
           // Second pane defaults to a finer/closer view to complement the first.
-          <CandlePane {...props} initialInterval={5} initialLookback={1800} onClose={() => setSplit(false)} />
+          <CandlePane {...props} initialInterval={5} initialLookback={1800} compact={horizontal} onClose={() => setSplit(false)} />
         )}
       </div>
     </div>
