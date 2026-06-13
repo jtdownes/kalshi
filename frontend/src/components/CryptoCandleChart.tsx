@@ -80,8 +80,10 @@ const fmtDayTime = (epochSecs: number) => {
   return `${d.toLocaleDateString([], { month: 'short', day: 'numeric' })} ${d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`;
 };
 
+// Below $10k, show whole dollars with separators ($1,668) so closely-spaced
+// ticks stay distinct; above that, the compact $Nk form is enough.
 const fmtPrice = (val: number) =>
-  val >= 1000 ? `$${(val / 1000).toFixed(2)}k` : `$${val.toFixed(0)}`;
+  val >= 10000 ? `$${(val / 1000).toFixed(1)}k` : `$${Math.round(val).toLocaleString()}`;
 
 // Custom shape for a single candle. Recharts gives us the floating bar's pixel
 // box for the low→high range (y = pixel of `high`, height = span down to `low`),
@@ -314,8 +316,12 @@ export default function CryptoCandleChart({ ticker, strikeNum = null, livePrice 
     for (const c of chartData) { if (c.low < mn) mn = c.low; if (c.high > mx) mx = c.high; }
     if (strikeNum != null) { mn = Math.min(mn, strikeNum); mx = Math.max(mx, strikeNum); }
     if (!Number.isFinite(mn) || !Number.isFinite(mx)) return ['auto', 'auto'];
-    const pad = Math.max((mx - mn) * 0.08, mn * 0.001);
-    return [Math.floor(mn - pad), Math.ceil(mx + pad)];
+    // Pad by a small fraction of the actual range so the candles fill the chart
+    // even when the price barely moves; only fall back to an absolute floor when
+    // the range is effectively flat (avoids a zero-height domain).
+    const range = mx - mn;
+    const pad = range > 0 ? range * 0.06 : Math.max(mx * 0.0005, 1);
+    return [mn - pad, mx + pad];
   }, [chartData, strikeNum]);
 
   // Place each order on the timeline at the candle nearest its placed_at, pinned
