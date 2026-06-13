@@ -60,8 +60,18 @@ function closestTs(data: SeriesData[], isoStr: string): string | null {
   }, data[0].scanned_at);
 }
 
-const fmtBtc = (val: number) =>
-  val >= 1000 ? `$${(val / 1000).toFixed(2)}k` : `$${val.toFixed(0)}`;
+// Decimal places for a price axis given its visible span. Small ranges (SOL ~$66,
+// ETH within a few dollars over a 15-min window) need sub-dollar resolution so the
+// price and strike don't collapse onto the same tick; BTC's wide range needs none.
+const decimalsForRange = (range: number): number =>
+  range >= 100 ? 0 : range >= 10 ? 1 : range >= 1 ? 2 : range >= 0.1 ? 3 : 4;
+
+// Format a USD price with `decimals` places. Only k-compact at BTC scale so ETH/SOL
+// keep their decimals visible instead of being rounded into "$2.73k".
+const fmtUsd = (val: number, decimals: number) =>
+  Math.abs(val) >= 10000
+    ? `$${(val / 1000).toFixed(2)}k`
+    : `$${val.toLocaleString(undefined, { minimumFractionDigits: decimals, maximumFractionDigits: decimals })}`;
 
 export default function PriceActionChart({ ticker, globalSnapshots, openOrders = [], historyOrders = [], ttcWindows = [] }: Props) {
   const [data, setData] = useState<SeriesData[]>([]);
@@ -264,15 +274,30 @@ export default function PriceActionChart({ ticker, globalSnapshots, openOrders =
 
   const btcDomain = priceDomain;  // kept for backward compat with BtcTick/BtcTooltip
 
+  // Axis precision adapts to the visible span so a ~$0.13 SOL distance-to-strike
+  // is legible. Drives the tick labels, the strike label and the tooltip.
+  const priceDecimals = priceDomain[0] === 'auto'
+    ? 0
+    : decimalsForRange((priceDomain[1] as number) - (priceDomain[0] as number));
+  const fmtPrice = (val: number) => fmtUsd(val, priceDecimals);
+
+  const priceStep = (() => {
+    if (priceDomain[0] === 'auto') return 1;
+    const range = (priceDomain[1] as number) - (priceDomain[0] as number);
+    const mag = Math.pow(10, Math.floor(Math.log10(range)));
+    return mag * (range / mag > 5 ? 2 : 1);
+  })();
+
   const priceTicks: number[] | undefined = (() => {
     if (priceDomain[0] === 'auto') return undefined;
     const [lo, hi] = priceDomain as [number, number];
-    const range = hi - lo;
-    const mag = Math.pow(10, Math.floor(Math.log10(range)));
-    const step = mag * (range / mag > 5 ? 2 : 1);
+    const step = priceStep;
+    // Round each tick to the axis precision (not to whole dollars) so fractional
+    // steps survive for low-priced assets.
+    const round = (v: number) => Number(v.toFixed(priceDecimals));
     let ticks: number[] = [];
     const start = Math.ceil(lo / step) * step;
-    for (let v = start; v <= hi; v += step) ticks.push(Math.round(v));
+    for (let v = start; v <= hi; v += step) ticks.push(round(v));
     if (strikeNum != null) {
       ticks = ticks.filter(t => Math.abs(t - strikeNum) > step * 0.45);
       ticks.push(strikeNum);
@@ -331,7 +356,7 @@ export default function PriceActionChart({ ticker, globalSnapshots, openOrders =
 
   const BtcTick = ({ x, y, payload }: { x?: number; y?: number; payload?: { value: number } }) => {
     if (x == null || y == null || payload == null) return null;
-    const isStrike = strikeNum != null && Math.abs(payload.value - strikeNum) < 1;
+    const isStrike = strikeNum != null && Math.abs(payload.value - strikeNum) < priceStep * 0.5;
     if (isStrike) {
       return (
         <g
@@ -341,14 +366,14 @@ export default function PriceActionChart({ ticker, globalSnapshots, openOrders =
         >
           <rect x={x - 46} y={y - 8} width={46} height={16} fill="transparent" />
           <text x={x} y={y} textAnchor="end" dominantBaseline="middle" fontSize={10} fill="#ffffff" fontWeight={700}>
-            {fmtBtc(payload.value)}
+            {fmtPrice(payload.value)}
           </text>
         </g>
       );
     }
     return (
       <text x={x} y={y} textAnchor="end" dominantBaseline="middle" fontSize={10} fill="#888" fontWeight={400}>
-        {fmtBtc(payload.value)}
+        {fmtPrice(payload.value)}
       </text>
     );
   };
@@ -371,10 +396,10 @@ export default function PriceActionChart({ ticker, globalSnapshots, openOrders =
           return (
             <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 6, lineHeight: 1.5 }}>
               <span style={{ display: 'inline-block', width: 12, height: 2, background: swatch, flexShrink: 0 }} />
-              <span style={{ color: swatch }}>{p.name}: ${p.value.toLocaleString()}</span>
+              <span style={{ color: swatch }}>{p.name}: {fmtPrice(p.value)}</span>
               {dist != null && (
                 <span style={{ color: dist >= 0 ? ABOVE : BELOW }}>
-                  ({dist >= 0 ? '+' : '−'}${Math.abs(Math.round(dist)).toLocaleString()} to strike)
+                  ({dist >= 0 ? '+' : '−'}{fmtPrice(Math.abs(dist))} to strike)
                 </span>
               )}
             </div>
@@ -546,7 +571,7 @@ export default function PriceActionChart({ ticker, globalSnapshots, openOrders =
                     strokeDasharray="6 3"
                     strokeWidth={1}
                     label={showStrikeLabel ? {
-                      value: `Strike $${strikeNum.toLocaleString()}`,
+                      value: `Strike ${fmtPrice(strikeNum)}`,
                       position: 'insideTopRight',
                       fill: '#ffffff',
                       fontSize: 10,
