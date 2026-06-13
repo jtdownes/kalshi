@@ -15,6 +15,7 @@ import time
 import threading
 import urllib.request
 import uuid
+from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timezone
 
 import config
@@ -30,6 +31,17 @@ logging.basicConfig(
     datefmt="%Y-%m-%dT%H:%M:%S",
 )
 log = logging.getLogger("bot")
+
+
+# Shared I/O pool for the market-data tick. Every crypto venue (across all
+# assets) and every due-series get_markets is fired concurrently here, so a tick
+# costs ~the slowest single HTTP call rather than the sum of a dozen serial ones.
+# This is what keeps the snapshot cadence at a true 1 Hz and keeps it flat as
+# assets/series are added (each new asset = a few more concurrent tasks, not more
+# wall-clock). Sized for headroom: 4 venues × several assets + a handful of series.
+# Only the single market-data thread submits here, so there is no nested-pool
+# deadlock risk. DB writes happen back on the caller thread after the gather.
+_IO_POOL = ThreadPoolExecutor(max_workers=24, thread_name_prefix="snap-io")
 
 
 def _get_json(url: str, timeout: int = 3):
@@ -103,22 +115,28 @@ def _venue_gemini(pair: str, volume_key: str) -> tuple[float, float | None] | No
         return None
 
 
-def fetch_crypto_prices(asset: str) -> dict:
-    """Fetch one asset's USD price from all four venues, returning per-venue
-    price + volume and the equal-weighted consolidated mid across whatever
-    responded. One call per venue — no redundant fetches.
+def _submit_venue_fetches(asset: str) -> dict:
+    """Fire all four venue fetches for one asset concurrently on the shared pool.
+    Returns {venue_name: Future}; the caller gathers the results. Fanning out at
+    submit time lets a whole tick's worth of assets be in flight at once."""
+    cfg = crypto_assets.CRYPTO_ASSETS[asset]
+    return {
+        "coinbase": _IO_POOL.submit(_venue_coinbase, cfg["coinbase_product"]),
+        "kraken":   _IO_POOL.submit(_venue_kraken, cfg["kraken_pair"]),
+        "bitstamp": _IO_POOL.submit(_venue_bitstamp, cfg["bitstamp_pair"]),
+        "gemini":   _IO_POOL.submit(_venue_gemini, cfg["gemini_pair"], cfg["gemini_volume_key"]),
+    }
+
+
+def _assemble_crypto_row(asset: str, venues: dict) -> dict:
+    """Build a crypto_snapshots row from resolved per-venue (price, volume) tuples
+    (or None). The consolidated mid is the equal-weighted average across whatever
+    responded.
 
     Note: the consolidated mid is NOT the licensed CF Benchmarks fixing, just a
     close keyless approximation. Volumes are captured so the blend can later be
     made volume-weighted to better track the real index.
     """
-    cfg = crypto_assets.CRYPTO_ASSETS[asset]
-    venues = {
-        "coinbase": _venue_coinbase(cfg["coinbase_product"]),
-        "kraken":   _venue_kraken(cfg["kraken_pair"]),
-        "bitstamp": _venue_bitstamp(cfg["bitstamp_pair"]),
-        "gemini":   _venue_gemini(cfg["gemini_pair"], cfg["gemini_volume_key"]),
-    }
     prices = [v[0] for v in venues.values() if v is not None]
     consolidated = round(sum(prices) / len(prices), 2) if prices else None
     if consolidated is None:
@@ -138,6 +156,16 @@ def fetch_crypto_prices(asset: str) -> dict:
         "gemini_volume":   volume_of(venues["gemini"]),
         "consolidated_price": consolidated,
     }
+
+
+def fetch_crypto_prices(asset: str) -> dict:
+    """Fetch one asset's USD price from all four venues (concurrently), returning
+    per-venue price + volume and the equal-weighted consolidated mid across
+    whatever responded. Single-asset convenience wrapper; the collector uses a
+    wider cross-asset fan-out directly."""
+    futs = _submit_venue_fetches(asset)
+    venues = {name: fut.result() for name, fut in futs.items()}
+    return _assemble_crypto_row(asset, venues)
 
 
 def dollars_to_cents(v) -> float | None:
@@ -194,13 +222,34 @@ def scan_loop(client: KalshiClient):
 
 
 def market_data_loop(client: KalshiClient):
-    log.info("Market data collector started  (interval=%ds)", config.SNAPSHOT_INTERVAL_SECONDS)
+    # Fixed-cadence scheduler: each tick targets a fixed period (SNAPSHOT_INTERVAL
+    # _SECONDS) measured tick-start to tick-start, not work-end to work-start. We
+    # sleep only the remainder after the tick's work, so the cadence stays at the
+    # target rate (1 Hz by default) regardless of how long the fan-out took. The
+    # next-deadline anchor is advanced by whole periods so a slow tick doesn't make
+    # the following ticks fire back-to-back to "catch up"; it just resyncs.
+    period = max(0.0, float(config.SNAPSHOT_INTERVAL_SECONDS))
+    log.info("Market data collector started  (target cadence=%.0fs)", period)
+    next_due = time.monotonic()
     while True:
+        started = time.monotonic()
         try:
             _collect_market_snapshots(client)
         except Exception:
             log.exception("Unhandled error in market data collector")
-        time.sleep(config.SNAPSHOT_INTERVAL_SECONDS)
+        elapsed = time.monotonic() - started
+        if period and elapsed > period:
+            log.warning("market-data tick overran cadence: %.2fs > %.0fs target",
+                        elapsed, period)
+        next_due += period
+        sleep_for = next_due - time.monotonic()
+        if sleep_for < 0:
+            # Fell behind (slow tick); resync the anchor to now so we don't fire a
+            # burst of catch-up ticks against the exchange.
+            next_due = time.monotonic()
+            sleep_for = 0
+        if sleep_for:
+            time.sleep(sleep_for)
 
 
 def weather_loop():
@@ -706,13 +755,15 @@ _last_series_fetch: dict[str, float] = {}  # series_ticker -> last poll epoch (p
 def _collect_market_snapshots(client: KalshiClient):
     now_ts = int(time.time())
 
-    # Crypto prices are global per tick: fetch once per asset, write one row per
-    # asset, and stamp every market_snapshots row with the same scanned_at so
-    # they join on the tick.
     scanned_at = datetime.utcnow().isoformat()
-    for asset in crypto_assets.CRYPTO_ASSETS:
-        venues = fetch_crypto_prices(asset)
-        db.save_crypto_snapshot(asset, scanned_at=scanned_at, **venues)
+
+    # ── Fan out all network I/O for this tick concurrently ──────────────────
+    # Crypto venues (across every asset) and the due series' get_markets calls
+    # are independent reads; firing them together makes the tick cost ~the
+    # slowest single call instead of the serial sum, holding a true 1 Hz cadence
+    # and staying flat as assets/series are added. Results are gathered below and
+    # written serially on this thread.
+    venue_futs = {asset: _submit_venue_fetches(asset) for asset in crypto_assets.CRYPTO_ASSETS}
 
     # Series to scan come from the DB (editable on the Markets page); fall back to
     # the static config list if the table is empty/unavailable. Each series carries
@@ -729,6 +780,7 @@ def _collect_market_snapshots(client: KalshiClient):
                         "interval_seconds": config.SNAPSHOT_INTERVAL_SECONDS}
                        for s in config.SNAPSHOT_SERIES_TICKERS]
 
+    series_futs = {}
     for cfg in series_cfgs:
         series = cfg["series_ticker"]
         interval = cfg.get("interval_seconds") or config.SNAPSHOT_INTERVAL_SECONDS
@@ -736,9 +788,22 @@ def _collect_market_snapshots(client: KalshiClient):
             continue
         _last_series_fetch[series] = now_ts
         series_max_close = now_ts + (cfg.get("look_ahead_seconds") or config.LOOK_AHEAD_SECONDS)
+        series_futs[series] = _IO_POOL.submit(
+            client.get_markets, status="open", max_close_ts=series_max_close,
+            limit=200, series_ticker=series)
+
+    # ── Gather + write ──────────────────────────────────────────────────────
+    # Crypto: one row per asset, all stamped with the same scanned_at so the
+    # market_snapshots rows join on the tick.
+    for asset, futs in venue_futs.items():
+        venues = {name: fut.result() for name, fut in futs.items()}
+        row = _assemble_crypto_row(asset, venues)
+        db.save_crypto_snapshot(asset, scanned_at=scanned_at, **row)
+
+    for series, fut in series_futs.items():
         try:
-            data = client.get_markets(status="open", max_close_ts=series_max_close, limit=200, series_ticker=series)
-        except KalshiError as e:
+            data = fut.result()
+        except Exception as e:
             log.error("snapshot get_markets failed for %s: %s", series, e)
             continue
 
