@@ -223,7 +223,23 @@ export default function CryptoCandleChart({ ticker, strikeNum = null, livePrice 
   // over 1w ≈ 120k bars) is unreadable and slow, so floor the interval at
   // whatever keeps us under MAX_BARS for the chosen lookback.
   const MAX_BARS = 1500;
-  const effInterval = Math.max(interval, Math.ceil(lookback / MAX_BARS));
+  const minInterval = Math.ceil(lookback / MAX_BARS);
+  const effInterval = Math.max(interval, minInterval);
+
+  // Hide interval choices that would blow past MAX_BARS for the current window
+  // (e.g. on the 1w range, 5s–5m candles aren't offered — only 15m survives).
+  const intervalOpts = useMemo(
+    () => INTERVALS.filter(o => o.secs >= minInterval),
+    [minInterval],
+  );
+
+  // If the active interval is no longer valid for the new window, snap it to the
+  // smallest one that is.
+  useEffect(() => {
+    if (interval < minInterval && intervalOpts.length > 0) {
+      setInterval(intervalOpts[0].secs);
+    }
+  }, [minInterval, interval, intervalOpts]);
 
   useEffect(() => {
     if (!assetKey) return;
@@ -366,7 +382,7 @@ export default function CryptoCandleChart({ ticker, strikeNum = null, livePrice 
           )}
         </span>
         <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, justifyContent: 'flex-end' }}>
-          <Picker opts={INTERVALS} value={interval} onPick={setInterval} mobile={mobile} />
+          <Picker opts={intervalOpts} value={interval} onPick={setInterval} mobile={mobile} />
           <Picker opts={LOOKBACKS} value={lookback} onPick={setLookback} mobile={mobile} />
           <button
             onClick={() => setShowExecs(s => !s)}
