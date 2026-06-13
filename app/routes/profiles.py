@@ -35,9 +35,15 @@ def create_profile():
     data = request.json
     if not data:
         return jsonify({"error": "No data provided"}), 400
+    activate = data.get("activate", True)
     profile_id = database.create_profile(data, name=data.get("name"))
-    database.activate_profile(profile_id)
-    return jsonify({"status": "success", "profile_id": profile_id, "active_profile_id": profile_id})
+    if activate:
+        database.activate_profile(profile_id)
+    return jsonify({
+        "status": "success",
+        "profile_id": profile_id,
+        "active_profile_id": profile_id if activate else None,
+    })
 
 
 @profiles_bp.put("/api/profiles/<int:profile_id>")

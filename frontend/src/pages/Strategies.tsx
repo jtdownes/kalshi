@@ -149,7 +149,7 @@ export default function Strategies({ settings, profiles, refresh }: Props) {
     }
   }
 
-  const saveStrategy = async (ev: React.FormEvent) => {
+  const saveStrategy = async (ev: React.FormEvent, activate = true) => {
     ev.preventDefault()
     if (!newStrategyDraft) return
     const err = validateRules(newStrategyDraft.rules)
@@ -167,7 +167,7 @@ export default function Strategies({ settings, profiles, refresh }: Props) {
         resp = await fetch('/api/profiles', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(newStrategyDraft),
+          body: JSON.stringify({ ...newStrategyDraft, activate }),
         })
       }
       if (!resp.ok) throw new Error('Failed to save strategy')
@@ -541,6 +541,12 @@ export default function Strategies({ settings, profiles, refresh }: Props) {
                     : 'Parameters are locked after creation — copy as a template to try different rules.'}</span>
                   <div className="strategy-form-buttons">
                     <button type="button" className="btn" onClick={() => { setNewStrategyDraft(null); setEditingProfileId(null); setLimitedEdit(false) }}>Cancel</button>
+                    {!editingProfileId && (
+                      <button type="button" className="btn" disabled={saving}
+                        onClick={(ev) => saveStrategy(ev, false)}>
+                        {saving ? 'Saving…' : 'Create'}
+                      </button>
+                    )}
                     <button type="submit" className="btn btn-active" disabled={saving}>
                       {saving ? 'Saving…' : editingProfileId ? 'Save Changes' : 'Create and Activate'}
                     </button>
