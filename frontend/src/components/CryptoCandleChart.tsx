@@ -46,6 +46,7 @@ const INTERVALS: { secs: number; label: string }[] = [
   { secs: 180, label: '3m'  },
   { secs: 300, label: '5m'  },
   { secs: 900, label: '15m' },
+  { secs: 1800, label: '30m' },
 ];
 
 // Lookback window (seconds) → label
