@@ -532,7 +532,11 @@ function CandlePane({
 // share the same ticker/strike/live feed but hold separate view state.
 export default function CryptoCandleChart(props: Props) {
   const [split, setSplit] = useState(false);
+  const mobile = useIsMobile();
   if (!detectCryptoAsset(props.ticker)) return null;
+
+  // Side-by-side (hamburger) on desktop; stack on mobile where there's no room.
+  const horizontal = split && !mobile;
 
   return (
     <div style={{ marginTop: 12, display: 'flex', flexDirection: 'column', gap: 8 }}>
@@ -546,15 +550,25 @@ export default function CryptoCandleChart(props: Props) {
             background: split ? '#374151' : 'transparent', color: split ? '#fff' : '#888',
           }}
         >
-          <span style={{ fontSize: 12, lineHeight: 1 }}>{split ? '▭' : '⊟'}</span>
+          <span style={{ fontSize: 12, lineHeight: 1 }}>{split ? '▭' : '⊏⊐'}</span>
           {split ? 'Single' : 'Split'}
         </button>
       </div>
-      <CandlePane {...props} initialInterval={60} initialLookback={14400} />
-      {split && (
-        // Second pane defaults to a finer/closer view to complement the first.
-        <CandlePane {...props} initialInterval={5} initialLookback={1800} onClose={() => setSplit(false)} />
-      )}
+      <div
+        style={{
+          display: horizontal ? 'grid' : 'flex',
+          flexDirection: 'column',
+          gridTemplateColumns: horizontal ? '1fr 1fr' : undefined,
+          gap: 8,
+          minWidth: 0,
+        }}
+      >
+        <CandlePane {...props} initialInterval={60} initialLookback={14400} />
+        {split && (
+          // Second pane defaults to a finer/closer view to complement the first.
+          <CandlePane {...props} initialInterval={5} initialLookback={1800} onClose={() => setSplit(false)} />
+        )}
+      </div>
     </div>
   );
 }
