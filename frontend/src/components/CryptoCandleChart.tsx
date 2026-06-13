@@ -440,6 +440,12 @@ export default function CryptoCandleChart({ ticker, strikeNum = null, livePrice 
                   stroke="#ffffff"
                   strokeDasharray="6 3"
                   strokeWidth={1}
+                  label={{
+                    value: fmtPrice(strikeNum),
+                    position: 'right',
+                    fill: '#ffffff',
+                    fontSize: 10,
+                  }}
                 />
               )}
               {/* One floating bar per candle spanning low→high; the custom
