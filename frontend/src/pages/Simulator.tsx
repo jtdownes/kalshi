@@ -11,7 +11,19 @@ const SUPPORTED_MARKETS = [
 ] as const
 
 const RULES_STORAGE_KEY = 'simulator.rules.v1'
+const SERIES_STORAGE_KEY = 'simulator.series.v1'
 const MARKET_LIMIT = 1000
+
+// Restore the last-selected market so a refresh doesn't reset it to BTC.
+function loadStoredSeries(): string {
+  try {
+    const raw = localStorage.getItem(SERIES_STORAGE_KEY)
+    if (raw && SUPPORTED_MARKETS.some(m => m.value === raw)) return raw
+  } catch {
+    /* corrupt/unavailable storage — fall through to the default */
+  }
+  return 'KXBTC15M'
+}
 
 // Restore the rules the user was last editing so a refresh doesn't wipe them.
 function loadStoredRules(): StrategyRule[] {
@@ -121,7 +133,7 @@ interface Props {
 
 export default function Simulator({ profiles, settings, refresh }: Props) {
   const [rules, setRules] = useState<StrategyRule[]>(loadStoredRules)
-  const [series, setSeries] = useState<string>('KXBTC15M')
+  const [series, setSeries] = useState<string>(loadStoredSeries)
   // Per-rule metrics keyed by rule id, fed up from each RuleBacktest card.
   const [ruleMetrics, setRuleMetrics] = useState<Record<string, RuleMetrics | null>>({})
   // Save-as-strategy modal state
@@ -136,6 +148,15 @@ export default function Simulator({ profiles, settings, refresh }: Props) {
       /* storage full/unavailable — non-fatal, just won't persist */
     }
   }, [rules])
+
+  // Persist the selected market too, so a refresh keeps it.
+  useEffect(() => {
+    try {
+      localStorage.setItem(SERIES_STORAGE_KEY, series)
+    } catch {
+      /* storage full/unavailable — non-fatal */
+    }
+  }, [series])
 
   // Stable so RuleBacktest's reporting effect doesn't refire on every render.
   const handleRuleResult = useCallback((ruleId: string, metrics: RuleMetrics | null) => {
