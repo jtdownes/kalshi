@@ -66,6 +66,25 @@ def evaluate_market(market: dict, settings: dict | None = None,
         except Exception:
             pass
 
+    # price_change uses a per-condition trailing window. Fetch the underlying
+    # series (with timestamps) once, over the LARGEST window any price_change
+    # condition asks for; rules.py slices it per condition.
+    if "price_change" in referenced:
+        max_window = 0
+        for r in rule_list:
+            for c in (r.get("conditions") or []):
+                if c.get("field") == "price_change":
+                    try:
+                        max_window = max(max_window, int(c.get("window_secs") or 0))
+                    except (TypeError, ValueError):
+                        pass
+        if max_window > 0:
+            try:
+                extra["price_change_series"] = db.get_recent_crypto_prices_ts(
+                    asset, max_window)
+            except Exception:
+                pass
+
     # strike_crossings spans the WHOLE market life, not a trailing window. Bound
     # the fetch to this market's age (open -> now) so crossings from before
     # the market opened aren't counted: age = duration - time_to_close.

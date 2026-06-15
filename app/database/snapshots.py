@@ -142,6 +142,26 @@ def get_recent_crypto_prices(asset: str, window_seconds: int = 180) -> list[floa
     return [float(r["price"]) for r in rows if r["price"] is not None]
 
 
+def get_recent_crypto_prices_ts(asset: str, window_seconds: int = 300) -> list[tuple[float, float]]:
+    """Like get_recent_crypto_prices but returns (epoch_secs, price) pairs,
+    oldest first — so callers can measure change over a sub-window precisely
+    rather than assuming a fixed sample cadence."""
+    table = crypto_assets.CRYPTO_ASSETS[asset]["snapshot_table"]
+    query = f"""
+        SELECT EXTRACT(EPOCH FROM scanned_at::timestamp) AS ts,
+               COALESCE(consolidated_price, coinbase_price) AS price
+        FROM {table}
+        WHERE scanned_at::timestamp >= ((CURRENT_TIMESTAMP AT TIME ZONE 'UTC') - (%s || ' seconds')::interval)
+        ORDER BY scanned_at ASC
+    """
+    with _lock, _conn() as conn:
+        cur = conn.cursor(cursor_factory=psycopg2.extras.DictCursor)
+        cur.execute(query, (str(int(window_seconds)),))
+        rows = cur.fetchall()
+    return [(float(r["ts"]), float(r["price"])) for r in rows
+            if r["ts"] is not None and r["price"] is not None]
+
+
 def get_latest_snapshots_for_series(series_tickers: list[str], max_age_seconds: int = 15) -> list[dict]:
     if not series_tickers:
         return []

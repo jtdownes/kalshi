@@ -27,7 +27,10 @@ const FIELD_META: Record<RuleField, { label: string; unit: Unit }> = {
   btc_drift:          { label: 'Underlying drift (recent net move)', unit: '$' },
   strike_crossings:   { label: 'Strike crossings (whole market)',  unit: '' },
   buffer_ratio:       { label: 'Buffer ÷ volatility',        unit: '' },
+  price_change:       { label: 'Change in underlying price', unit: '$' },
 }
+// Default lookback (seconds) when a condition is first switched to price_change.
+const PRICE_CHANGE_DEFAULT_WINDOW = 300
 const FIELD_ORDER = Object.keys(FIELD_META) as RuleField[]
 
 const OP_LABELS: Record<RuleOp, string> = {
@@ -87,8 +90,13 @@ function fmtFieldValue(c: RuleCondition): string {
     if (meta.unit === '¢') return `${n}¢`
     return String(n)
   }
-  if (c.op === 'between') return `${meta.label} between ${v(c.value)} and ${v(c.value2)}`
-  return `${meta.label} ${OP_LABELS[c.op]} ${v(c.value)}`
+  let win = ''
+  if (c.field === 'price_change') {
+    const u = timeUnitOf(c.window_secs)
+    win = c.window_secs == null ? '' : ` in last ${secsToDisplay(c.window_secs, u)}${u === 'min' ? 'm' : 's'}`
+  }
+  if (c.op === 'between') return `${meta.label} between ${v(c.value)} and ${v(c.value2)}${win}`
+  return `${meta.label} ${OP_LABELS[c.op]} ${v(c.value)}${win}`
 }
 
 function conditionSummaries(rule: StrategyRule): string[] {
@@ -280,7 +288,17 @@ export default function RuleBuilder({ rules, onChange, readOnly = false, lockStr
                 return (
                   <div key={ci} className="rule-cond-row">
                     <select className="rule-input rule-field" value={c.field} disabled={structLocked}
-                      onChange={e => patchCondition(ri, ci, { field: e.target.value as RuleField })}>
+                      onChange={e => {
+                        const field = e.target.value as RuleField
+                        patchCondition(ri, ci, {
+                          field,
+                          // price_change carries its own lookback; seed a default
+                          // when entering it and drop it when leaving.
+                          window_secs: field === 'price_change'
+                            ? (c.window_secs ?? PRICE_CHANGE_DEFAULT_WINDOW)
+                            : null,
+                        })
+                      }}>
                       {FIELD_ORDER.map(f => (
                         <option key={f} value={f}>{FIELD_META[f].label}</option>
                       ))}
@@ -334,6 +352,35 @@ export default function RuleBuilder({ rules, onChange, readOnly = false, lockStr
                       ) : (
                         meta.unit && <span className="rule-unit-static">{meta.unit}</span>
                       )}
+                      {c.field === 'price_change' && (() => {
+                        const wUnitKey = `${rule.id}:${ci}:w`
+                        const wUnit = unitOverrides[wUnitKey] ?? timeUnitOf(c.window_secs)
+                        return (
+                          <>
+                            <span className="rule-and">in last</span>
+                            <input className="rule-input rule-value" type="number" placeholder="window"
+                              disabled={structLocked}
+                              value={secsToDisplay(c.window_secs, wUnit)}
+                              onChange={e => {
+                                const raw = e.target.value
+                                if (raw === '') return patchCondition(ri, ci, { window_secs: null })
+                                patchCondition(ri, ci, { window_secs: displayToSecs(parseFloat(raw), wUnit) })
+                              }} />
+                            <select className="rule-unit" value={wUnit} disabled={structLocked}
+                              onChange={e => {
+                                const nextUnit = e.target.value as 'min' | 'sec'
+                                setUnitOverride(wUnitKey, nextUnit)
+                                const disp = secsToDisplay(c.window_secs, wUnit)
+                                patchCondition(ri, ci, {
+                                  window_secs: disp === '' ? c.window_secs : displayToSecs(disp as number, nextUnit),
+                                })
+                              }}>
+                              <option value="min">min</option>
+                              <option value="sec">sec</option>
+                            </select>
+                          </>
+                        )
+                      })()}
                     </div>
                     {!structLocked && (
                       <button type="button" className="rule-icon-btn rule-icon-danger"

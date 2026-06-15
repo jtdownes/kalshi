@@ -68,6 +68,9 @@ FIELDS = (
     "btc_drift",          # USD signed: last − first (momentum direction/size)
     "strike_crossings",   # count: times BTC crossed this strike over the whole market life
     "buffer_ratio",       # |distance_to_strike| / btc_volatility (vol-units of buffer)
+    "price_change",       # USD signed: underlying change over a per-condition trailing
+                          # window (cond["window_secs"]). Tunable cousin of btc_drift,
+                          # whose window is fixed at CRAZINESS_LOOKBACK_SECONDS.
 )
 
 OPS = ("lt", "lte", "gt", "gte", "eq", "between")
@@ -161,13 +164,51 @@ def compute_fields(market: dict, time_to_close: int | None = None,
                     crossings += 1
                 prev_sign = sign
             result["strike_crossings"] = float(crossings)
+
+        # price_change is windowed per-condition, so it can't be a single scalar
+        # here. Stash the timestamped underlying series (oldest first, as
+        # (epoch_secs, price) pairs) for _check_condition to slice per window.
+        pc_series = extra.get("price_change_series")
+        if pc_series and len(pc_series) >= 2:
+            result["_pc_series"] = pc_series
     return result
+
+
+def _price_change_over(series, window_secs):
+    """Signed underlying change over the trailing `window_secs`.
+
+    `series` is (epoch_secs, price) pairs, oldest first. Returns last_price minus
+    the earliest price still inside [now − window, now] — matching the backtest's
+    `px − first_value(px) OVER (RANGE 'window' PRECEDING)`. None if unusable.
+    """
+    if not series or len(series) < 2 or window_secs is None:
+        return None
+    try:
+        window = float(window_secs)
+    except (TypeError, ValueError):
+        return None
+    if window <= 0:
+        return None
+    last_ts, last_px = series[-1]
+    cutoff = last_ts - window
+    first_px = None
+    for ts, px in series:
+        if ts >= cutoff:
+            first_px = px
+            break
+    if first_px is None:
+        return None
+    return last_px - first_px
 
 
 def _check_condition(cond: dict, fields: dict) -> bool:
     field = cond.get("field")
     op    = cond.get("op")
-    lhs   = fields.get(field)
+
+    if field == "price_change":
+        lhs = _price_change_over(fields.get("_pc_series"), cond.get("window_secs"))
+    else:
+        lhs = fields.get(field)
     if lhs is None:          # field unavailable for this market -> can't match
         return False
 

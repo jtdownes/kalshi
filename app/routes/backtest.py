@@ -139,14 +139,27 @@ def _bt_market_quality(cur, series_like, max_gap_secs, min_snaps, tickers=None):
     return out
 
 
-def _bt_craze_cte(series_like, window_secs, need_cross, snap_table):
-    """Build the `craze` CTE for windowed underlying-price stats (volatility, range, drift, crossings, buffer)."""
+def _bt_craze_cte(series_like, window_secs, need_cross, snap_table, pc_windows=None):
+    """Build the `craze` CTE for windowed underlying-price stats (volatility, range, drift, crossings, buffer).
+
+    `pc_windows` adds one signed-drift column per distinct price_change lookback
+    (pc_<secs>), each over its own RANGE window — the tunable counterpart to the
+    fixed-window btc_drift."""
     px     = "COALESCE(b.consolidated_price, b.coinbase_price)"
     strike = "NULLIF(m.strike_str, '')::numeric"
     win    = (f"PARTITION BY ticker ORDER BY scanned_at::timestamp "
               f"RANGE BETWEEN INTERVAL '{int(window_secs)} seconds' PRECEDING AND CURRENT ROW")
     win_full = ("PARTITION BY ticker ORDER BY scanned_at::timestamp "
                 "ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW")
+
+    pc_windows = sorted({int(w) for w in (pc_windows or [])})
+    pc_cols = "".join(
+        f"(px - first_value(px) OVER w_{_pc_col(w)}) AS {_pc_col(w)}, "
+        for w in pc_windows)
+    pc_win_defs = "".join(
+        f", w_{_pc_col(w)} AS (PARTITION BY ticker ORDER BY scanned_at::timestamp "
+        f"RANGE BETWEEN INTERVAL '{w} seconds' PRECEDING AND CURRENT ROW)"
+        for w in pc_windows)
 
     if need_cross:
         inner = f"""
@@ -180,18 +193,47 @@ def _bt_craze_cte(series_like, window_secs, need_cross, snap_table):
                    (max(px) OVER w - min(px) OVER w)           AS btc_range,
                    (px - first_value(px) OVER w)               AS btc_drift,
                    {cross_col}
+                   {pc_cols}
                    (abs(px - strike) / NULLIF(stddev_pop(px) OVER w, 0)) AS buffer_ratio
             FROM ( {inner} ) zz
-            WINDOW w AS ({win}){(", wfull AS (" + win_full + ")") if need_cross else ""}
+            WINDOW w AS ({win}){(", wfull AS (" + win_full + ")") if need_cross else ""}{pc_win_defs}
         )"""
     return cte, [series_like]
+
+
+def _pc_col(window_secs):
+    """SQL column name for a price_change condition's windowed drift in the craze CTE."""
+    return f"pc_{int(window_secs)}"
+
+
+def _bt_pc_windows(conditions):
+    """Distinct, valid trailing windows (secs) referenced by price_change conditions."""
+    windows = set()
+    for c in conditions or []:
+        if c.get("field") != "price_change":
+            continue
+        try:
+            w = int(c.get("window_secs"))
+        except (TypeError, ValueError):
+            continue
+        if w > 0:
+            windows.add(w)
+    return sorted(windows)
 
 
 def _bt_conditions_sql(conditions):
     """Build an extra SQL WHERE clause + params from a rule's condition list."""
     clauses, params = [], []
     for c in conditions or []:
-        col = _BT_COL.get(c.get("field"))
+        field = c.get("field")
+        if field == "price_change":
+            try:
+                w = int(c.get("window_secs"))
+            except (TypeError, ValueError):
+                continue
+            col = f"cz.{_pc_col(w)}" if w > 0 else None
+        else:
+            col = _BT_COL.get(field)
         if not col:
             continue
         op = c.get("op")
@@ -466,11 +508,12 @@ def _bt_simulate_rule(cur, series_like, rule, side, snap_table, tickers=None):
         cte_defs.append(_res_cte("prev2_res", 1800))
         cte_params.append(series_like)
         join_parts.append("LEFT JOIN prev2_res  p2r ON p2r.ct = m.close_time")
-    if fields_used & _BT_CRAZE_FIELDS:
+    pc_windows = _bt_pc_windows(rule.get("conditions"))
+    if (fields_used & _BT_CRAZE_FIELDS) or pc_windows:
         craze_sql, craze_params = _bt_craze_cte(
             series_like, config.CRAZINESS_LOOKBACK_SECONDS,
             need_cross="strike_crossings" in fields_used,
-            snap_table=snap_table)
+            snap_table=snap_table, pc_windows=pc_windows)
         cte_defs.append(craze_sql)
         cte_params.extend(craze_params)
         join_parts.append(

@@ -81,7 +81,7 @@ export type RuleField =
   | 'btc_price' | 'spread' | 'volume' | 'open_interest'
   | 'prior_resolution' | 'prev2_resolution'
   | 'btc_volatility' | 'btc_range' | 'btc_drift'
-  | 'strike_crossings' | 'buffer_ratio'
+  | 'strike_crossings' | 'buffer_ratio' | 'price_change'
 export type RuleOp = 'lt' | 'lte' | 'gt' | 'gte' | 'eq' | 'between'
 
 export interface RuleCondition {
@@ -89,6 +89,9 @@ export interface RuleCondition {
   op: RuleOp
   value: number | null
   value2?: number | null
+  // price_change only: trailing lookback window (seconds) the change is measured
+  // over — the user-tunable counterpart to btc_drift's fixed 180s window.
+  window_secs?: number | null
 }
 export interface RuleEntry {
   type: 'limit' | 'ask' | 'ask_minus' | 'ask_minus_pct'

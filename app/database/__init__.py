@@ -21,7 +21,7 @@ from .snapshots import (
     save_crypto_snapshot, save_market_snapshot,
     get_latest_snapshot_for_ticker,
     get_recent_market_snapshots, get_market_snapshots_for_ticker,
-    get_recent_crypto_prices, get_latest_snapshots_for_series,
+    get_recent_crypto_prices, get_recent_crypto_prices_ts, get_latest_snapshots_for_series,
     get_prior_resolutions_for_close, recent_snapshot_health,
 )
 from .weather import (
@@ -54,7 +54,7 @@ __all__ = [
     'save_crypto_snapshot', 'save_market_snapshot',
     'get_latest_snapshot_for_ticker',
     'get_recent_market_snapshots', 'get_market_snapshots_for_ticker',
-    'get_recent_crypto_prices', 'get_latest_snapshots_for_series',
+    'get_recent_crypto_prices', 'get_recent_crypto_prices_ts', 'get_latest_snapshots_for_series',
     'get_prior_resolutions_for_close', 'recent_snapshot_health',
     # weather
     'save_weather_snapshot', 'get_latest_weather_snapshot', 'get_recent_weather_snapshots',
