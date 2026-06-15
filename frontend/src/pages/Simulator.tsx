@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import type { StrategyRule, Profile } from '../types'
+import type { StrategyRule, Profile, Settings } from '../types'
 import RuleBuilder, { defaultRule } from '../components/RuleBuilder'
 import RuleBacktest, { type RuleMetrics } from '../components/RuleBacktest'
 import { centsToUSD } from '../utils'
@@ -80,15 +80,53 @@ function Stat({ label, value, color, sub }: { label: string; value: string; colo
   )
 }
 
-interface Props {
-  profiles: Profile[]
+// Mirror of the rule validation used by the Strategies builder so a simulation
+// can't be saved into a strategy the backend would reject.
+function validateRules(rules: StrategyRule[]): string | null {
+  if (rules.length === 0) return 'Add at least one rule.'
+  for (const r of rules) {
+    if (r.conditions.length === 0) continue   // empty conditions = "always" (allowed)
+    for (const c of r.conditions) {
+      if (c.value == null) return 'Every condition needs a value.'
+      if (c.op === 'between' && c.value2 == null) return 'Between conditions need two values.'
+    }
+    if (r.action.entry.type === 'limit' && r.action.entry.price_cents == null)
+      return 'Limit-entry rules need a price.'
+    if (r.action.entry.type === 'ask_minus' && r.action.entry.offset_cents == null)
+      return '"¢ below ask" entries need an offset.'
+    if (r.action.entry.type === 'ask_minus_pct' && r.action.entry.offset_pct == null)
+      return '"% below ask" entries need a percentage.'
+    if (r.action.exit.type === 'limit_sell' && r.action.exit.price_cents == null)
+      return 'Limit-sell exits need a price.'
+    if (r.action.exit.type === 'scale_out') {
+      const legs = r.action.exit.legs ?? []
+      if (legs.length === 0) return 'Scale-out exits need at least one rung.'
+      if (legs.some(l => l.qty == null || l.price_cents == null))
+        return 'Every scale-out rung needs a quantity and a price.'
+      const total = legs.reduce((s, l) => s + (l.qty ?? 0), 0)
+      if (total > r.action.quantity)
+        return `Scale-out rungs sell ${total} contracts but the rule only buys ${r.action.quantity}.`
+    }
+    if (r.action.exit.stop_pct != null && (r.action.exit.stop_pct <= 0 || r.action.exit.stop_pct >= 100))
+      return 'A %-stop must be between 0 and 100.'
+  }
+  return null
 }
 
-export default function Simulator({ profiles }: Props) {
+interface Props {
+  profiles: Profile[]
+  settings: Settings | null
+  refresh: () => Promise<void>
+}
+
+export default function Simulator({ profiles, settings, refresh }: Props) {
   const [rules, setRules] = useState<StrategyRule[]>(loadStoredRules)
   const [series, setSeries] = useState<string>('KXBTC15M')
   // Per-rule metrics keyed by rule id, fed up from each RuleBacktest card.
   const [ruleMetrics, setRuleMetrics] = useState<Record<string, RuleMetrics | null>>({})
+  // Save-as-strategy modal state
+  const [saveModal, setSaveModal] = useState<{ name: string } | null>(null)
+  const [saving, setSaving] = useState(false)
 
   // Persist rules on every change so they survive a page refresh.
   useEffect(() => {
@@ -125,6 +163,39 @@ export default function Simulator({ profiles }: Props) {
     }
     // Reset the select back to placeholder
     e.target.value = ''
+  }
+
+  const saveAsStrategy = async (ev: React.FormEvent) => {
+    ev.preventDefault()
+    if (!saveModal || !settings) return
+    const name = saveModal.name.trim()
+    if (!name) { alert('Give the strategy a name.'); return }
+    const err = validateRules(rules)
+    if (err) { alert(err); return }
+    setSaving(true)
+    try {
+      const resp = await fetch('/api/profiles', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          name,
+          // Inherit exposure caps from current settings; the simulator doesn't
+          // tune them, and they can be adjusted later on the Strategies page.
+          max_open_orders: settings.max_open_orders,
+          max_daily_spend_cents: settings.max_daily_spend_cents,
+          btc_series_tickers: [series],
+          rules,
+          activate: false,
+        }),
+      })
+      if (!resp.ok) throw new Error('Failed to save strategy')
+      setSaveModal(null)
+      await refresh()
+    } catch (err: any) {
+      alert(err.message || String(err))
+    } finally {
+      setSaving(false)
+    }
   }
 
   const renderRuleFooter = useCallback(
@@ -178,6 +249,14 @@ export default function Simulator({ profiles }: Props) {
           >
             Reset Rules
           </button>
+          {settings && (
+            <button
+              className="btn btn-active"
+              onClick={() => setSaveModal({ name: '' })}
+            >
+              Save as Strategy
+            </button>
+          )}
         </div>
       </section>
 
@@ -220,6 +299,43 @@ export default function Simulator({ profiles }: Props) {
           </div>
         )}
       </section>
+
+      {saveModal && (
+        <div className="strategy-modal-backdrop" onClick={() => !saving && setSaveModal(null)}>
+          <div className="strategy-modal strategy-modal-sm" onClick={e => e.stopPropagation()}>
+            <section className="strategy-config-panel">
+              <div className="strategy-section-head" style={{ marginBottom: 16 }}>
+                <div className="stat-label">Save as Strategy</div>
+                <p style={{ color: '#64748b', fontSize: 12, margin: '4px 0 0' }}>
+                  Saves these {rules.length} rule{rules.length === 1 ? '' : 's'} on {series} as a new,
+                  inactive strategy. Activate it later from the Strategies page.
+                </p>
+              </div>
+              <form onSubmit={saveAsStrategy} style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+                <label className="field">
+                  <span>Strategy Name</span>
+                  <input
+                    type="text"
+                    autoFocus
+                    value={saveModal.name}
+                    placeholder="Strategy name..."
+                    onChange={e => setSaveModal(s => s ? { ...s, name: e.target.value } : s)}
+                  />
+                </label>
+                <div className="strategy-form-actions" style={{ borderTop: '1px solid #242435', paddingTop: 14 }}>
+                  <span />
+                  <div className="strategy-form-buttons">
+                    <button type="button" className="btn" onClick={() => setSaveModal(null)} disabled={saving}>Cancel</button>
+                    <button type="submit" className="btn btn-active" disabled={saving}>
+                      {saving ? 'Saving…' : 'Save Strategy'}
+                    </button>
+                  </div>
+                </div>
+              </form>
+            </section>
+          </div>
+        </div>
+      )}
     </div>
   )
 }

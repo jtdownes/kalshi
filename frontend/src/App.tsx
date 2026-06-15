@@ -194,7 +194,7 @@ export default function App() {
         />
         <Route
           path="/simulator"
-          element={<Simulator profiles={profiles} />}
+          element={<Simulator profiles={profiles} settings={settings} refresh={refresh} />}
         />
         <Route
           path="/markets"
