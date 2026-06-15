@@ -1,5 +1,13 @@
 * { box-sizing: border-box; margin: 0; padding: 0; }
 
+/* iOS paints the safe-area insets and the overscroll/rubber-band region with
+   the html background, not body — without this a white bar shows below the
+   fixed mobile tab bar when you scroll past the bottom. */
+html {
+  background: #0d0d14;
+  overscroll-behavior-y: none;
+}
+
 body {
   background: #0d0d14;
   color: #e2e8f0;
