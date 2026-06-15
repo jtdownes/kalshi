@@ -249,6 +249,9 @@ def _bt_walk_rich_exits(cur, fills_cte, params, series_like, side, bid_col,
                 ticker, yes_bid AS final_bid, yes_ask AS final_ask
             FROM market_snapshots
             WHERE ticker LIKE %s
+              -- skip the close-time "no book" placeholder (0/100/0/100), which
+              -- otherwise reads as final_bid=0 and inverts the settled outcome
+              AND NOT (yes_bid = 0 AND yes_ask = 100 AND no_bid = 0 AND no_ask = 100)
             ORDER BY ticker, scanned_at DESC
         )
         SELECT f.ticker, f.fill_time, f.fill_price, f.ttc_at_fill,
@@ -578,6 +581,9 @@ def _bt_simulate_rule(cur, series_like, rule, side, snap_table, tickers=None):
                 ticker, yes_bid AS final_bid, yes_ask AS final_ask
             FROM market_snapshots
             WHERE ticker LIKE %s
+              -- skip the close-time "no book" placeholder (0/100/0/100), which
+              -- otherwise reads as final_bid=0 and inverts the settled outcome
+              AND NOT (yes_bid = 0 AND yes_ask = 100 AND no_bid = 0 AND no_ask = 100)
             ORDER BY ticker, scanned_at DESC
         ){stop_cte}
         SELECT f.ticker, f.fill_time, f.fill_price, f.ttc_at_fill,
