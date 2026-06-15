@@ -4,6 +4,20 @@ import type {
   StrategyRule, RuleCondition, RuleField, RuleOp, RuleAction, RuleEntry, RuleExit,
 } from '../types'
 
+// Arrow-key stepping that respects the value's current decimal precision:
+// 1 → 2, 1.1 → 1.2, 1.11 → 1.12, 0.15 → 0.16. Returns null if not an arrow key.
+function steppedByPrecision(currentRaw: string, key: string): number | null {
+  const dir = key === 'ArrowUp' ? 1 : key === 'ArrowDown' ? -1 : 0
+  if (dir === 0) return null
+  const s = (currentRaw ?? '').trim()
+  const dot = s.indexOf('.')
+  const decimals = dot === -1 ? 0 : s.length - dot - 1
+  const step = Math.pow(10, -decimals)
+  const base = s === '' ? 0 : parseFloat(s)
+  if (Number.isNaN(base)) return null
+  return parseFloat((base + dir * step).toFixed(decimals))
+}
+
 // ── Field / operator metadata ────────────────────────────────────────────────
 type Unit = 'time' | '¢' | '$' | ''
 
@@ -318,6 +332,12 @@ export default function RuleBuilder({ rules, onChange, readOnly = false, lockStr
                           if (raw === '') return patchCondition(ri, ci, { value: null })
                           const n = parseFloat(raw)
                           patchCondition(ri, ci, { value: isTime ? displayToSecs(n, unit) : n })
+                        }}
+                        onKeyDown={e => {
+                          const stepped = steppedByPrecision(e.currentTarget.value, e.key)
+                          if (stepped === null) return
+                          e.preventDefault()
+                          patchCondition(ri, ci, { value: isTime ? displayToSecs(stepped, unit) : stepped })
                         }} />
                       {c.op === 'between' && (
                         <>
@@ -330,6 +350,12 @@ export default function RuleBuilder({ rules, onChange, readOnly = false, lockStr
                               if (raw === '') return patchCondition(ri, ci, { value2: null })
                               const n = parseFloat(raw)
                               patchCondition(ri, ci, { value2: isTime ? displayToSecs(n, unit) : n })
+                            }}
+                            onKeyDown={e => {
+                              const stepped = steppedByPrecision(e.currentTarget.value, e.key)
+                              if (stepped === null) return
+                              e.preventDefault()
+                              patchCondition(ri, ci, { value2: isTime ? displayToSecs(stepped, unit) : stepped })
                             }} />
                         </>
                       )}
@@ -365,6 +391,12 @@ export default function RuleBuilder({ rules, onChange, readOnly = false, lockStr
                                 const raw = e.target.value
                                 if (raw === '') return patchCondition(ri, ci, { window_secs: null })
                                 patchCondition(ri, ci, { window_secs: displayToSecs(parseFloat(raw), wUnit) })
+                              }}
+                              onKeyDown={e => {
+                                const stepped = steppedByPrecision(e.currentTarget.value, e.key)
+                                if (stepped === null) return
+                                e.preventDefault()
+                                patchCondition(ri, ci, { window_secs: displayToSecs(stepped, wUnit) })
                               }} />
                             <select className="rule-unit" value={wUnit} disabled={structLocked}
                               onChange={e => {
