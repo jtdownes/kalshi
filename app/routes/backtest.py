@@ -760,6 +760,15 @@ def backtest_strategy():
     ticker_meta  = {}
     quality      = {}
     with cursor_conn() as cur:
+        # The replay queries are big window-function CTEs over market_snapshots.
+        # Postgres plans them with parallel workers, which allocate dynamic
+        # shared memory in /dev/shm — capped at 64MB inside the DB container — and
+        # intermittently fail mid-query with "could not resize shared memory
+        # segment / No space left on device" (surfacing here as a 500 whenever a
+        # param tweak pushes the plan over the limit). Run the backtest session
+        # serially: it sidesteps the DSM allocation entirely and these queries
+        # gain little from parallelism anyway.
+        cur.execute("SET max_parallel_workers_per_gather = 0")
         if market_limit:
             cur.execute("""
                 SELECT ticker, MAX(scanned_at) AS last_seen
