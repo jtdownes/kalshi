@@ -244,10 +244,10 @@ def _bt_band_col(band):
 
 
 def _bt_xc_bands(conditions):
-    """Distinct, valid bands ($) referenced by strike_crossings_band conditions."""
+    """Distinct, valid bands ($) referenced by strike_crossings conditions."""
     bands = set()
     for c in conditions or []:
-        if c.get("field") != "strike_crossings_band":
+        if c.get("field") != "strike_crossings":
             continue
         try:
             b = round(abs(float(c.get("band"))), 6)
@@ -269,12 +269,13 @@ def _bt_conditions_sql(conditions):
             except (TypeError, ValueError):
                 continue
             col = f"cz.{_pc_col(w)}" if w > 0 else None
-        elif field == "strike_crossings_band":
+        elif field == "strike_crossings":
+            # optional band ($): band>0 -> per-band column; else the exact count.
             try:
                 b = round(abs(float(c.get("band"))), 6)
             except (TypeError, ValueError):
-                continue
-            col = f"cz.{_bt_band_col(b)}" if b > 0 else None
+                b = 0
+            col = f"cz.{_bt_band_col(b)}" if b > 0 else _BT_COL.get(field)
         else:
             col = _BT_COL.get(field)
         if not col:

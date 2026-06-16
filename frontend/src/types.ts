@@ -81,7 +81,7 @@ export type RuleField =
   | 'btc_price' | 'spread' | 'volume' | 'open_interest'
   | 'prior_resolution' | 'prev2_resolution'
   | 'btc_volatility' | 'btc_range' | 'btc_drift'
-  | 'strike_crossings' | 'strike_crossings_band' | 'buffer_ratio' | 'price_change'
+  | 'strike_crossings' | 'buffer_ratio' | 'price_change'
 export type RuleOp = 'lt' | 'lte' | 'gt' | 'gte' | 'eq' | 'between'
 
 export interface RuleCondition {
@@ -92,8 +92,8 @@ export interface RuleCondition {
   // price_change only: trailing lookback window (seconds) the change is measured
   // over — the user-tunable counterpart to btc_drift's fixed 180s window.
   window_secs?: number | null
-  // strike_crossings_band only: ± zone size ($) around the strike. Counts zone
-  // changes so a price grazing the strike registers as chop. e.g. 0.01 = 1¢.
+  // strike_crossings only: optional ± zone size ($) around the strike. A near-miss
+  // (price grazing within the band) counts as a crossing. 0/absent = exact strike.
   band?: number | null
 }
 export interface RuleEntry {

@@ -97,15 +97,13 @@ def evaluate_market(market: dict, settings: dict | None = None,
             extra["strike_crossings"] = db.get_strike_crossings(ticker, asset)
         except Exception:
             pass
-
-    # strike_crossings_band: same count but with a ±band ($) zone so grazing the
-    # strike registers as chop. Compute one count per DISTINCT band any condition
-    # asks for, keyed via rules_engine.xc_band_key so the condition can find it.
-    if "strike_crossings_band" in referenced:
+        # Any strike_crossings condition with a ±band ($) needs its own count: the
+        # band widens the strike into a zone so a near-miss (grazing within band)
+        # registers. Compute one count per DISTINCT band, keyed via xc_band_key.
         bands = set()
         for r in rule_list:
             for c in (r.get("conditions") or []):
-                if c.get("field") == "strike_crossings_band":
+                if c.get("field") == "strike_crossings":
                     try:
                         b = abs(float(c.get("band")))
                     except (TypeError, ValueError):

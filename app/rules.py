@@ -66,9 +66,9 @@ FIELDS = (
     "btc_volatility",     # USD: std dev of BTC over the lookback window
     "btc_range",          # USD: high − low of BTC over the lookback window
     "btc_drift",          # USD signed: last − first (momentum direction/size)
-    "strike_crossings",   # count: times BTC crossed this strike over the whole market life
-    "strike_crossings_band",  # count: like strike_crossings but counts zone changes around a
-                              # ±band ($) zone, so grazing the strike registers (cond["band"]).
+    "strike_crossings",   # count: times BTC crossed this strike over the whole market life.
+                          # Optional cond["band"] ($): widens the strike into a ±band zone so a
+                          # near-miss (price grazing within band) counts. band 0/absent = exact.
     "buffer_ratio",       # |distance_to_strike| / btc_volatility (vol-units of buffer)
     "price_change",       # USD signed: underlying change over a per-condition trailing
                           # window (cond["window_secs"]). Tunable cousin of btc_drift,
@@ -218,9 +218,14 @@ def _check_condition(cond: dict, fields: dict) -> bool:
 
     if field == "price_change":
         lhs = _price_change_over(fields.get("_pc_series"), cond.get("window_secs"))
-    elif field == "strike_crossings_band":
-        # per-condition band: read the count precomputed for this exact band.
-        lhs = fields.get(xc_band_key(cond.get("band")))
+    elif field == "strike_crossings":
+        # optional band ($): a near-miss within the band counts as a crossing.
+        # band 0/absent => the exact-strike count.
+        try:
+            b = abs(float(cond.get("band")))
+        except (TypeError, ValueError):
+            b = 0.0
+        lhs = fields.get(xc_band_key(b)) if b > 0 else fields.get("strike_crossings")
     else:
         lhs = fields.get(field)
     if lhs is None:          # field unavailable for this market -> can't match
