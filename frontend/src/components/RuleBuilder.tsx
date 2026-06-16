@@ -40,11 +40,14 @@ const FIELD_META: Record<RuleField, { label: string; unit: Unit }> = {
   btc_range:          { label: 'Underlying range (recent hi−lo)',   unit: '$' },
   btc_drift:          { label: 'Underlying drift (recent net move)', unit: '$' },
   strike_crossings:   { label: 'Strike crossings (whole market)',  unit: '' },
+  strike_crossings_band: { label: 'Strike crossings (band)',  unit: '' },
   buffer_ratio:       { label: 'Buffer ÷ volatility',        unit: '' },
   price_change:       { label: 'Change in underlying price', unit: '$' },
 }
 // Default lookback (seconds) when a condition is first switched to price_change.
 const PRICE_CHANGE_DEFAULT_WINDOW = 300
+// Default ± band ($) when a condition is first switched to strike_crossings_band.
+const STRIKE_BAND_DEFAULT = 0.01
 const FIELD_ORDER = Object.keys(FIELD_META) as RuleField[]
 
 const OP_LABELS: Record<RuleOp, string> = {
@@ -108,6 +111,9 @@ function fmtFieldValue(c: RuleCondition): string {
   if (c.field === 'price_change') {
     const u = timeUnitOf(c.window_secs)
     win = c.window_secs == null ? '' : ` in last ${secsToDisplay(c.window_secs, u)}${u === 'min' ? 'm' : 's'}`
+  }
+  if (c.field === 'strike_crossings_band') {
+    win = c.band == null ? '' : ` (±$${c.band})`
   }
   if (c.op === 'between') return `${meta.label} between ${v(c.value)} and ${v(c.value2)}${win}`
   return `${meta.label} ${OP_LABELS[c.op]} ${v(c.value)}${win}`
@@ -311,6 +317,10 @@ export default function RuleBuilder({ rules, onChange, readOnly = false, lockStr
                           window_secs: field === 'price_change'
                             ? (c.window_secs ?? PRICE_CHANGE_DEFAULT_WINDOW)
                             : null,
+                          // strike_crossings_band carries its own ± band ($).
+                          band: field === 'strike_crossings_band'
+                            ? (c.band ?? STRIKE_BAND_DEFAULT)
+                            : null,
                         })
                       }}>
                       {FIELD_ORDER.map(f => (
@@ -413,6 +423,19 @@ export default function RuleBuilder({ rules, onChange, readOnly = false, lockStr
                           </>
                         )
                       })()}
+                      {c.field === 'strike_crossings_band' && (
+                        <>
+                          <span className="rule-and">± band</span>
+                          <input className="rule-input rule-value" type="number" placeholder="band"
+                            step="0.001" min="0" disabled={structLocked}
+                            value={c.band ?? ''}
+                            onChange={e => {
+                              const raw = e.target.value
+                              patchCondition(ri, ci, { band: raw === '' ? null : parseFloat(raw) })
+                            }} />
+                          <span className="rule-unit-static">$</span>
+                        </>
+                      )}
                     </div>
                     {!structLocked && (
                       <button type="button" className="rule-icon-btn rule-icon-danger"

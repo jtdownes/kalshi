@@ -142,7 +142,7 @@ def get_recent_crypto_prices(asset: str, window_seconds: int = 180) -> list[floa
     return [float(r["price"]) for r in rows if r["price"] is not None]
 
 
-def get_strike_crossings(ticker: str, asset: str) -> int:
+def get_strike_crossings(ticker: str, asset: str, band: float = 0.0) -> int:
     """Number of times the underlying crossed this market's strike over the whole
     market life (open -> latest snapshot).
 
@@ -151,33 +151,47 @@ def get_strike_crossings(ticker: str, asset: str) -> int:
     so live and simulation can never disagree:
       - source rows: market_snapshots LEFT JOIN the asset snapshot table on the
         exact scanned_at, where a consolidated/coinbase price exists;
-      - above = (px > strike)  (a tick exactly AT the strike counts as below);
-      - a crossing is any row whose above-flag differs from the previous row's,
-        from the market's FIRST snapshot (not a trailing time window).
+      - a crossing is any row whose zone differs from the previous row's, from
+        the market's FIRST snapshot (not a trailing time window).
     Returns the running count at the most recent snapshot.
+
+    `band` (USD, >= 0) fattens the strike into a zone: a tick is ABOVE when
+    px > strike+band, BELOW when px < strike-band, and otherwise INSIDE the band.
+    Counting zone changes makes a price that *grazes* the strike (oscillating
+    within a fraction of a cent, which the exact-strike count misses) register
+    as chop. band=0 collapses to the exact-strike sign-flip count and stays
+    byte-identical to the backtest's `strike_crossings`.
     """
     table = crypto_assets.CRYPTO_ASSETS[asset]["snapshot_table"]
+    band = abs(float(band or 0.0))
+    px = "COALESCE(b.consolidated_price, b.coinbase_price)"
+    strike = "NULLIF(m.strike_str, '')::numeric"
+    if band > 0:
+        zone = (f"CASE WHEN {px} > {strike} + %(band)s THEN 1 "
+                f"WHEN {px} < {strike} - %(band)s THEN -1 ELSE 0 END")
+        params = {"ticker": ticker, "band": band}
+    else:
+        # exact-strike, binary (a tick AT the strike counts as below) — unchanged.
+        zone = f"CASE WHEN {px} > {strike} THEN 1 ELSE 0 END"
+        params = {"ticker": ticker}
     query = f"""
         SELECT COALESCE(SUM(cross_flag), 0) AS crossings
         FROM (
-            SELECT CASE WHEN above_int <> lag(above_int)
+            SELECT CASE WHEN zone <> lag(zone)
                                 OVER (ORDER BY scanned_at::timestamp)
                         THEN 1 ELSE 0 END AS cross_flag
             FROM (
-                SELECT m.scanned_at,
-                       CASE WHEN COALESCE(b.consolidated_price, b.coinbase_price)
-                                 > NULLIF(m.strike_str, '')::numeric
-                            THEN 1 ELSE 0 END AS above_int
+                SELECT m.scanned_at, {zone} AS zone
                 FROM market_snapshots m
                 LEFT JOIN {table} b ON b.scanned_at = m.scanned_at
-                WHERE m.ticker = %s
-                  AND COALESCE(b.consolidated_price, b.coinbase_price) IS NOT NULL
+                WHERE m.ticker = %(ticker)s
+                  AND {px} IS NOT NULL
             ) z
         ) zz
     """
     with _lock, _conn() as conn:
         cur = conn.cursor(cursor_factory=psycopg2.extras.DictCursor)
-        cur.execute(query, (ticker,))
+        cur.execute(query, params)
         row = cur.fetchone()
     return int(row["crossings"]) if row and row["crossings"] is not None else 0
 

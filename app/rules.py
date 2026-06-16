@@ -67,6 +67,8 @@ FIELDS = (
     "btc_range",          # USD: high − low of BTC over the lookback window
     "btc_drift",          # USD signed: last − first (momentum direction/size)
     "strike_crossings",   # count: times BTC crossed this strike over the whole market life
+    "strike_crossings_band",  # count: like strike_crossings but counts zone changes around a
+                              # ±band ($) zone, so grazing the strike registers (cond["band"]).
     "buffer_ratio",       # |distance_to_strike| / btc_volatility (vol-units of buffer)
     "price_change",       # USD signed: underlying change over a per-condition trailing
                           # window (cond["window_secs"]). Tunable cousin of btc_drift,
@@ -132,6 +134,13 @@ def compute_fields(market: dict, time_to_close: int | None = None,
             if v is not None:
                 result[k] = float(v)
 
+        # Per-band strike_crossings counts, precomputed upstream (one per distinct
+        # band referenced). Keyed by xc_band_key so _check_condition can look up
+        # the count for its condition's band.
+        for k, v in extra.items():
+            if isinstance(k, str) and k.startswith("strike_crossings_band:") and v is not None:
+                result[k] = float(v)
+
         # Rate-of-change "craziness" fields from the trailing BTC price series.
         # Per-market (buffer_ratio needs this contract's strike), so computed
         # here rather than passed in extra.
@@ -193,12 +202,25 @@ def _price_change_over(series, window_secs):
     return last_px - first_px
 
 
+def xc_band_key(band) -> str:
+    """Stable fields-dict key for a strike_crossings_band count at this band ($).
+    Shared by the producer (strategy.py) and consumer (_check_condition) so they
+    always agree on the key for a given band value."""
+    try:
+        return f"strike_crossings_band:{abs(float(band)):.6f}"
+    except (TypeError, ValueError):
+        return "strike_crossings_band:none"
+
+
 def _check_condition(cond: dict, fields: dict) -> bool:
     field = cond.get("field")
     op    = cond.get("op")
 
     if field == "price_change":
         lhs = _price_change_over(fields.get("_pc_series"), cond.get("window_secs"))
+    elif field == "strike_crossings_band":
+        # per-condition band: read the count precomputed for this exact band.
+        lhs = fields.get(xc_band_key(cond.get("band")))
     else:
         lhs = fields.get(field)
     if lhs is None:          # field unavailable for this market -> can't match

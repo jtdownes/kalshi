@@ -139,12 +139,16 @@ def _bt_market_quality(cur, series_like, max_gap_secs, min_snaps, tickers=None):
     return out
 
 
-def _bt_craze_cte(series_like, window_secs, need_cross, snap_table, pc_windows=None):
+def _bt_craze_cte(series_like, window_secs, need_cross, snap_table, pc_windows=None, bands=None):
     """Build the `craze` CTE for windowed underlying-price stats (volatility, range, drift, crossings, buffer).
 
     `pc_windows` adds one signed-drift column per distinct price_change lookback
     (pc_<secs>), each over its own RANGE window — the tunable counterpart to the
-    fixed-window btc_drift."""
+    fixed-window btc_drift.
+
+    `bands` adds one strike_crossings_band column per distinct band ($): zone
+    changes around a ±band zone, running from the market's first snapshot — the
+    exact mirror of db.get_strike_crossings(band) so live and sim agree."""
     px     = "COALESCE(b.consolidated_price, b.coinbase_price)"
     strike = "NULLIF(m.strike_str, '')::numeric"
     win    = (f"PARTITION BY ticker ORDER BY scanned_at::timestamp "
@@ -161,22 +165,36 @@ def _bt_craze_cte(series_like, window_secs, need_cross, snap_table, pc_windows=N
         f"RANGE BETWEEN INTERVAL '{w} seconds' PRECEDING AND CURRENT ROW)"
         for w in pc_windows)
 
+    bands = sorted({round(abs(float(b)), 6) for b in (bands or []) if float(b) > 0})
+    need_rich  = need_cross or bool(bands)
+    need_wfull = need_cross or bool(bands)
+    order = "OVER (PARTITION BY ticker ORDER BY scanned_at::timestamp)"
+
+    # innermost: per-row zone / above flags;  middle: change flags vs previous row.
+    inner_cols, mid_cols, out_cols = "", "", ""
     if need_cross:
+        inner_cols += f", CASE WHEN {px} > {strike} THEN 1 ELSE 0 END AS above_int"
+        mid_cols   += (f", CASE WHEN above_int <> lag(above_int) {order} "
+                       "THEN 1 ELSE 0 END AS cross_flag")
+        out_cols   += "COALESCE(sum(cross_flag) OVER wfull, 0) AS strike_crossings,"
+    for b in bands:
+        col, z = _bt_band_col(b), f"zone_{_bt_band_col(b)}"
+        inner_cols += (f", CASE WHEN {px} > {strike} + {b:.6f} THEN 1 "
+                       f"WHEN {px} < {strike} - {b:.6f} THEN -1 ELSE 0 END AS {z}")
+        mid_cols   += f", CASE WHEN {z} <> lag({z}) {order} THEN 1 ELSE 0 END AS {col}_flag"
+        out_cols   += f"COALESCE(sum({col}_flag) OVER wfull, 0) AS {col},"
+
+    if need_rich:
         inner = f"""
-            SELECT ticker, scanned_at, px, strike, above_int,
-                   CASE WHEN above_int <> lag(above_int)
-                            OVER (PARTITION BY ticker ORDER BY scanned_at::timestamp)
-                        THEN 1 ELSE 0 END AS cross_flag
+            SELECT ticker, scanned_at, px, strike{mid_cols}
             FROM (
-                SELECT m.ticker, m.scanned_at, {px} AS px, {strike} AS strike,
-                       CASE WHEN {px} > {strike} THEN 1 ELSE 0 END AS above_int
+                SELECT m.ticker, m.scanned_at, {px} AS px, {strike} AS strike{inner_cols}
                 FROM market_snapshots m
                 LEFT JOIN {snap_table} b ON b.scanned_at = m.scanned_at
                 WHERE m.ticker LIKE %s
                   AND COALESCE(b.consolidated_price, b.coinbase_price) IS NOT NULL
             ) z
         """
-        cross_col = "COALESCE(sum(cross_flag) OVER wfull, 0) AS strike_crossings,"
     else:
         inner = f"""
             SELECT m.ticker, m.scanned_at, {px} AS px, {strike} AS strike
@@ -184,7 +202,6 @@ def _bt_craze_cte(series_like, window_secs, need_cross, snap_table, pc_windows=N
             LEFT JOIN {snap_table} b ON b.scanned_at = m.scanned_at
             WHERE m.ticker LIKE %s
         """
-        cross_col = ""
 
     cte = f"""
         craze AS (
@@ -192,11 +209,11 @@ def _bt_craze_cte(series_like, window_secs, need_cross, snap_table, pc_windows=N
                    stddev_pop(px) OVER w                       AS btc_volatility,
                    (max(px) OVER w - min(px) OVER w)           AS btc_range,
                    (px - first_value(px) OVER w)               AS btc_drift,
-                   {cross_col}
+                   {out_cols}
                    {pc_cols}
                    (abs(px - strike) / NULLIF(stddev_pop(px) OVER w, 0)) AS buffer_ratio
             FROM ( {inner} ) zz
-            WINDOW w AS ({win}){(", wfull AS (" + win_full + ")") if need_cross else ""}{pc_win_defs}
+            WINDOW w AS ({win}){(", wfull AS (" + win_full + ")") if need_wfull else ""}{pc_win_defs}
         )"""
     return cte, [series_like]
 
@@ -221,6 +238,26 @@ def _bt_pc_windows(conditions):
     return sorted(windows)
 
 
+def _bt_band_col(band):
+    """SQL column name for a strike_crossings_band count at this band ($)."""
+    return "xb_" + f"{abs(float(band)):.6f}".replace(".", "_")
+
+
+def _bt_xc_bands(conditions):
+    """Distinct, valid bands ($) referenced by strike_crossings_band conditions."""
+    bands = set()
+    for c in conditions or []:
+        if c.get("field") != "strike_crossings_band":
+            continue
+        try:
+            b = round(abs(float(c.get("band"))), 6)
+        except (TypeError, ValueError):
+            continue
+        if b > 0:
+            bands.add(b)
+    return sorted(bands)
+
+
 def _bt_conditions_sql(conditions):
     """Build an extra SQL WHERE clause + params from a rule's condition list."""
     clauses, params = [], []
@@ -232,6 +269,12 @@ def _bt_conditions_sql(conditions):
             except (TypeError, ValueError):
                 continue
             col = f"cz.{_pc_col(w)}" if w > 0 else None
+        elif field == "strike_crossings_band":
+            try:
+                b = round(abs(float(c.get("band"))), 6)
+            except (TypeError, ValueError):
+                continue
+            col = f"cz.{_bt_band_col(b)}" if b > 0 else None
         else:
             col = _BT_COL.get(field)
         if not col:
@@ -509,11 +552,12 @@ def _bt_simulate_rule(cur, series_like, rule, side, snap_table, tickers=None):
         cte_params.append(series_like)
         join_parts.append("LEFT JOIN prev2_res  p2r ON p2r.ct = m.close_time")
     pc_windows = _bt_pc_windows(rule.get("conditions"))
-    if (fields_used & _BT_CRAZE_FIELDS) or pc_windows:
+    xc_bands   = _bt_xc_bands(rule.get("conditions"))
+    if (fields_used & _BT_CRAZE_FIELDS) or pc_windows or xc_bands:
         craze_sql, craze_params = _bt_craze_cte(
             series_like, config.CRAZINESS_LOOKBACK_SECONDS,
             need_cross="strike_crossings" in fields_used,
-            snap_table=snap_table, pc_windows=pc_windows)
+            snap_table=snap_table, pc_windows=pc_windows, bands=xc_bands)
         cte_defs.append(craze_sql)
         cte_params.extend(craze_params)
         join_parts.append(
