@@ -893,6 +893,16 @@ def backtest_strategy():
             })
             all_trades.extend(rule_trades)
 
+    # The Side column on a non-fill row reflects the strategy's buy side, so the
+    # feed reads from the side you'd trade (buy YES => every skipped row is YES).
+    # Only unambiguous when all enabled rules share one side; with mixed sides or
+    # "both" we fall back to the market's settled winning side.
+    buy_sides = {
+        (rule.get("action") or {}).get("side", "yes")
+        for rule in rules if rule.get("enabled", True)
+    }
+    nonfill_side = next(iter(buy_sides)) if buy_sides == {"yes"} or buy_sides == {"no"} else None
+
     # Feed rows: every execution, plus a row for each scoped market that didn't
     # trade — "bad_data" if it was excluded for poor coverage, else "skipped".
     # Sorted newest-first (non-fill rows fall back to the market's last-seen time).
@@ -905,14 +915,14 @@ def backtest_strategy():
             q = quality.get(tk, {})
             if q.get("bad"):
                 feed.append({
-                    "ticker": tk, "side": resolved.get(tk), "fill_time": None, "fill_price": None,
+                    "ticker": tk, "side": nonfill_side or resolved.get(tk), "fill_time": None, "fill_price": None,
                     "ttc_at_fill": None, "exit_kind": None, "exit_price": None,
                     "exit_time": None, "pnl_cents": None, "qty": 1, "outcome": "bad_data",
                     "reason": q.get("reason"), "event_time": ticker_meta.get(tk),
                 })
             else:
                 feed.append({
-                    "ticker": tk, "side": resolved.get(tk), "fill_time": None, "fill_price": None,
+                    "ticker": tk, "side": nonfill_side or resolved.get(tk), "fill_time": None, "fill_price": None,
                     "ttc_at_fill": None, "exit_kind": None, "exit_price": None,
                     "exit_time": None, "pnl_cents": None, "qty": 1, "outcome": "skipped",
                     "event_time": ticker_meta.get(tk),
