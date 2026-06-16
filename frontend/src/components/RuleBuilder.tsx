@@ -450,19 +450,6 @@ export default function RuleBuilder({ rules, onChange, readOnly = false, lockStr
                           </>
                         )
                       })()}
-                      {cField === 'strike_crossings' && (
-                        <>
-                          <span className="rule-and">± band</span>
-                          <input className="rule-input rule-value" type="number" placeholder="0 = exact"
-                            step="0.001" min="0" disabled={structLocked}
-                            value={c.band ?? ''}
-                            onChange={e => {
-                              const raw = e.target.value
-                              patchCondition(ri, ci, { band: raw === '' ? null : parseFloat(raw) })
-                            }} />
-                          <span className="rule-unit-static">$</span>
-                        </>
-                      )}
                     </div>
                     {!structLocked && (
                       <button type="button" className="rule-icon-btn rule-icon-danger"
@@ -477,6 +464,31 @@ export default function RuleBuilder({ rules, onChange, readOnly = false, lockStr
                   + Add condition
                 </button>
               )}
+
+              {/* Strike-crossing band: a single size that changes how the strike
+                  crossings condition above counts. Only shown when this rule has
+                  one; on its own it does nothing. */}
+              {rule.conditions.some(c => normField(c.field) === 'strike_crossings') && (() => {
+                const xc = rule.conditions.find(c => normField(c.field) === 'strike_crossings')
+                return (
+                  <div className="rule-cond-row">
+                    <span className="rule-section-label" style={{ minWidth: 150 }}>Strike crossing band ±</span>
+                    <input className="rule-input rule-value" type="number" placeholder="0 = exact strike"
+                      step="0.001" min="0" disabled={structLocked}
+                      value={xc?.band ?? ''}
+                      onChange={e => {
+                        const raw = e.target.value
+                        const val = raw === '' ? null : parseFloat(raw)
+                        patchRule(ri, {
+                          conditions: rule.conditions.map(c =>
+                            normField(c.field) === 'strike_crossings' ? { ...c, band: val } : c),
+                        })
+                      }} />
+                    <span className="rule-unit-static">$</span>
+                    <span className="rule-and">a near-miss within ±band of the strike counts as a crossing</span>
+                  </div>
+                )
+              })()}
             </div>
 
             {/* THEN — action */}
