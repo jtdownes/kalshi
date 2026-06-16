@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import type { ReactNode } from 'react'
 import type {
   StrategyRule, RuleCondition, RuleField, RuleOp, RuleAction, RuleEntry, RuleExit,
@@ -47,6 +47,15 @@ const FIELD_META: Record<RuleField, { label: string; unit: Unit }> = {
 const PRICE_CHANGE_DEFAULT_WINDOW = 300
 const FIELD_ORDER = Object.keys(FIELD_META) as RuleField[]
 
+// Legacy field migration: the band used to be its own field; it's now a setting
+// on strike_crossings. Map old conditions so saved rules don't crash or vanish.
+function normField(f: RuleField): RuleField {
+  return (f as string) === 'strike_crossings_band' ? 'strike_crossings' : f
+}
+function metaOf(f: RuleField) {
+  return FIELD_META[normField(f)] ?? { label: String(f), unit: '' as Unit }
+}
+
 const OP_LABELS: Record<RuleOp, string> = {
   lt: '<', lte: '≤', gt: '>', gte: '≥', eq: '=', between: 'between',
 }
@@ -91,8 +100,9 @@ function displayToSecs(val: number, unit: 'min' | 'sec'): number {
 
 // ── Plain-English summary ─────────────────────────────────────────────────────
 function fmtFieldValue(c: RuleCondition): string {
-  const meta = FIELD_META[c.field]
-  const isResolution = c.field === 'prior_resolution' || c.field === 'prev2_resolution'
+  const field = normField(c.field)
+  const meta = metaOf(c.field)
+  const isResolution = field === 'prior_resolution' || field === 'prev2_resolution'
   const v = (n: number | null | undefined) => {
     if (n == null) return '?'
     if (isResolution) return n === 1 ? 'YES' : n === 0 ? 'NO' : String(n)
@@ -105,11 +115,11 @@ function fmtFieldValue(c: RuleCondition): string {
     return String(n)
   }
   let win = ''
-  if (c.field === 'price_change') {
+  if (field === 'price_change') {
     const u = timeUnitOf(c.window_secs)
     win = c.window_secs == null ? '' : ` in last ${secsToDisplay(c.window_secs, u)}${u === 'min' ? 'm' : 's'}`
   }
-  if (c.field === 'strike_crossings' && c.band != null && c.band > 0) {
+  if (field === 'strike_crossings' && c.band != null && c.band > 0) {
     win = ` (±$${c.band})`
   }
   if (c.op === 'between') return `${meta.label} between ${v(c.value)} and ${v(c.value2)}${win}`
@@ -175,6 +185,26 @@ interface Props {
 export default function RuleBuilder({ rules, onChange, readOnly = false, lockStructure = false, renderRuleFooter }: Props) {
   // Structural controls are locked in both read-only and limited-edit modes.
   const structLocked = readOnly || lockStructure
+
+  // One-time migration: rewrite any legacy strike_crossings_band condition to
+  // strike_crossings (band preserved) so persisted rules stop referencing the
+  // removed field. Skipped in read-only mode (no writes there).
+  useEffect(() => {
+    if (readOnly) return
+    let changed = false
+    const migrated = rules.map(r => ({
+      ...r,
+      conditions: (r.conditions || []).map(c => {
+        if ((c.field as string) === 'strike_crossings_band') {
+          changed = true
+          return { ...c, field: 'strike_crossings' as RuleField }
+        }
+        return c
+      }),
+    }))
+    if (changed) onChange(migrated)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [rules])
 
   // Explicit per-condition time-unit choice. Without this, the unit is derived
   // purely from the stored seconds value, so typing a whole-minute value (e.g.
@@ -298,13 +328,14 @@ export default function RuleBuilder({ rules, onChange, readOnly = false, lockStr
             <div className="rule-section">
               <div className="rule-section-label">IF <span>all of</span></div>
               {rule.conditions.map((c, ci) => {
-                const meta = FIELD_META[c.field]
+                const cField = normField(c.field)
+                const meta = metaOf(c.field)
                 const isTime = meta.unit === 'time'
                 const unitKey = `${rule.id}:${ci}`
                 const unit = unitOverrides[unitKey] ?? timeUnitOf(c.value)
                 return (
                   <div key={ci} className="rule-cond-row">
-                    <select className="rule-input rule-field" value={c.field} disabled={structLocked}
+                    <select className="rule-input rule-field" value={cField} disabled={structLocked}
                       onChange={e => {
                         const field = e.target.value as RuleField
                         patchCondition(ri, ci, {
@@ -384,7 +415,7 @@ export default function RuleBuilder({ rules, onChange, readOnly = false, lockStr
                       ) : (
                         meta.unit && <span className="rule-unit-static">{meta.unit}</span>
                       )}
-                      {c.field === 'price_change' && (() => {
+                      {cField === 'price_change' && (() => {
                         const wUnitKey = `${rule.id}:${ci}:w`
                         const wUnit = unitOverrides[wUnitKey] ?? timeUnitOf(c.window_secs)
                         return (
@@ -419,7 +450,7 @@ export default function RuleBuilder({ rules, onChange, readOnly = false, lockStr
                           </>
                         )
                       })()}
-                      {c.field === 'strike_crossings' && (
+                      {cField === 'strike_crossings' && (
                         <>
                           <span className="rule-and">± band</span>
                           <input className="rule-input rule-value" type="number" placeholder="0 = exact"
