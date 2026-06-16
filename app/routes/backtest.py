@@ -804,6 +804,7 @@ def backtest_strategy():
     scoped        = None     # all markets in scope (good + bad), for the feed
     ticker_meta  = {}
     quality      = {}
+    resolved     = {}        # ticker -> 'yes'/'no' winning side, for non-fill feed rows
     with cursor_conn() as cur:
         # The replay queries are big window-function CTEs over market_snapshots.
         # Postgres plans them with parallel workers, which allocate dynamic
@@ -837,6 +838,33 @@ def backtest_strategy():
             # No market_limit: scope the run to the good markets explicitly so
             # the bad ones drop out of the LIKE-everything scan.
             tickers = [tk for tk, q in quality.items() if not q["bad"]]
+
+        # Resolve each scoped market's winning side so non-fill feed rows
+        # (skipped / bad_data) can still show which side settled YES vs NO.
+        # Prefer the official settlement; fall back to the final non-placeholder
+        # bid (>= 50 => yes won), mirroring the settle logic used for fills.
+        if scoped:
+            cur.execute("""
+                WITH finals AS (
+                    SELECT DISTINCT ON (ticker)
+                        ticker, yes_bid AS final_bid, yes_ask AS final_ask
+                    FROM market_snapshots
+                    WHERE ticker LIKE %s
+                      AND NOT (yes_bid = 0 AND yes_ask = 100 AND no_bid = 0 AND no_ask = 100)
+                    ORDER BY ticker, scanned_at DESC
+                )
+                SELECT f.ticker, f.final_bid, f.final_ask, ms.result AS official
+                FROM finals f
+                LEFT JOIN market_settlements ms ON ms.ticker = f.ticker
+            """, [series_like])
+            for r in cur.fetchall():
+                official = r["official"]
+                if official in ("yes", "no"):
+                    resolved[r["ticker"]] = official
+                else:
+                    ref = r["final_bid"] if r["final_bid"] is not None else r["final_ask"]
+                    if ref is not None:
+                        resolved[r["ticker"]] = "yes" if float(ref) >= 50 else "no"
 
         for idx, rule in enumerate(rules):
             if not rule.get("enabled", True):
@@ -877,14 +905,14 @@ def backtest_strategy():
             q = quality.get(tk, {})
             if q.get("bad"):
                 feed.append({
-                    "ticker": tk, "side": None, "fill_time": None, "fill_price": None,
+                    "ticker": tk, "side": resolved.get(tk), "fill_time": None, "fill_price": None,
                     "ttc_at_fill": None, "exit_kind": None, "exit_price": None,
                     "exit_time": None, "pnl_cents": None, "qty": 1, "outcome": "bad_data",
                     "reason": q.get("reason"), "event_time": ticker_meta.get(tk),
                 })
             else:
                 feed.append({
-                    "ticker": tk, "side": None, "fill_time": None, "fill_price": None,
+                    "ticker": tk, "side": resolved.get(tk), "fill_time": None, "fill_price": None,
                     "ttc_at_fill": None, "exit_kind": None, "exit_price": None,
                     "exit_time": None, "pnl_cents": None, "qty": 1, "outcome": "skipped",
                     "event_time": ticker_meta.get(tk),
