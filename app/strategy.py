@@ -85,18 +85,16 @@ def evaluate_market(market: dict, settings: dict | None = None,
             except Exception:
                 pass
 
-    # strike_crossings spans the WHOLE market life, not a trailing window. Bound
-    # the fetch to this market's age (open -> now) so crossings from before
-    # the market opened aren't counted: age = duration - time_to_close.
+    # strike_crossings spans the WHOLE market life (open -> now). Computed by the
+    # SAME SQL the backtest uses (db.get_strike_crossings) so live and simulation
+    # can never disagree on the count. On DB error we leave it unset, which makes
+    # the condition fail closed (no trade) rather than guess with a divergent
+    # estimate. NOTE: an earlier version counted crossings in Python over a
+    # trailing `now - age` window — that clipped the opening tick and used
+    # different equality handling, letting trades through that the sim rejected.
     if "strike_crossings" in referenced:
-        ttc = time_to_close if time_to_close is not None else market.get("time_to_close_secs")
         try:
-            if ttc is not None:
-                age = config.MARKET_DURATION_SECONDS - int(ttc)
-            else:
-                age = config.MARKET_DURATION_SECONDS
-            age = max(2, min(age, config.MARKET_DURATION_SECONDS))
-            extra["market_btc_prices"] = db.get_recent_crypto_prices(asset, age)
+            extra["strike_crossings"] = db.get_strike_crossings(ticker, asset)
         except Exception:
             pass
 

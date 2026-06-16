@@ -142,6 +142,46 @@ def get_recent_crypto_prices(asset: str, window_seconds: int = 180) -> list[floa
     return [float(r["price"]) for r in rows if r["price"] is not None]
 
 
+def get_strike_crossings(ticker: str, asset: str) -> int:
+    """Number of times the underlying crossed this market's strike over the whole
+    market life (open -> latest snapshot).
+
+    This is the SINGLE source of truth for strike_crossings: it is byte-for-byte
+    the same definition the backtest uses (app/routes/backtest.py `_bt_craze_cte`)
+    so live and simulation can never disagree:
+      - source rows: market_snapshots LEFT JOIN the asset snapshot table on the
+        exact scanned_at, where a consolidated/coinbase price exists;
+      - above = (px > strike)  (a tick exactly AT the strike counts as below);
+      - a crossing is any row whose above-flag differs from the previous row's,
+        from the market's FIRST snapshot (not a trailing time window).
+    Returns the running count at the most recent snapshot.
+    """
+    table = crypto_assets.CRYPTO_ASSETS[asset]["snapshot_table"]
+    query = f"""
+        SELECT COALESCE(SUM(cross_flag), 0) AS crossings
+        FROM (
+            SELECT CASE WHEN above_int <> lag(above_int)
+                                OVER (ORDER BY scanned_at::timestamp)
+                        THEN 1 ELSE 0 END AS cross_flag
+            FROM (
+                SELECT m.scanned_at,
+                       CASE WHEN COALESCE(b.consolidated_price, b.coinbase_price)
+                                 > NULLIF(m.strike_str, '')::numeric
+                            THEN 1 ELSE 0 END AS above_int
+                FROM market_snapshots m
+                LEFT JOIN {table} b ON b.scanned_at = m.scanned_at
+                WHERE m.ticker = %s
+                  AND COALESCE(b.consolidated_price, b.coinbase_price) IS NOT NULL
+            ) z
+        ) zz
+    """
+    with _lock, _conn() as conn:
+        cur = conn.cursor(cursor_factory=psycopg2.extras.DictCursor)
+        cur.execute(query, (ticker,))
+        row = cur.fetchone()
+    return int(row["crossings"]) if row and row["crossings"] is not None else 0
+
+
 def get_recent_crypto_prices_ts(asset: str, window_seconds: int = 300) -> list[tuple[float, float]]:
     """Like get_recent_crypto_prices but returns (epoch_secs, price) pairs,
     oldest first — so callers can measure change over a sub-window precisely

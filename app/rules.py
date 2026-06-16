@@ -148,22 +148,14 @@ def compute_fields(market: dict, time_to_close: int | None = None,
                 result["buffer_ratio"] = abs(distance) / vol
 
         # strike_crossings counts EVERY strike crossing over the whole market
-        # life (open -> now), not a trailing window — a 15-min market that has
-        # whipsawed the strike 5 times is choppy even if the last 3 min are calm.
-        # Uses the full-market series when supplied; falls back to `recent`.
-        cross_series = extra.get("market_btc_prices") or recent
-        if strike is not None and cross_series and len(cross_series) >= 2:
-            crossings = 0
-            prev_sign = None
-            for p in cross_series:
-                d = p - strike
-                if d == 0:
-                    continue
-                sign = d > 0
-                if prev_sign is not None and sign != prev_sign:
-                    crossings += 1
-                prev_sign = sign
-            result["strike_crossings"] = float(crossings)
+        # life (open -> now). It is computed upstream by db.get_strike_crossings
+        # (the SAME SQL the backtest uses) and passed in via `extra` so live and
+        # simulation are guaranteed to agree. If absent (DB error upstream) the
+        # field stays unset and the condition fails closed — we never substitute
+        # a divergent in-process estimate.
+        xc = extra.get("strike_crossings")
+        if xc is not None:
+            result["strike_crossings"] = float(xc)
 
         # price_change is windowed per-condition, so it can't be a single scalar
         # here. Stash the timestamped underlying series (oldest first, as
