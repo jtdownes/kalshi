@@ -5,7 +5,7 @@ Market and crypto (per-asset) snapshot persistence and queries.
 import psycopg2.extras
 import logging
 import time
-from datetime import datetime
+from datetime import datetime, timedelta
 
 import crypto_assets
 from .core import _conn, _lock
@@ -220,8 +220,18 @@ def get_latest_snapshots_for_series(series_tickers: list[str], max_age_seconds: 
     if not series_tickers:
         return []
     where = " OR ".join("m.ticker LIKE %s" for _ in series_tickers)
-    params = [f"{series}-%" for series in series_tickers]
-    params.append(str(max_age_seconds))
+    # scanned_at is ISO-8601 text whose lexicographic order matches chronological
+    # order, so the freshness window is a plain text range against a precomputed
+    # cutoff string. The old form cast the column (scanned_at::timestamp), which
+    # was non-sargable: every tick full-seq-scanned market_snapshots (2M+ rows)
+    # AND hash-joined full seq scans of all three crypto tables (~1.6s/call). With
+    # the text range over idx_snaps_scanned_at only the last few seconds of rows
+    # survive the filter, and the crypto joins collapse to indexed lookups. This
+    # query runs once per active profile per 1s tick, so its latency directly
+    # bounds how short an entry window the scanner can still catch.
+    cutoff = (datetime.utcnow() - timedelta(seconds=max_age_seconds)).isoformat()
+    params = [cutoff]
+    params.extend(f"{series}-%" for series in series_tickers)
     query = f"""
         SELECT DISTINCT ON (m.ticker)
                m.id, m.ticker, m.title, m.scanned_at, m.close_time,
@@ -237,8 +247,8 @@ def get_latest_snapshots_for_series(series_tickers: list[str], max_age_seconds: 
         LEFT JOIN bitcoin_snapshots b ON b.scanned_at = m.scanned_at
         LEFT JOIN ethereum_snapshots e ON e.scanned_at = m.scanned_at
         LEFT JOIN solana_snapshots s ON s.scanned_at = m.scanned_at
-        WHERE ({where})
-          AND m.scanned_at::timestamp >= ((CURRENT_TIMESTAMP AT TIME ZONE 'UTC') - (%s || ' seconds')::interval)
+        WHERE m.scanned_at >= %s
+          AND ({where})
         ORDER BY m.ticker, m.scanned_at DESC
     """
     with _lock, _conn() as conn:

@@ -397,6 +397,10 @@ CREATE INDEX IF NOT EXISTS idx_snaps_ticker   ON market_snapshots(ticker);
 -- Supports per-window resolution lookups (close_time = X ORDER BY scanned_at DESC)
 -- used by the live momentum signal and the backtest's prior-window CTEs.
 CREATE INDEX IF NOT EXISTS idx_snaps_close_scanned ON market_snapshots(close_time, scanned_at);
+-- Freshness range scan for the scanner's hot path (get_latest_snapshots_for_series):
+-- scanned_at is ISO-8601 text, so a plain btree serves "scanned_at >= <cutoff>"
+-- and keeps each 1s scan tick off a full-table seq scan.
+CREATE INDEX IF NOT EXISTS idx_snaps_scanned_at ON market_snapshots(scanned_at);
 
 -- ── Scanned series ────────────────────────────────────────────────────────────
 -- Which Kalshi series the snapshot scanner polls, editable from the Markets page.
