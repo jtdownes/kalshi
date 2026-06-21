@@ -458,26 +458,30 @@ tbody tr:hover { background: rgba(255,255,255,0.025); }
 }
 
 .strategy-card-head {
-  align-items: center;
+  align-items: flex-start;
   padding-bottom: 10px;
   border-bottom: 1px solid #1f2637;
 }
 
 .strategy-title-block {
   min-width: 0;
+  flex: 1 1 auto;
 }
 
 .strategy-card-head-right {
   display: flex;
   align-items: center;
-  gap: 8px;
-  flex-shrink: 0;
+  justify-content: flex-end;
+  flex-wrap: wrap;
+  gap: 6px;
+  flex: 0 1 auto;
 }
 
 .strategy-name {
   color: #e2e8f0;
   font-size: 15px;
   font-weight: 700;
+  overflow-wrap: break-word;
 }
 
 .strategy-created,
