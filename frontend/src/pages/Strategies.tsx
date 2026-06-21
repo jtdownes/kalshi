@@ -106,6 +106,25 @@ export default function Strategies({ settings, profiles, refresh }: Props) {
   const [renameModal,      setRenameModal]      = useState<{ profileId: number; name: string } | null>(null)
   const [saving,           setSaving]           = useState(false)
   const [activating,       setActivating]       = useState(false)
+  const [showArchived,     setShowArchived]     = useState(false)
+  const [archivedProfiles, setArchivedProfiles] = useState<Profile[]>([])
+
+  const loadArchived = async () => {
+    try {
+      const resp = await fetch('/api/profiles?include_archived=true')
+      if (resp.ok) {
+        const all: Profile[] = await resp.json()
+        setArchivedProfiles(all.filter(p => p.archived))
+      }
+    } catch { /* ignore */ }
+  }
+
+  // Re-pull the archived set whenever it's being shown so it stays in sync with
+  // the live (non-archived) list the parent owns.
+  useEffect(() => {
+    if (showArchived) loadArchived()
+    else setArchivedProfiles([])
+  }, [showArchived, profiles])
 
   // Escape closes the topmost open modal first
   useEffect(() => {
@@ -257,6 +276,20 @@ export default function Strategies({ settings, profiles, refresh }: Props) {
     }
   }
 
+  const setArchived = async (profileId: number, archived: boolean) => {
+    try {
+      const resp = await fetch(`/api/profiles/${profileId}/${archived ? 'archive' : 'unarchive'}`, { method: 'POST' })
+      if (!resp.ok) throw new Error(`Failed to ${archived ? 'archive' : 'unarchive'} strategy`)
+      if (viewModal?.profile.id === profileId) setViewModal(null)
+      await refresh()
+      if (showArchived) await loadArchived()
+    } catch (err: any) {
+      alert(err.message || String(err))
+    }
+  }
+
+  const visibleProfiles = showArchived ? [...profiles, ...archivedProfiles] : profiles
+
   return (
     <div className="strategies-view">
       {settings && (
@@ -267,13 +300,21 @@ export default function Strategies({ settings, profiles, refresh }: Props) {
           >
             New Strategy
           </button>
+          <label className="strategy-archived-toggle" style={{ display: 'inline-flex', alignItems: 'center', gap: 6, marginLeft: 12, fontSize: 13, color: '#94a3b8', cursor: 'pointer' }}>
+            <input
+              type="checkbox"
+              checked={showArchived}
+              onChange={e => setShowArchived(e.target.checked)}
+            />
+            Show archived
+          </label>
         </div>
       )}
 
       <section className="strategies-grid" aria-label="Saved strategies">
-        {profiles.length === 0 ? (
+        {visibleProfiles.length === 0 ? (
           <div className="strategy-empty">No strategies yet</div>
-        ) : profiles.map(p => {
+        ) : visibleProfiles.map(p => {
           const isActive = p.is_active
           const ruleCount = p.rules?.length ?? 0
           return (
@@ -294,7 +335,27 @@ export default function Strategies({ settings, profiles, refresh }: Props) {
                 </div>
                 <div className="strategy-card-head-right">
                   {isActive && <span className="badge badge-live">ACTIVE</span>}
+                  {p.archived && <span className="strategy-chip strategy-chip-dim">ARCHIVED</span>}
                   <span className="strategy-chip strategy-chip-dim">{fmtTickers(p.btc_series_tickers)}</span>
+                  {p.archived ? (
+                    <button
+                      className="btn"
+                      onClick={e => { e.stopPropagation(); setArchived(p.id, false) }}
+                      style={{ marginLeft: 8 }}
+                      aria-label={`Unarchive strategy ${p.name}`}
+                    >
+                      Unarchive
+                    </button>
+                  ) : (
+                    <button
+                      className="btn"
+                      onClick={e => { e.stopPropagation(); setArchived(p.id, true) }}
+                      style={{ marginLeft: 8 }}
+                      aria-label={`Archive strategy ${p.name}`}
+                    >
+                      Archive
+                    </button>
+                  )}
                   {(p.order_count ?? 0) === 0 && (
                     <button
                       className="btn"
@@ -460,6 +521,9 @@ export default function Strategies({ settings, profiles, refresh }: Props) {
                       </button>
                       <button className="btn" onClick={() => { setNewStrategyDraft({ ...profileToDraft(viewModal.profile), name: '' }); setEditingProfileId(null); setLimitedEdit(false); setViewModal(null) }}>Copy as Template</button>
                       <button className="btn" onClick={switchToTrades}>View Trades</button>
+                      <button className="btn" onClick={() => setArchived(viewModal.profile.id, !viewModal.profile.archived)}>
+                        {viewModal.profile.archived ? 'Unarchive' : 'Archive'}
+                      </button>
                     </>
                   ) : (
                     <button className="btn" onClick={() => setViewModal(v => v ? { ...v, tab: 'settings' } : v)}>← Back to Settings</button>

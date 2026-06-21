@@ -197,6 +197,32 @@ def deactivate_profile(profile_id: int):
         conn.commit()
 
 
+def set_profile_archived(profile_id: int, archived: bool):
+    """Archive/unarchive a profile. Archiving also deactivates it (and repoints
+    settings.active_profile_id) so a hidden strategy can't keep trading."""
+    with _lock, _conn() as conn:
+        cur = conn.cursor()
+        cur.execute("SELECT id FROM profiles WHERE id = %s", (profile_id,))
+        if not cur.fetchone():
+            raise ValueError(f"Profile {profile_id} not found")
+
+        cur.execute("UPDATE profiles SET archived = %s WHERE id = %s", (archived, profile_id))
+
+        if archived:
+            cur.execute("UPDATE profiles SET is_active = FALSE WHERE id = %s", (profile_id,))
+            cur.execute("SELECT active_profile_id FROM settings WHERE id = 1")
+            row = cur.fetchone()
+            if row and row[0] == profile_id:
+                cur.execute(
+                    "SELECT id FROM profiles WHERE is_active = TRUE AND id != %s ORDER BY id LIMIT 1",
+                    (profile_id,)
+                )
+                next_row = cur.fetchone()
+                next_id = next_row[0] if next_row else None
+                cur.execute("UPDATE settings SET active_profile_id = %s WHERE id = 1", (next_id,))
+        conn.commit()
+
+
 def get_active_profiles() -> list[dict]:
     """Return all profiles where is_active = TRUE, with btc_series_tickers as a list."""
     query = """

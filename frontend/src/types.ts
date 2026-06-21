@@ -149,6 +149,7 @@ export interface Profile {
   name: string
   created_at: string
   is_active: boolean
+  archived?: boolean
   min_entry_cents: number
   max_entry_cents: number
   proactive_mode: boolean

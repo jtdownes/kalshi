@@ -43,6 +43,15 @@ BEGIN
     END IF;
 END $$;
 
+-- Archived strategies stay in the DB (and keep their run history) but are hidden
+-- from the default Strategies grid. Archiving never deletes; it just declutters.
+DO $$
+BEGIN
+    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='profiles' AND column_name='archived') THEN
+        ALTER TABLE profiles ADD COLUMN archived BOOLEAN NOT NULL DEFAULT FALSE;
+    END IF;
+END $$;
+
 CREATE TABLE IF NOT EXISTS orders (
     id                              SERIAL PRIMARY KEY,
     kalshi_order_id                 TEXT UNIQUE,

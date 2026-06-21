@@ -36,6 +36,7 @@ from .series import (
 from .profiles import (
     get_active_profile_id, create_profile, update_profile, delete_profile,
     activate_profile, deactivate_profile, get_active_profiles,
+    set_profile_archived,
 )
 from .settings import get_settings, update_settings
 
@@ -66,6 +67,7 @@ __all__ = [
     # profiles
     'get_active_profile_id', 'create_profile', 'update_profile', 'delete_profile',
     'activate_profile', 'deactivate_profile', 'get_active_profiles',
+    'set_profile_archived',
     # settings
     'get_settings', 'update_settings',
 ]

@@ -12,6 +12,7 @@ profiles_bp = Blueprint('profiles', __name__)
 
 @profiles_bp.get("/api/profiles")
 def get_profiles():
+    include_archived = request.args.get("include_archived", "").lower() in ("1", "true", "yes")
     with cursor_conn() as c:
         c.execute("""
             SELECT p.*,
@@ -23,9 +24,10 @@ def get_profiles():
                    COALESCE(SUM(o.net_profit_cents) FILTER (WHERE o.net_profit_cents IS NOT NULL), 0) AS total_profit_cents
             FROM profiles p
                  LEFT JOIN orders o ON o.profile_id = p.id AND o.order_role = 'entry'
+            WHERE %s OR NOT p.archived
             GROUP BY p.id
             ORDER BY p.created_at DESC
-        """)
+        """, (include_archived,))
         rows = c.fetchall()
     return jsonify([dict(r) for r in rows])
 
@@ -71,6 +73,24 @@ def activate_profile(profile_id: int):
 def deactivate_profile(profile_id: int):
     try:
         database.deactivate_profile(profile_id)
+    except ValueError as e:
+        return jsonify({"error": str(e)}), 404
+    return jsonify({"status": "success"})
+
+
+@profiles_bp.post("/api/profiles/<int:profile_id>/archive")
+def archive_profile(profile_id: int):
+    try:
+        database.set_profile_archived(profile_id, True)
+    except ValueError as e:
+        return jsonify({"error": str(e)}), 404
+    return jsonify({"status": "success"})
+
+
+@profiles_bp.post("/api/profiles/<int:profile_id>/unarchive")
+def unarchive_profile(profile_id: int):
+    try:
+        database.set_profile_archived(profile_id, False)
     except ValueError as e:
         return jsonify({"error": str(e)}), 404
     return jsonify({"status": "success"})
