@@ -217,17 +217,46 @@ class KalshiClient:
     def place_order(self, ticker: str, side: str, price_cents: int,
                     client_order_id: str, count: int = 1,
                     action: str = "buy") -> dict:
-        yes_price = price_cents if side == "yes" else (100 - price_cents)
+        """Place a limit order.
+
+        Kalshi deprecated the v1 outcome-centric create-order endpoint
+        (POST /portfolio/orders → HTTP 410 deprecated_v1_order_endpoint). The V2
+        endpoint (POST /portfolio/events/orders) speaks a single normalized
+        YES-book instead of (side=yes/no, action=buy/sell):
+
+            side="bid"  → buy YES        side="ask"  → sell YES
+            price       → the YES-leg price, in DOLLARS (e.g. "0.56")
+            count       → quantity, as a STRING
+
+        Buying NO is economically selling YES, and selling NO is buying YES, so
+        the YES-leg price is exactly the `yes_price` the bot already computes.
+        We end up LONG yes (→ bid) when buying YES or selling NO, and SHORT yes
+        (→ ask) when selling YES or buying NO. Verified against the live exchange:
+        bid@0.01 rests as buy-YES@1¢; ask@0.99 rests as buy-NO@1¢.
+        """
+        yes_leg_cents = price_cents if side == "yes" else (100 - price_cents)
+        yes_leg_cents = int(round(yes_leg_cents))
+        book_side = "bid" if (action == "buy") == (side == "yes") else "ask"
         body = {
-            "ticker":           ticker,
-            "client_order_id":  client_order_id,
-            "type":             "limit",
-            "action":           action,
-            "side":             side,
-            "count":            count,
-            "yes_price":        yes_price,
+            "ticker":            ticker,
+            "client_order_id":   client_order_id,
+            "side":              book_side,
+            "count":             str(int(count)),
+            "price":             f"{yes_leg_cents / 100:.2f}",
+            "time_in_force":     "good_till_canceled",
+            "self_trade_prevention_type": "taker_at_cross",
         }
-        return self._post("/portfolio/orders", body)
+        resp = self._post("/portfolio/events/orders", body)
+        # V2 returns a flat object ({order_id, client_order_id, fill_count,
+        # remaining_count, ts_ms}); re-wrap as {"order": {...}} so every caller
+        # that reads resp["order"]["order_id"] keeps working unchanged.
+        return {"order": {
+            "order_id":        resp.get("order_id"),
+            "client_order_id": resp.get("client_order_id", client_order_id),
+            "status":          "resting",
+            "fill_count":      resp.get("fill_count"),
+            "remaining_count": resp.get("remaining_count"),
+        }}
 
     def get_orders(self, status: str = None, ticker: str = None, limit: int = 200) -> dict:
         params: dict = {"limit": limit}
