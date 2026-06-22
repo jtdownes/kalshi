@@ -270,7 +270,11 @@ class KalshiClient:
         return self._get(f"/portfolio/orders/{order_id}")
 
     def cancel_order(self, order_id: str) -> dict:
-        return self._delete(f"/portfolio/orders/{order_id}", cost=_CANCEL_COST)
+        # V2 cancel. The v1 DELETE /portfolio/orders/{id} is being deprecated
+        # alongside create (Kalshi notice 2026-06-18, cutover by ~06-25), so we
+        # use the event-order path. Returns a flat {order_id, client_order_id,
+        # reduced_by, ts_ms}; callers only check it doesn't raise.
+        return self._delete(f"/portfolio/events/orders/{order_id}", cost=_CANCEL_COST)
 
     def get_fills(self, ticker: str = None, limit: int = 200) -> dict:
         params: dict = {"limit": limit}
