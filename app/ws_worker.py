@@ -92,6 +92,37 @@ def _dollars_to_cents(v) -> float | None:
         return None
 
 
+def _positions_reconcile_loop() -> None:
+    """Periodically reconcile the positions cache against Kalshi REST.
+
+    Kalshi's `market_position` WS channel pushes updates on fills/trades but NOT
+    when a market settles — a contract held to settlement just resolves, with no
+    position_fp=0 event. Without this, settled positions linger in the cache
+    (showing on the dashboard as a stale "active position") until the WS happens
+    to reconnect and re-bootstrap from REST. Poll REST and prune any cached
+    ticker that REST no longer reports as a live (non-zero) position.
+    """
+    client: KalshiClient | None = None
+    while True:
+        time.sleep(30)
+        try:
+            if client is None:
+                client = KalshiClient()
+            raw = client.get_positions().get("market_positions", [])
+            live = {p["ticker"] for p in raw if float(p.get("position_fp", 0)) != 0}
+            with _lock:
+                stale = [tkr for tkr in _positions_cache if tkr not in live]
+                for tkr in stale:
+                    _positions_cache.pop(tkr, None)
+                changed = bool(stale)
+            if changed:
+                log.info("Reconcile pruned %d settled position(s): %s", len(stale), stale)
+                _broadcast("positions", get_positions())
+        except Exception as e:
+            log.debug("Positions reconcile failed: %s", e)
+            client = None  # force a fresh client next cycle
+
+
 def _snapshot_poll_loop() -> None:
     last_head_id = None
     while True:
@@ -291,7 +322,9 @@ def start() -> None:
 
     t = threading.Thread(target=_thread, daemon=True, name="kalshi-ws")
     s = threading.Thread(target=_snapshot_poll_loop, daemon=True, name="snapshot-poll")
+    r = threading.Thread(target=_positions_reconcile_loop, daemon=True, name="positions-reconcile")
     t.start()
     s.start()
+    r.start()
     _started = True
     log.info("Kalshi WS worker started")
