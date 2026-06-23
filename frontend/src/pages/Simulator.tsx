@@ -12,7 +12,21 @@ const SUPPORTED_MARKETS = [
 
 const RULES_STORAGE_KEY = 'simulator.rules.v1'
 const SERIES_STORAGE_KEY = 'simulator.series.v1'
-const MARKET_LIMIT = 1000
+const MARKET_LIMIT_STORAGE_KEY = 'simulator.marketLimit.v1'
+// Each 15-min market ≈ a day's worth of seconds of tick data; 1000 markets ≈ the
+// last ~10 days, 2000 ≈ ~20 days. More markets = a longer/slower but more
+// representative sample.
+const MARKET_LIMIT_OPTIONS = [1000, 2000] as const
+
+function loadStoredMarketLimit(): number {
+  try {
+    const raw = Number(localStorage.getItem(MARKET_LIMIT_STORAGE_KEY))
+    if (MARKET_LIMIT_OPTIONS.includes(raw as typeof MARKET_LIMIT_OPTIONS[number])) return raw
+  } catch {
+    /* corrupt/unavailable storage — fall through to the default */
+  }
+  return 1000
+}
 
 // Restore the last-selected market so a refresh doesn't reset it to BTC.
 function loadStoredSeries(): string {
@@ -134,6 +148,7 @@ interface Props {
 export default function Simulator({ profiles, settings, refresh }: Props) {
   const [rules, setRules] = useState<StrategyRule[]>(loadStoredRules)
   const [series, setSeries] = useState<string>(loadStoredSeries)
+  const [marketLimit, setMarketLimit] = useState<number>(loadStoredMarketLimit)
   // Per-rule metrics keyed by rule id, fed up from each RuleBacktest card.
   const [ruleMetrics, setRuleMetrics] = useState<Record<string, RuleMetrics | null>>({})
   // Save-as-strategy modal state
@@ -157,6 +172,15 @@ export default function Simulator({ profiles, settings, refresh }: Props) {
       /* storage full/unavailable — non-fatal */
     }
   }, [series])
+
+  // Persist the sample-size choice so a refresh keeps it.
+  useEffect(() => {
+    try {
+      localStorage.setItem(MARKET_LIMIT_STORAGE_KEY, String(marketLimit))
+    } catch {
+      /* storage full/unavailable — non-fatal */
+    }
+  }, [marketLimit])
 
   // Stable so RuleBacktest's reporting effect doesn't refire on every render.
   const handleRuleResult = useCallback((ruleId: string, metrics: RuleMetrics | null) => {
@@ -224,11 +248,11 @@ export default function Simulator({ profiles, settings, refresh }: Props) {
       <RuleBacktest
         rule={rule}
         series={series}
-        marketLimit={MARKET_LIMIT}
+        marketLimit={marketLimit}
         onResult={handleRuleResult}
       />
     ),
-    [series, handleRuleResult],
+    [series, marketLimit, handleRuleResult],
   )
 
   return (
@@ -264,6 +288,25 @@ export default function Simulator({ profiles, settings, refresh }: Props) {
               <option key={m.value} value={m.value}>{m.label}</option>
             ))}
           </select>
+          <div style={{ display: 'inline-flex', borderRadius: 8, overflow: 'hidden', border: '1px solid rgba(255,255,255,0.12)' }}>
+            {MARKET_LIMIT_OPTIONS.map(n => (
+              <button
+                key={n}
+                className="btn"
+                onClick={() => setMarketLimit(n)}
+                title={`Backtest the last ${n.toLocaleString()} markets (~${Math.round(n / 100)} days)`}
+                style={{
+                  borderRadius: 0,
+                  border: 'none',
+                  background: marketLimit === n ? '#2563eb' : 'transparent',
+                  color: marketLimit === n ? '#fff' : '#94a3b8',
+                  fontWeight: marketLimit === n ? 700 : 500,
+                }}
+              >
+                {n.toLocaleString()}
+              </button>
+            ))}
+          </div>
           <button
             className="btn"
             onClick={() => setRules([defaultRule()])}
@@ -285,7 +328,7 @@ export default function Simulator({ profiles, settings, refresh }: Props) {
 
       <section style={{ marginTop: 16 }}>
         <div className="stat-label" style={{ marginBottom: 8 }}>
-          Combined Total <span style={{ color: '#64748b', fontWeight: 500 }}>— last {MARKET_LIMIT} markets</span>
+          Combined Total <span style={{ color: '#64748b', fontWeight: 500 }}>— last {marketLimit.toLocaleString()} markets (~{Math.round(marketLimit / 100)} days)</span>
         </div>
         {total ? (
           <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
