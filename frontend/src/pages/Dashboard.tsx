@@ -421,7 +421,9 @@ export default function Dashboard({ orders, trades, openOrders, positions, snaps
         <PriceActionChart ticker={selectedTicker} globalSnapshots={dashSnapshots} openOrders={openOrders} historyOrders={orders} ttcWindows={ttcWindowsFor(selectedTicker)} />
       )}
 
-      {/* Active Positions */}
+      {/* Active Positions — hidden entirely when flat; shown when we hold a
+          position or there's a positions error to surface. */}
+      {(!Array.isArray(positions) || positions.length > 0) && (
       <div className="table-panel">
         <div style={{ padding: '10px', display: 'flex', alignItems: 'center', gap: 8 }}>
           <span style={{ fontWeight: 600, fontSize: 13 }}>Active Positions</span>
@@ -488,6 +490,7 @@ export default function Dashboard({ orders, trades, openOrders, positions, snaps
           </table>
         </div>
       </div>
+      )}
 
       {/* Open Orders */}
       <div className="table-panel">
