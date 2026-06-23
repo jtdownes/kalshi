@@ -492,7 +492,8 @@ export default function Dashboard({ orders, trades, openOrders, positions, snaps
       </div>
       )}
 
-      {/* Open Orders */}
+      {/* Open Orders — hidden when there are none, to keep the dashboard tidy. */}
+      {openOrders.length > 0 && (
       <div className="table-panel">
         <div style={{ padding: '10px', display: 'flex', alignItems: 'center', gap: 8 }}>
           <span style={{ fontWeight: 600, fontSize: 13 }}>Open Orders</span>
@@ -542,6 +543,7 @@ export default function Dashboard({ orders, trades, openOrders, positions, snaps
           </table>
         </div>
       </div>
+      )}
 
       {/* Trades */}
       <div className="table-panel">
