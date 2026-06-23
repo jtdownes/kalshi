@@ -341,7 +341,7 @@ export default function Strategies({ settings, profiles, refresh }: Props) {
                 const pnl = s?.total_profit_cents ?? 0
                 return (
                   <tr key={m.value}>
-                    <td className="cell-ticker">{m.label}</td>
+                    <td className="cell-ticker">{m.value}</td>
                     <td className="cell-dim">{runs.toLocaleString()}</td>
                     <td>
                       <span style={{ color: rate == null ? undefined : rate >= 50 ? '#00d4a0' : '#ff4444' }}>
