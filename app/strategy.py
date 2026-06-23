@@ -100,29 +100,79 @@ def _build_extra(rule_list: list, market: dict) -> dict:
     return extra
 
 
-def evaluate_conditions_only(market: dict, settings: dict | None = None,
-                             time_to_close: int | None = None) -> bool:
-    """True if any enabled rule's conditions currently pass for this market.
+def _xc_condition_terminally_failed(cond: dict, fields: dict) -> bool:
+    """True when a strike_crossings condition fails in a way that can only persist
+    as crossings accumulate — i.e. the market is PERMANENTLY disqualified for it.
 
-    This is the "in play" test the dashboard indicator uses: it asks whether the
-    strategy WOULD act on this market right now, ignoring per-rule order dedup
-    (so a market already holding a position still reports in-play) and without
-    placing anything. Uses the same field engine as the live scanner, so derived
-    fields (strike_crossings, volatility, ...) match exactly."""
+    Crossings only ever increase over a market's life, so an upper-bound gate
+    (lt/lte, or the high side of between/eq) that's already exceeded can never
+    recover: that's a terminal "skip". A lower-bound gate (gt/gte) that's not yet
+    met is NOT terminal — more crossings could still satisfy it — so it stays
+    pending (yellow), not red."""
+    op = cond.get("op")
+    try:
+        b = abs(float(cond.get("band")))
+    except (TypeError, ValueError):
+        b = 0.0
+    lhs = fields.get(rules_engine.xc_band_key(b)) if b > 0 else fields.get("strike_crossings")
+    if lhs is None:
+        return False  # count unknown (DB miss) -> not provably dead
+    try:
+        rhs = float(cond.get("value"))
+    except (TypeError, ValueError):
+        return False
+    if op == "lt":
+        return lhs >= rhs
+    if op == "lte":
+        return lhs > rhs
+    if op == "eq":
+        return lhs > rhs       # overshot the exact target; can't come back down
+    if op == "between":
+        try:
+            hi = max(rhs, float(cond.get("value2")))
+        except (TypeError, ValueError):
+            return False
+        return lhs > hi
+    return False               # gt/gte: too-low count can still rise to satisfy
+
+
+def evaluate_play_status(market: dict, settings: dict | None = None,
+                         time_to_close: int | None = None) -> dict:
+    """Dashboard indicator status for one market under one strategy.
+
+    Returns {"in_play": bool, "disqualified": bool}:
+      * in_play     — any enabled rule's conditions currently pass (would trade).
+      * disqualified — EVERY enabled rule is permanently dead because one of its
+                       strike_crossings gates has been exceeded. This is the only
+                       thing that paints a market red; a market merely waiting for
+                       its (recoverable) conditions stays yellow.
+
+    A rule with no strike_crossings gate is never "dead", so a strategy that
+    doesn't use strike_crossings never disqualifies a market. Uses the same field
+    engine as the live scanner, so the counts match the bot exactly."""
     if settings is None:
         settings = {}
     rule_list = settings.get("rules") or []
-    if not rule_list:
-        return False
+    enabled = [r for r in rule_list if r.get("enabled", True)]
+    if not enabled:
+        return {"in_play": False, "disqualified": False}
 
     extra = _build_extra(rule_list, market)
     fields = rules_engine.compute_fields(market, time_to_close, extra=extra)
-    for rule in rule_list:
-        if not rule.get("enabled", True):
-            continue
-        if rules_engine.conditions_pass(rule.get("conditions"), fields):
-            return True
-    return False
+
+    in_play = any(rules_engine.conditions_pass(r.get("conditions"), fields) for r in enabled)
+
+    disqualified = True
+    for rule in enabled:
+        xc_conds = [c for c in (rule.get("conditions") or [])
+                    if c.get("field") == "strike_crossings"]
+        # No crossings gate, or none of them terminally failed → this rule is
+        # still viable, so the market isn't dead overall.
+        if not xc_conds or not any(_xc_condition_terminally_failed(c, fields) for c in xc_conds):
+            disqualified = False
+            break
+
+    return {"in_play": in_play, "disqualified": disqualified}
 
 
 def evaluate_market(market: dict, settings: dict | None = None,

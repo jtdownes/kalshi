@@ -11,7 +11,7 @@ import database
 from database.core import cursor_conn
 from crypto_assets import CRYPTO_ASSETS, DEFAULT_ASSET
 from kalshi_client import KalshiClient
-from strategy import evaluate_conditions_only
+from strategy import evaluate_play_status
 
 markets_bp = Blueprint('markets', __name__)
 
@@ -89,16 +89,22 @@ def scanned_series_delete(series):
 def strategy_status():
     """Per-market "in play" status for the dashboard indicator.
 
-    For every market tracked by an active profile, report whether any of that
-    profile's enabled rules' conditions currently pass — i.e. whether the
-    strategy WOULD act on it right now. This reuses the live scanner's exact
-    field engine (strategy.evaluate_conditions_only), so derived fields like
-    strike_crossings agree with what the bot actually does. The frontend layers
-    "in position" (green) on top from positions/open orders; this endpoint only
-    distinguishes in-play (yellow) from skipped (red).
+    For every market tracked by an active profile, report two flags the dashboard
+    dot uses. This reuses the live scanner's exact field engine
+    (strategy.evaluate_play_status), so derived fields like strike_crossings agree
+    with what the bot actually does. The frontend layers "in position" (green) on
+    top from positions/open orders.
 
-    Response: { "<ticker>": {"in_play": bool, "profiles": [profile_id, ...]} }
-    A ticker tracked by several active profiles is in_play if ANY of them match.
+      in_play      — an active strategy's entry conditions currently pass.
+      disqualified — the market is permanently dead under EVERY tracking profile
+                     because a strike_crossings gate has been exceeded (crossings
+                     only grow, so this never recovers). This is the only thing
+                     that paints a market red; a market just waiting for its
+                     conditions stays yellow.
+
+    Response: { "<ticker>": {"in_play": bool, "disqualified": bool} }
+    Aggregated across profiles: in_play if ANY profile matches; disqualified only
+    if EVERY tracking profile reports it dead (one viable profile keeps it yellow).
     """
     now_ts = int(time.time())
     status: dict[str, dict] = {}
@@ -125,13 +131,18 @@ def strategy_status():
             if close_time and str(close_time).isdigit():
                 ttc = max(0, int(close_time) - now_ts)
             try:
-                in_play = evaluate_conditions_only(market, profile, time_to_close=ttc)
+                st = evaluate_play_status(market, profile, time_to_close=ttc)
             except Exception:
-                in_play = False
-            entry = status.setdefault(ticker, {"in_play": False, "profiles": []})
-            if in_play:
-                entry["in_play"] = True
-                entry["profiles"].append(profile["id"])
+                st = {"in_play": False, "disqualified": False}
+            # in_play ORs across profiles; disqualified ANDs (a single viable
+            # profile keeps the market alive). First sighting seeds the AND.
+            entry = status.get(ticker)
+            if entry is None:
+                status[ticker] = {"in_play": st["in_play"],
+                                  "disqualified": st["disqualified"]}
+            else:
+                entry["in_play"] = entry["in_play"] or st["in_play"]
+                entry["disqualified"] = entry["disqualified"] and st["disqualified"]
 
     return jsonify(status)
 

@@ -41,13 +41,15 @@ function StatusBadge({ status, outcome }: { status: string; outcome: string | nu
 
 // Quick-glance strategy indicator for a live market:
 //   green  = in position (we hold contracts or have a resting order)
-//   yellow = in play (an active strategy's entry conditions currently pass)
-//   red    = skipped (tracked, but no conditions match right now)
+//   yellow = in play / pending (conditions met, or still waiting on recoverable
+//            conditions — e.g. a freshly opened market)
+//   red    = disqualified (a strike_crossings gate has been exceeded; since
+//            crossings only grow, this market can never come back)
 function PlayDot({ state }: { state: 'position' | 'play' | 'skip' }) {
   const map = {
     position: ['#00d4a0', 'In position'],
-    play:     ['#f5c842', 'In play — entry conditions met'],
-    skip:     ['#ff4444', 'Skipped — entry conditions not met'],
+    play:     ['#f5c842', 'In play / pending — waiting on entry conditions'],
+    skip:     ['#ff4444', 'Disqualified — strike crossings exceeded'],
   } as const
   const [color, label] = map[state]
   return (
@@ -88,7 +90,7 @@ export default function Dashboard({ orders, trades, openOrders, positions, snaps
   // strategies' rules (so derived fields like strike_crossings match the bot
   // exactly). Map ticker -> whether any active profile's conditions currently
   // pass. Polled on its own cadence; "in position" is layered on top below.
-  const [playStatus, setPlayStatus] = useState<Record<string, { in_play: boolean }>>({})
+  const [playStatus, setPlayStatus] = useState<Record<string, { in_play: boolean; disqualified: boolean }>>({})
   useEffect(() => {
     let alive = true
     const fetchStatus = async () => {
@@ -296,8 +298,11 @@ export default function Dashboard({ orders, trades, openOrders, positions, snaps
           <table>
             <thead>
               <tr>
-                <th>Market</th>
-                <th></th>
+                {/* width:1 + global nowrap shrinks Market to its content so the
+                    indicator dot sits centered between the ticker and the strike
+                    instead of being pushed against Strike by a stretched column. */}
+                <th style={{ width: 1 }}>Market</th>
+                <th style={{ width: 40, textAlign: 'center' }}></th>
                 <th>Strike</th>
                 <th>Live Price</th>
                 <th>Yes</th>
@@ -330,12 +335,13 @@ export default function Dashboard({ orders, trades, openOrders, positions, snaps
                       >↗</a>
                     </span>
                   </td>
-                  <td style={{ textAlign: 'center', width: 1, padding: '0 6px' }}>
+                  <td style={{ textAlign: 'center', width: 40 }}>
                     {(() => {
+                      const st = playStatus[s.ticker]
                       const state: 'position' | 'play' | 'skip' =
                         inPositionTickers.has(s.ticker) ? 'position'
-                        : playStatus[s.ticker]?.in_play ? 'play'
-                        : 'skip'
+                        : st?.disqualified ? 'skip'
+                        : 'play'
                       return <PlayDot state={state} />
                     })()}
                   </td>
