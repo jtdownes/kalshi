@@ -150,17 +150,17 @@ export default function App() {
         </nav>
         <div className="header-right">
           {error && <span style={{ color: '#ff4444', fontSize: 12 }}>{error}</span>}
+          {lastRefresh && !error && (
+            <span className="last-refresh">
+              {loading ? 'Refreshing…' : `Updated ${fmtTime(lastRefresh.toISOString())}`}
+            </span>
+          )}
           <span
             title={wsConnected ? 'Kalshi WS connected' : 'Kalshi WS reconnecting…'}
             style={{ fontSize: 11, color: wsConnected ? '#00d4a0' : '#f5c842', userSelect: 'none' }}
           >
             ●
           </span>
-          {lastRefresh && !error && (
-            <span className="last-refresh">
-              {loading ? 'Refreshing…' : `Updated ${fmtTime(lastRefresh.toISOString())}`}
-            </span>
-          )}
           <button className="btn" onClick={() => window.location.reload()} title="Hard reload page">↻</button>
         </div>
       </header>
