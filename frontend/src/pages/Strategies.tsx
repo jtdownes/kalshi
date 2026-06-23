@@ -85,6 +85,14 @@ function validateRules(rules: StrategyRule[]): string | null {
   return null
 }
 
+interface MarketStat {
+  series: string
+  run_count: number
+  win_count: number
+  loss_count: number
+  total_profit_cents: number
+}
+
 interface Props {
   settings: Settings | null
   profiles: Profile[]
@@ -108,6 +116,18 @@ export default function Strategies({ settings, profiles, refresh }: Props) {
   const [activating,       setActivating]       = useState(false)
   const [showArchived,     setShowArchived]     = useState(false)
   const [archivedProfiles, setArchivedProfiles] = useState<Profile[]>([])
+  const [marketStats,      setMarketStats]      = useState<MarketStat[]>([])
+
+  const loadMarketStats = async () => {
+    try {
+      const resp = await fetch('/api/market-stats')
+      if (resp.ok) setMarketStats(await resp.json())
+    } catch { /* ignore */ }
+  }
+
+  // Refresh the per-market overview whenever the strategy list changes (a new
+  // run or settlement shifts these totals).
+  useEffect(() => { loadMarketStats() }, [profiles])
 
   const loadArchived = async () => {
     try {
@@ -290,8 +310,58 @@ export default function Strategies({ settings, profiles, refresh }: Props) {
 
   const visibleProfiles = showArchived ? [...profiles, ...archivedProfiles] : profiles
 
+  const statBySeries = new Map(marketStats.map(s => [s.series, s]))
+
   return (
     <div className="strategies-view">
+      {/* Per-market overview — totals across ALL strategies for each series. */}
+      <div className="table-panel">
+        <div className="snapshot-panel-head">
+          <span className="section-toggle-label">Markets Overview</span>
+          <span className="tab-count">{SUPPORTED_STRATEGY_MARKETS.length}</span>
+        </div>
+        <div className="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>Market</th>
+                <th>Runs</th>
+                <th>Win Rate</th>
+                <th>Total P&amp;L</th>
+              </tr>
+            </thead>
+            <tbody>
+              {SUPPORTED_STRATEGY_MARKETS.map(m => {
+                const s = statBySeries.get(m.value)
+                const runs = s?.run_count ?? 0
+                const wins = s?.win_count ?? 0
+                const losses = s?.loss_count ?? 0
+                const resolved = wins + losses
+                const rate = resolved > 0 ? Math.round((wins / resolved) * 100) : null
+                const pnl = s?.total_profit_cents ?? 0
+                return (
+                  <tr key={m.value}>
+                    <td className="cell-ticker">{m.label}</td>
+                    <td className="cell-dim">{runs.toLocaleString()}</td>
+                    <td>
+                      <span style={{ color: rate == null ? undefined : rate >= 50 ? '#00d4a0' : '#ff4444' }}>
+                        {rate == null ? '—' : `${rate}%`}
+                      </span>
+                      {resolved > 0 && (
+                        <span style={{ fontSize: 11, color: '#64748b', marginLeft: 6 }}>{wins}W / {losses}L</span>
+                      )}
+                    </td>
+                    <td style={{ color: pnl > 0 ? '#00d4a0' : pnl < 0 ? '#ff4444' : undefined }}>
+                      {pnl >= 0 ? '+' : ''}{centsToUSD(pnl)}
+                    </td>
+                  </tr>
+                )
+              })}
+            </tbody>
+          </table>
+        </div>
+      </div>
+
       {settings && (
         <div className="strategies-toolbar">
           <button

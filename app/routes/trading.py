@@ -240,6 +240,42 @@ def orders():
     return jsonify([dict(r) for r in rows])
 
 
+@trading_bp.get("/api/market-stats")
+def market_stats():
+    """Per-series aggregate across ALL strategies — one row per market series.
+
+    Runs / wins / losses are counted per distinct market_ticker (one "run" per
+    market), matching the per-strategy card semantics on the Strategies page.
+    Series is derived from the ticker prefix (e.g. KXBTC15M-... -> KXBTC15M)."""
+    query = """
+        WITH per_market AS (
+            SELECT
+                split_part(o.market_ticker, '-', 1)                                  AS series,
+                COALESCE(SUM(o.net_profit_cents)
+                         FILTER (WHERE o.net_profit_cents IS NOT NULL), 0)           AS net_profit_cents,
+                COUNT(*) FILTER (WHERE o.net_profit_cents IS NOT NULL)               AS resolved_orders
+            FROM orders o
+            WHERE o.order_role = 'entry'
+            GROUP BY o.market_ticker
+        )
+        SELECT
+            series,
+            COUNT(*)                                                  AS run_count,
+            COUNT(*) FILTER (WHERE resolved_orders > 0
+                                   AND net_profit_cents > 0)          AS win_count,
+            COUNT(*) FILTER (WHERE resolved_orders > 0
+                                   AND net_profit_cents <= 0)         AS loss_count,
+            COALESCE(SUM(net_profit_cents), 0)                        AS total_profit_cents
+        FROM per_market
+        GROUP BY series
+        ORDER BY series
+    """
+    with cursor_conn() as c:
+        c.execute(query)
+        rows = c.fetchall()
+    return jsonify([dict(r) for r in rows])
+
+
 @trading_bp.get("/api/trades")
 def trades():
     """Orders grouped by market ticker — one row per market."""
