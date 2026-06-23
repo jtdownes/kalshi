@@ -39,6 +39,29 @@ function StatusBadge({ status, outcome }: { status: string; outcome: string | nu
   return <span className="badge" style={{ color, background: bg }}>{label}</span>
 }
 
+// Quick-glance strategy indicator for a live market:
+//   green  = in position (we hold contracts or have a resting order)
+//   yellow = in play (an active strategy's entry conditions currently pass)
+//   red    = skipped (tracked, but no conditions match right now)
+function PlayDot({ state }: { state: 'position' | 'play' | 'skip' }) {
+  const map = {
+    position: ['#00d4a0', 'In position'],
+    play:     ['#f5c842', 'In play — entry conditions met'],
+    skip:     ['#ff4444', 'Skipped — entry conditions not met'],
+  } as const
+  const [color, label] = map[state]
+  return (
+    <span
+      title={label}
+      aria-label={label}
+      style={{
+        display: 'inline-block', width: 8, height: 8, borderRadius: '50%',
+        background: color, boxShadow: `0 0 5px ${color}`, flex: '0 0 auto',
+      }}
+    />
+  )
+}
+
 interface Props {
   orders: Order[]
   trades: Trade[]
@@ -60,6 +83,35 @@ export default function Dashboard({ orders, trades, openOrders, positions, snaps
 
   const [selectedTicker, setSelectedTicker] = useState<string | null>(null)
   const [selectedTrade, setSelectedTrade] = useState<string | null>(null)
+
+  // Per-market "in play" status, evaluated server-side against the active
+  // strategies' rules (so derived fields like strike_crossings match the bot
+  // exactly). Map ticker -> whether any active profile's conditions currently
+  // pass. Polled on its own cadence; "in position" is layered on top below.
+  const [playStatus, setPlayStatus] = useState<Record<string, { in_play: boolean }>>({})
+  useEffect(() => {
+    let alive = true
+    const fetchStatus = async () => {
+      try {
+        const data = await fetch('/api/strategy-status').then(r => r.json())
+        if (alive && data && !data.error) setPlayStatus(data)
+      } catch { /* silent */ }
+    }
+    fetchStatus()
+    const id = setInterval(fetchStatus, 2000)
+    return () => { alive = false; clearInterval(id) }
+  }, [])
+
+  // Tickers we currently hold or have a resting order on — these show green
+  // regardless of whether the entry conditions still pass.
+  const inPositionTickers = useMemo(() => {
+    const set = new Set<string>()
+    if (Array.isArray(positions)) for (const p of positions) {
+      if (Math.abs(parseFloat(p.position_fp)) > 0) set.add(p.ticker)
+    }
+    for (const o of openOrders) set.add(o.market_ticker)
+    return set
+  }, [positions, openOrders])
 
   // Wall-clock tick so the live table drops expired markets exactly on close,
   // not whenever the next snapshot poll happens to arrive.
@@ -245,6 +297,7 @@ export default function Dashboard({ orders, trades, openOrders, positions, snaps
             <thead>
               <tr>
                 <th>Market</th>
+                <th></th>
                 <th>Strike</th>
                 <th>Live Price</th>
                 <th>Yes</th>
@@ -257,7 +310,7 @@ export default function Dashboard({ orders, trades, openOrders, positions, snaps
             </thead>
             <tbody>
               {marketSnapshots.length === 0 ? (
-                <tr><td colSpan={9} className="cell-empty">No live snapshots</td></tr>
+                <tr><td colSpan={10} className="cell-empty">No live snapshots</td></tr>
               ) : marketSnapshots.map(s => (
                 <tr
                   key={s.id}
@@ -276,6 +329,15 @@ export default function Dashboard({ orders, trades, openOrders, positions, snaps
                         title="Open on Kalshi"
                       >↗</a>
                     </span>
+                  </td>
+                  <td style={{ textAlign: 'center', width: 1, padding: '0 6px' }}>
+                    {(() => {
+                      const state: 'position' | 'play' | 'skip' =
+                        inPositionTickers.has(s.ticker) ? 'position'
+                        : playStatus[s.ticker]?.in_play ? 'play'
+                        : 'skip'
+                      return <PlayDot state={state} />
+                    })()}
                   </td>
                   <td className="cell-dim">
                     {(() => {

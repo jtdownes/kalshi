@@ -11,6 +11,7 @@ import database
 from database.core import cursor_conn
 from crypto_assets import CRYPTO_ASSETS, DEFAULT_ASSET
 from kalshi_client import KalshiClient
+from strategy import evaluate_conditions_only
 
 markets_bp = Blueprint('markets', __name__)
 
@@ -82,6 +83,57 @@ def scanned_series_delete(series):
     if not database.remove_scanned_series(series.upper()):
         return jsonify({"error": "series not found"}), 404
     return jsonify({"ok": True})
+
+
+@markets_bp.get("/api/strategy-status")
+def strategy_status():
+    """Per-market "in play" status for the dashboard indicator.
+
+    For every market tracked by an active profile, report whether any of that
+    profile's enabled rules' conditions currently pass — i.e. whether the
+    strategy WOULD act on it right now. This reuses the live scanner's exact
+    field engine (strategy.evaluate_conditions_only), so derived fields like
+    strike_crossings agree with what the bot actually does. The frontend layers
+    "in position" (green) on top from positions/open orders; this endpoint only
+    distinguishes in-play (yellow) from skipped (red).
+
+    Response: { "<ticker>": {"in_play": bool, "profiles": [profile_id, ...]} }
+    A ticker tracked by several active profiles is in_play if ANY of them match.
+    """
+    now_ts = int(time.time())
+    status: dict[str, dict] = {}
+
+    for profile in database.get_active_profiles():
+        if not profile.get("rules"):
+            continue
+        series = [s for s in (profile.get("btc_series_tickers") or []) if s]
+        if not series:
+            continue
+        try:
+            markets = database.get_latest_snapshots_for_series(series, max_age_seconds=15)
+        except Exception:
+            continue
+        for market in markets:
+            ticker = market.get("ticker", "")
+            if not ticker:
+                continue
+            # Match the scanner's freshly computed seconds-to-close rather than
+            # the snapshot's frozen value, so time_to_close conditions evaluate
+            # against the live clock the bot would use.
+            ttc = None
+            close_time = market.get("close_time")
+            if close_time and str(close_time).isdigit():
+                ttc = max(0, int(close_time) - now_ts)
+            try:
+                in_play = evaluate_conditions_only(market, profile, time_to_close=ttc)
+            except Exception:
+                in_play = False
+            entry = status.setdefault(ticker, {"in_play": False, "profiles": []})
+            if in_play:
+                entry["in_play"] = True
+                entry["profiles"].append(profile["id"])
+
+    return jsonify(status)
 
 
 @markets_bp.get("/api/snapshots")

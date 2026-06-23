@@ -17,26 +17,15 @@ import rules as rules_engine
 log = logging.getLogger(__name__)
 
 
-def evaluate_market(market: dict, settings: dict | None = None,
-                    profile_id: int | None = None,
-                    time_to_close: int | None = None) -> list[dict]:
-    """
-    Return a list of order specs to place for this market:
-        {"side", "price_cents", "quantity", "exit", "rule_id"}
-
-    Empty list = do nothing. Specs whose rule has already rested/filled an entry
-    on this market+side are filtered out (per-rule dedup).
-    """
-    if settings is None:
-        settings = {}
-
-    rule_list = settings.get("rules") or []
+def _build_extra(rule_list: list, market: dict) -> dict:
+    """Assemble the cross-contract / derived field inputs a rule's conditions need
+    (prior resolutions, craziness fields, strike crossings, price_change series),
+    fetching each only when a rule actually references it. Shared by the live
+    evaluator and the dashboard status endpoint so both see identical fields."""
+    extra: dict = {}
     ticker = market.get("ticker", "")
 
     # Fetch prior window resolutions for cross-contract momentum conditions.
-    # Only query when a rule actually references those fields — otherwise this is
-    # a needless DB hit on every market every scan tick.
-    extra = {}
     close_time = market.get("close_time")
     referenced = {
         c.get("field")
@@ -50,9 +39,6 @@ def evaluate_market(market: dict, settings: dict | None = None,
         except Exception:
             pass
 
-    # Craziness fields are computed from the market's UNDERLYING asset series
-    # (ETH for KXETH* markets, BTC otherwise) — the extra-dict keys keep their
-    # legacy btc_ names but always hold the underlying's prices.
     asset = crypto_assets.detect_asset(ticker) or crypto_assets.DEFAULT_ASSET
 
     # Trailing-window craziness fields (vol/range/drift/buffer_ratio) need the
@@ -88,18 +74,13 @@ def evaluate_market(market: dict, settings: dict | None = None,
     # strike_crossings spans the WHOLE market life (open -> now). Computed by the
     # SAME SQL the backtest uses (db.get_strike_crossings) so live and simulation
     # can never disagree on the count. On DB error we leave it unset, which makes
-    # the condition fail closed (no trade) rather than guess with a divergent
-    # estimate. NOTE: an earlier version counted crossings in Python over a
-    # trailing `now - age` window — that clipped the opening tick and used
-    # different equality handling, letting trades through that the sim rejected.
+    # the condition fail closed.
     if "strike_crossings" in referenced:
         try:
             extra["strike_crossings"] = db.get_strike_crossings(ticker, asset)
         except Exception:
             pass
-        # Any strike_crossings condition with a ±band ($) needs its own count: the
-        # band widens the strike into a zone so a near-miss (grazing within band)
-        # registers. Compute one count per DISTINCT band, keyed via xc_band_key.
+        # Any strike_crossings condition with a ±band ($) needs its own count.
         bands = set()
         for r in rule_list:
             for c in (r.get("conditions") or []):
@@ -115,6 +96,55 @@ def evaluate_market(market: dict, settings: dict | None = None,
                 extra[rules_engine.xc_band_key(b)] = db.get_strike_crossings(ticker, asset, b)
             except Exception:
                 pass
+
+    return extra
+
+
+def evaluate_conditions_only(market: dict, settings: dict | None = None,
+                             time_to_close: int | None = None) -> bool:
+    """True if any enabled rule's conditions currently pass for this market.
+
+    This is the "in play" test the dashboard indicator uses: it asks whether the
+    strategy WOULD act on this market right now, ignoring per-rule order dedup
+    (so a market already holding a position still reports in-play) and without
+    placing anything. Uses the same field engine as the live scanner, so derived
+    fields (strike_crossings, volatility, ...) match exactly."""
+    if settings is None:
+        settings = {}
+    rule_list = settings.get("rules") or []
+    if not rule_list:
+        return False
+
+    extra = _build_extra(rule_list, market)
+    fields = rules_engine.compute_fields(market, time_to_close, extra=extra)
+    for rule in rule_list:
+        if not rule.get("enabled", True):
+            continue
+        if rules_engine.conditions_pass(rule.get("conditions"), fields):
+            return True
+    return False
+
+
+def evaluate_market(market: dict, settings: dict | None = None,
+                    profile_id: int | None = None,
+                    time_to_close: int | None = None) -> list[dict]:
+    """
+    Return a list of order specs to place for this market:
+        {"side", "price_cents", "quantity", "exit", "rule_id"}
+
+    Empty list = do nothing. Specs whose rule has already rested/filled an entry
+    on this market+side are filtered out (per-rule dedup).
+    """
+    if settings is None:
+        settings = {}
+
+    rule_list = settings.get("rules") or []
+    ticker = market.get("ticker", "")
+
+    # All cross-contract / derived field inputs (prior resolutions, craziness
+    # fields, strike crossings, price_change series) — fetched only for fields a
+    # rule references. Shared with the dashboard status endpoint via _build_extra.
+    extra = _build_extra(rule_list, market)
 
     specs = rules_engine.evaluate_rules(rule_list, market, time_to_close=time_to_close, extra=extra)
 
