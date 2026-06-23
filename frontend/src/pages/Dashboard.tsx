@@ -332,13 +332,13 @@ export default function Dashboard({ orders, trades, openOrders, positions, snaps
                     instead of being pushed against Strike by a stretched column. */}
                 <th style={{ width: 1 }}>Market</th>
                 <th style={{ width: 40, textAlign: 'center' }}></th>
+                <th>TTC</th>
                 <th>Strike</th>
                 <th>Live Price</th>
                 <th>Yes</th>
                 <th>No</th>
                 <th className="hide-sm">Volume</th>
                 <th className="hide-sm">OI</th>
-                <th>TTC</th>
                 <th className="hide-sm">Scanned</th>
               </tr>
             </thead>
@@ -374,6 +374,14 @@ export default function Dashboard({ orders, trades, openOrders, positions, snaps
                       return <PlayDot state={state} />
                     })()}
                   </td>
+                  <td className="cell-dim">{fmtDur(
+                    // Count down off the live wall clock (which ticks every 1s)
+                    // rather than the snapshot's frozen time_to_close_secs, so the
+                    // TTC ticks smoothly even between snapshot arrivals.
+                    s.close_time
+                      ? Math.max(0, parseInt(s.close_time, 10) - Math.floor(now / 1000))
+                      : s.time_to_close_secs
+                  )}</td>
                   <td className="cell-dim">
                     {(() => {
                       const strike = s.strike_str != null ? parseFloat(s.strike_str) : null
@@ -400,14 +408,6 @@ export default function Dashboard({ orders, trades, openOrders, positions, snaps
                   <td className="cell-dim">{fmtCents(midCents(s.no_bid, s.no_ask))}</td>
                   <td className="cell-dim hide-sm">{s.volume != null ? s.volume.toLocaleString() : '—'}</td>
                   <td className="cell-dim hide-sm">{s.open_interest != null ? s.open_interest.toLocaleString() : '—'}</td>
-                  <td className="cell-dim">{fmtDur(
-                    // Count down off the live wall clock (which ticks every 1s)
-                    // rather than the snapshot's frozen time_to_close_secs, so the
-                    // TTC ticks smoothly even between snapshot arrivals.
-                    s.close_time
-                      ? Math.max(0, parseInt(s.close_time, 10) - Math.floor(now / 1000))
-                      : s.time_to_close_secs
-                  )}</td>
                   <td className="cell-dim hide-sm">{fmtTime(s.scanned_at)}</td>
                 </tr>
               ))}
