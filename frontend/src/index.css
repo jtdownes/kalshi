@@ -1415,7 +1415,9 @@ select optgroup {
   .header-sub { display: none; }
   .header-right { gap: 6px; }
   .header-nav { display: none; }
-  .last-refresh { display: none; }
+  /* Keep the "Updated HH:MM:SS" timer visible on mobile — compact so it
+     fits the tight fixed header alongside the WS dot and reload button. */
+  .last-refresh { font-size: 10px; white-space: nowrap; }
   .bottom-nav { display: flex; }
 
   .page-stack {
