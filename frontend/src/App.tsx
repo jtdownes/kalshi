@@ -154,7 +154,7 @@ export default function App() {
             title={wsConnected ? 'Kalshi WS connected' : 'Kalshi WS reconnecting…'}
             style={{ fontSize: 11, color: wsConnected ? '#00d4a0' : '#f5c842', userSelect: 'none' }}
           >
-            ● WS
+            ●
           </span>
           {lastRefresh && !error && (
             <span className="last-refresh">
