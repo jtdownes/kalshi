@@ -565,7 +565,7 @@ export default function Dashboard({ orders, trades, openOrders, positions, snaps
               <tr>
                 <th>Market</th>
                 <th>Qty</th>
-                <th>Entry Cost</th>
+                <th>Cost</th>
                 <th className="hide-sm">Exit Proceeds</th>
                 <th>Status</th>
                 <th>P&amp;L</th>
