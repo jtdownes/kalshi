@@ -235,6 +235,12 @@ tbody tr:hover { background: rgba(255,255,255,0.025); }
   border: 1px solid rgba(255,255,255,0.1);
   border-radius: 8px;
   padding: 16px;
+  /* Recharts captures touch for its tooltip; without this the browser also
+     interprets the drag as a horizontal pan, which jitters the chart and
+     spawns a phantom horizontal scroll on the page. Allow only vertical
+     scroll, and clip any tooltip that overflows the card's width. */
+  touch-action: pan-y;
+  overflow: hidden;
 }
 
 /* ── Strategies ──────────────────────────────────────────────────────── */
