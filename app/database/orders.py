@@ -131,6 +131,25 @@ def get_today_spend_cents(profile_id: int | None = None) -> int:
     return row[0] if row else 0
 
 
+def get_open_entry_exposure_cents() -> int:
+    """Capital currently committed to open entry positions, across all profiles:
+    resting buys (reserved) plus filled-but-unsettled buys (at risk). Sums
+    entry_price_cents * count for entry orders that are resting or filled and have
+    no settled outcome yet. Used to cap total portfolio exposure when sizing."""
+    query = """
+        SELECT COALESCE(SUM(entry_price_cents * count), 0)
+        FROM orders
+        WHERE order_role = 'entry'
+          AND status IN ('resting', 'filled')
+          AND outcome IS NULL
+    """
+    with _lock, _conn() as conn:
+        cur = conn.cursor()
+        cur.execute(query)
+        row = cur.fetchone()
+    return int(row[0]) if row and row[0] is not None else 0
+
+
 def count_resting_orders(profile_id: int | None = None) -> int:
     if profile_id is not None:
         query = "SELECT COUNT(*) FROM orders WHERE profile_id = %s AND order_role = 'entry' AND status = 'resting'"

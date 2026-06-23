@@ -42,6 +42,20 @@ MAX_OPEN_ORDERS      = int(os.environ.get("MAX_OPEN_ORDERS", "20"))
 MAX_DAILY_SPEND_CENTS = int(os.environ.get("MAX_DAILY_SPEND_CENTS", "200"))
 LIMIT_SELL_PRICE_CENTS = os.environ.get("LIMIT_SELL_PRICE_CENTS")
 
+# ── Position sizing (bankroll %) ──────────────────────────────────────────────
+# When POSITION_SIZE_PCT > 0 the bot ignores each rule's fixed `quantity` and
+# sizes every entry to a fraction of the live account balance:
+#   contracts = floor(balance_cents * POSITION_SIZE_PCT/100 / entry_price_cents)
+# so size scales with the bankroll — it compounds up as you win and shrinks on a
+# drawdown, instead of betting a fixed number of contracts regardless of account.
+# MAX_PORTFOLIO_EXPOSURE_PCT caps total simultaneous open-entry cost so correlated
+# bets (BTC/ETH/SOL move together) can't stack into one oversized position; 0 = no
+# cap. If the sized bet rounds to < 1 contract (account too small to take a
+# properly-sized position) the entry is skipped rather than over-risking a single
+# contract. Set POSITION_SIZE_PCT=0 to fall back to each rule's fixed quantity.
+POSITION_SIZE_PCT          = float(os.environ.get("POSITION_SIZE_PCT", "10"))
+MAX_PORTFOLIO_EXPOSURE_PCT = float(os.environ.get("MAX_PORTFOLIO_EXPOSURE_PCT", "30"))
+
 _series_raw = os.environ.get("BTC_SERIES_TICKERS", "")
 BTC_SERIES_TICKERS = [s.strip() for s in _series_raw.split(",") if s.strip()]
 

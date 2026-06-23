@@ -670,6 +670,18 @@ def _scan(client: KalshiClient, settings: dict):
             exit_spec  = spec["exit"]
             rule_id    = spec["rule_id"]
 
+            # Bankroll-% sizing: override the rule's fixed quantity with a size
+            # scaled to the live balance and capped by portfolio exposure. A size
+            # below 1 means the account is too small or the exposure cap is hit —
+            # skip rather than over-risk a single contract. (No-op when
+            # POSITION_SIZE_PCT <= 0: keeps the rule's fixed quantity.)
+            if config.POSITION_SIZE_PCT > 0:
+                quantity = _dynamic_quantity(client, price_cents, quantity)
+                if quantity < 1:
+                    log.info("Order skipped (sized <1: balance/exposure): %s %s @%d¢",
+                             side, ticker, price_cents)
+                    continue
+
             ok, reason = can_place_order(price_cents, settings, profile_id=profile_id,
                                          quantity=quantity)
             if not ok:
@@ -750,6 +762,61 @@ def _scan(client: KalshiClient, settings: dict):
 
 
 _last_series_fetch: dict[str, float] = {}  # series_ticker -> last poll epoch (per-series cadence)
+
+# Cached account balance for bankroll-% position sizing. Refreshed at most once
+# per _BALANCE_TTL so the scanner can size every entry without an API read per
+# tick. On a failed refresh we keep using the last good value rather than guess.
+_balance_lock = threading.Lock()
+_balance_cents: int | None = None
+_balance_fetched_at: float = 0.0
+_BALANCE_TTL = 30.0  # seconds
+
+
+def _get_balance_cents(client: KalshiClient) -> int | None:
+    global _balance_cents, _balance_fetched_at
+    now = time.monotonic()
+    with _balance_lock:
+        if _balance_cents is not None and (now - _balance_fetched_at) < _BALANCE_TTL:
+            return _balance_cents
+    try:
+        data = client.get_balance()
+        raw  = data.get("balance", data) if isinstance(data, dict) else data
+        bal  = int(raw)
+    except Exception as e:
+        log.warning("balance fetch for sizing failed (using last known): %s", e)
+        with _balance_lock:
+            return _balance_cents
+    with _balance_lock:
+        _balance_cents = bal
+        _balance_fetched_at = now
+    return bal
+
+
+def _dynamic_quantity(client: KalshiClient, price_cents: int, fallback_qty: int) -> int:
+    """Bankroll-% position size for one entry.
+
+    contracts = floor(balance * POSITION_SIZE_PCT/100 / price), then clamped so
+    total open-entry exposure can't exceed MAX_PORTFOLIO_EXPOSURE_PCT of balance.
+    Returns the rule's fixed `fallback_qty` when dynamic sizing is off, or 0 when
+    the account is too small / the exposure cap is already hit (caller skips)."""
+    if config.POSITION_SIZE_PCT <= 0:
+        return fallback_qty
+    if price_cents <= 0:
+        return 0
+    bal = _get_balance_cents(client)
+    if not bal or bal <= 0:
+        return 0  # no balance info → skip rather than size blindly
+    qty = int((bal * config.POSITION_SIZE_PCT / 100.0) // price_cents)
+    if config.MAX_PORTFOLIO_EXPOSURE_PCT > 0:
+        try:
+            open_exposure = db.get_open_entry_exposure_cents()
+        except Exception:
+            open_exposure = 0
+        remaining = (bal * config.MAX_PORTFOLIO_EXPOSURE_PCT / 100.0) - open_exposure
+        if remaining <= 0:
+            return 0
+        qty = min(qty, int(remaining // price_cents))
+    return max(0, qty)
 
 
 def _collect_market_snapshots(client: KalshiClient):

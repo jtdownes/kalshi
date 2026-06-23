@@ -10,7 +10,7 @@ from .core import (
 from .orders import (
     save_order, update_order,
     has_open_order, has_open_order_for_rule, has_filled_entry_for_rule,
-    get_today_spend_cents, count_resting_orders,
+    get_today_spend_cents, count_resting_orders, get_open_entry_exposure_cents,
     get_resting_orders, get_sibling_resting_entries,
     get_filled_without_outcome, get_open_stop_orders,
     get_open_time_exit_orders, get_resting_child_exits,
@@ -46,7 +46,7 @@ __all__ = [
     # orders
     'save_order', 'update_order',
     'has_open_order', 'has_open_order_for_rule', 'has_filled_entry_for_rule',
-    'get_today_spend_cents', 'count_resting_orders',
+    'get_today_spend_cents', 'count_resting_orders', 'get_open_entry_exposure_cents',
     'get_resting_orders', 'get_sibling_resting_entries',
     'get_filled_without_outcome', 'get_open_stop_orders',
     'get_open_time_exit_orders', 'get_resting_child_exits',
