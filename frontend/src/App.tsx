@@ -132,7 +132,15 @@ export default function App() {
   return (
     <div className="app">
       <header className="header">
-        <div className="header-left">
+        <div
+          className="header-left"
+          onClick={() => window.location.reload()}
+          title="Reload page"
+          role="button"
+          tabIndex={0}
+          onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') window.location.reload() }}
+          style={{ cursor: 'pointer' }}
+        >
           <img className="header-logo" src="/icons/icon-192.png" alt="Kalshi Bot" />
           <span className="header-title">Kalshi Bot</span>
         </div>
@@ -161,7 +169,6 @@ export default function App() {
           >
             ●
           </span>
-          <button className="btn" onClick={() => window.location.reload()} title="Hard reload page">↻</button>
         </div>
       </header>
 
