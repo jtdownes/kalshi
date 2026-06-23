@@ -52,8 +52,12 @@ LIMIT_SELL_PRICE_CENTS = os.environ.get("LIMIT_SELL_PRICE_CENTS")
 # bets (BTC/ETH/SOL move together) can't stack into one oversized position; 0 = no
 # cap. If the sized bet rounds to < 1 contract (account too small to take a
 # properly-sized position) the entry is skipped rather than over-risking a single
-# contract. Set POSITION_SIZE_PCT=0 to fall back to each rule's fixed quantity.
-POSITION_SIZE_PCT          = float(os.environ.get("POSITION_SIZE_PCT", "10"))
+# contract.
+#
+# DEFAULT OFF (0): the bot uses each rule's fixed `quantity` exactly as you set
+# it — you stay in control of size. Opt in by setting POSITION_SIZE_PCT to the %
+# of bankroll you want to risk per entry (e.g. 10).
+POSITION_SIZE_PCT          = float(os.environ.get("POSITION_SIZE_PCT", "0"))
 MAX_PORTFOLIO_EXPOSURE_PCT = float(os.environ.get("MAX_PORTFOLIO_EXPOSURE_PCT", "30"))
 
 _series_raw = os.environ.get("BTC_SERIES_TICKERS", "")
