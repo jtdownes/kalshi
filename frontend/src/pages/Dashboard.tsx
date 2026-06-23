@@ -1,4 +1,4 @@
-import { Fragment, useEffect, useMemo, useState } from 'react'
+import { Fragment, useCallback, useEffect, useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import type { Order, Trade, Position, Snapshot, Settings, Profile, Quotes } from '../types'
 import PriceActionChart from '../components/PriceActionChart'
@@ -207,6 +207,36 @@ export default function Dashboard({ orders, trades, openOrders, positions, snaps
     return Array.from(latestByTicker.values()).sort((a, b) => a.ticker.localeCompare(b.ticker))
   }, [liveSnapshots])
 
+  // Latest snapshot per ticker across the whole feed (not just tracked series),
+  // used as a fallback book for positions. Open positions aren't always in the
+  // Kalshi WS `quotes` subscription, so without this the Ask / Unrealized P&L
+  // columns read "—" even though the 1s snapshot feed already has a live book.
+  const snapByTicker = useMemo(() => {
+    const m = new Map<string, Snapshot>()
+    for (const s of snapshots) if (!m.has(s.ticker)) m.set(s.ticker, s)
+    return m
+  }, [snapshots])
+
+  // Resolve a position's side bid/ask/OI from the WS quote when present, else
+  // from the latest snapshot. Keeps live P&L flowing the moment a position opens.
+  const bookFor = useCallback((ticker: string, side: 'yes' | 'no') => {
+    const q = quotes[ticker]
+    if (q && (q.yes_bid != null || q.no_bid != null || q.yes_ask != null || q.no_ask != null)) {
+      return {
+        bid: side === 'yes' ? q.yes_bid : q.no_bid,
+        ask: side === 'yes' ? q.yes_ask : q.no_ask,
+        open_interest: q.open_interest ?? null,
+      }
+    }
+    const s = snapByTicker.get(ticker)
+    if (!s) return { bid: null, ask: null, open_interest: null }
+    return {
+      bid: side === 'yes' ? s.yes_bid : s.no_bid,
+      ask: side === 'yes' ? s.yes_ask : s.no_ask,
+      open_interest: s.open_interest ?? null,
+    }
+  }, [quotes, snapByTicker])
+
   // Keep the chart on the market the user is watching, but follow contract
   // rollovers. A ticker's series is the part before the first '-'
   // (e.g. KXBTC15M-26JUN102030-30 -> KXBTC15M). While the selected contract is
@@ -238,8 +268,7 @@ export default function Dashboard({ orders, trades, openOrders, positions, snaps
         const totalUnrealizedPnL = posArr.reduce((sum, p) => {
           const contracts = Math.abs(parseFloat(p.position_fp))
           const side = parseFloat(p.position_fp) >= 0 ? 'yes' : 'no'
-          const q = quotes[p.ticker]
-          const bid = q ? (side === 'yes' ? q.yes_bid : q.no_bid) : null
+          const bid = bookFor(p.ticker, side).bid
           const exposure = parseFloat(p.market_exposure_dollars || '0')
           if (bid != null && contracts > 0) return sum + ((bid / 100) * contracts - exposure)
           return sum
@@ -423,9 +452,9 @@ export default function Dashboard({ orders, trades, openOrders, positions, snaps
                 const absContracts = Math.abs(contracts)
                 const side = contracts >= 0 ? 'yes' : 'no'
                 const pnl = parseFloat(p.realized_pnl_dollars)
-                const q = quotes[p.ticker]
-                const ask = q ? (side === 'yes' ? q.yes_ask : q.no_ask) : null
-                const bid = q ? (side === 'yes' ? q.yes_bid : q.no_bid) : null
+                const book = bookFor(p.ticker, side)
+                const ask = book.ask
+                const bid = book.bid
                 const exposure = parseFloat(p.market_exposure_dollars)
                 const fillPrice = absContracts > 0 ? (exposure / absContracts) * 100 : null
                 const unrealizedPnL = bid != null && absContracts > 0
@@ -443,7 +472,7 @@ export default function Dashboard({ orders, trades, openOrders, positions, snaps
                     <td className="cell-dim">{fillPrice != null ? `${fillPrice.toFixed(1)}¢` : '—'}</td>
                     <td className="cell-dim hide-sm">${p.total_traded_dollars}</td>
                     <td className="cell-dim">{fmtCents(ask)}</td>
-                    <td className="cell-dim hide-sm">{q?.open_interest != null ? q.open_interest.toLocaleString() : '—'}</td>
+                    <td className="cell-dim hide-sm">{book.open_interest != null ? book.open_interest.toLocaleString() : '—'}</td>
                     <td className={pnl > 0 ? 'cell-profit' : pnl < 0 ? 'cell-loss' : 'cell-dim'}>
                       {pnl > 0 ? '+' : ''}${p.realized_pnl_dollars}
                     </td>
