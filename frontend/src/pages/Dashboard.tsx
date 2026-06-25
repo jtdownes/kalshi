@@ -220,19 +220,36 @@ export default function Dashboard({ orders, trades, openOrders, positions, snaps
   // Resolve a position's side bid/ask/OI from the WS quote when present, else
   // from the latest snapshot. Keeps live P&L flowing the moment a position opens.
   const bookFor = useCallback((ticker: string, side: 'yes' | 'no') => {
+    // NO and YES books are complements: NO bid = 100 - YES ask, NO ask = 100 -
+    // YES bid. Near settlement the held side often dries up (no resting quote)
+    // while the other side still has a book, which left Ask / Unrealized P&L
+    // reading "—". Derive the missing side from its complement so the columns
+    // stay live as long as *either* side has a quote.
+    const pick = (yes_bid: number | null, yes_ask: number | null,
+                  no_bid: number | null, no_ask: number | null) => {
+      let bid = side === 'yes' ? yes_bid : no_bid
+      let ask = side === 'yes' ? yes_ask : no_ask
+      if (bid == null) {
+        const oppAsk = side === 'yes' ? no_ask : yes_ask
+        if (oppAsk != null) bid = 100 - oppAsk
+      }
+      if (ask == null) {
+        const oppBid = side === 'yes' ? no_bid : yes_bid
+        if (oppBid != null) ask = 100 - oppBid
+      }
+      return { bid, ask }
+    }
     const q = quotes[ticker]
     if (q && (q.yes_bid != null || q.no_bid != null || q.yes_ask != null || q.no_ask != null)) {
       return {
-        bid: side === 'yes' ? q.yes_bid : q.no_bid,
-        ask: side === 'yes' ? q.yes_ask : q.no_ask,
+        ...pick(q.yes_bid, q.yes_ask, q.no_bid, q.no_ask),
         open_interest: q.open_interest ?? null,
       }
     }
     const s = snapByTicker.get(ticker)
     if (!s) return { bid: null, ask: null, open_interest: null }
     return {
-      bid: side === 'yes' ? s.yes_bid : s.no_bid,
-      ask: side === 'yes' ? s.yes_ask : s.no_ask,
+      ...pick(s.yes_bid, s.yes_ask, s.no_bid, s.no_ask),
       open_interest: s.open_interest ?? null,
     }
   }, [quotes, snapByTicker])
