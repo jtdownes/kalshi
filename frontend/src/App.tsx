@@ -114,9 +114,13 @@ export default function App() {
     return () => es.close()
   }, [])
 
-  // Open order tickers aren't in the WS subscription — poll for their quotes
+  // Open order AND position tickers aren't always in the WS subscription —
+  // positions in markets we no longer actively scan (e.g. deep-ITM near
+  // settlement) have no live quote, so Ask / Unrealized P&L read "—". Poll the
+  // quotes endpoint for both so those columns stay marked.
   useEffect(() => {
-    const tickers = [...new Set(openOrders.map(o => o.market_ticker))]
+    const posTickers = Array.isArray(positions) ? positions.map(p => p.ticker) : []
+    const tickers = [...new Set([...openOrders.map(o => o.market_ticker), ...posTickers])]
     if (tickers.length === 0) return
     const fetch_ = async () => {
       try {
@@ -127,7 +131,7 @@ export default function App() {
     fetch_()
     const id = setInterval(fetch_, 3_000)
     return () => clearInterval(id)
-  }, [openOrders])
+  }, [openOrders, positions])
 
   return (
     <div className="app">
