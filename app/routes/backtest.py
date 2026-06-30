@@ -441,12 +441,18 @@ def _bt_walk_rich_exits(cur, fills_cte, params, series_like, side, bid_col,
     return trades
 
 
-def _bt_simulate_rule(cur, series_like, rule, side, snap_table, tickers=None):
+def _bt_simulate_rule(cur, series_like, rule, side, snap_table, tickers=None,
+                      signaled_out=None):
     """Simulate one rule on one side. Returns a list of trade dicts, or None if
     the rule is incomplete (missing required entry/exit price).
 
     When `tickers` is given, only those markets are considered (used to scope
-    the simulation to the most-recent N markets)."""
+    the simulation to the most-recent N markets).
+
+    When `signaled_out` (a set) is given, every ticker this rule placed a resting
+    order on — i.e. its conditions passed with a valid limit, whether or not the
+    order ever filled — is added to it. The route diffs this against the filled
+    tickers to mark rested-but-never-filled markets as `no_fill`."""
     action = rule.get("action") or {}
     entry  = action.get("entry") or {}
     exit_  = action.get("exit")  or {"type": "hold"}
@@ -614,6 +620,13 @@ def _bt_simulate_rule(cur, series_like, rule, side, snap_table, tickers=None):
         )"""
     params = cte_params + limit_params + [series_like] + ticker_params + cond_params
     fills_cte = "WITH " + ",".join(cte_defs + [fills_def])
+
+    # Record every market this rule placed a resting order on (signal fired with a
+    # valid >=1 limit), regardless of whether it filled. Run before the exit-branch
+    # SQL appends to `params`, so it sees exactly the fills-stage params.
+    if signaled_out is not None:
+        cur.execute(fills_cte + "\n        SELECT DISTINCT ticker FROM signals WHERE limit_price >= 1", params)
+        signaled_out.update(r["ticker"] for r in cur.fetchall())
 
     if rich_exit:
         if is_limit_sell:
@@ -859,6 +872,7 @@ def backtest_strategy():
                     if ref is not None:
                         resolved[r["ticker"]] = "yes" if float(ref) >= 50 else "no"
 
+        signaled = set()   # every market any rule placed a resting order on
         for idx, rule in enumerate(rules):
             if not rule.get("enabled", True):
                 continue
@@ -871,7 +885,8 @@ def backtest_strategy():
             for side in sides:
                 if side not in ("yes", "no"):
                     continue
-                t = _bt_simulate_rule(cur, series_like, rule, side, snap_table, tickers=tickers)
+                t = _bt_simulate_rule(cur, series_like, rule, side, snap_table,
+                                      tickers=tickers, signaled_out=signaled)
                 if t is None:
                     continue
                 simulated_any = True
@@ -887,34 +902,49 @@ def backtest_strategy():
             all_trades.extend(rule_trades)
 
     # Feed rows: every execution, plus a row for each scoped market that didn't
-    # trade — "bad_data" if it was excluded for poor coverage, else "skipped".
+    # trade. A market a rule placed a resting order on but that never filled is
+    # "no_fill" (the ask never came back to the limit — what a real order that
+    # rests and is auto-cancelled at settlement looks like); one excluded for poor
+    # coverage is "bad_data"; one no rule ever fired on is "skipped".
     # Sorted newest-first (non-fill rows fall back to the market's last-seen time).
+    filled = {t["ticker"] for t in all_trades}
     feed = list(all_trades)
     if market_limit and scoped:
-        filled = {t["ticker"] for t in all_trades}
         for tk in scoped:
             if tk in filled:
                 continue
             q = quality.get(tk, {})
             if q.get("bad"):
-                feed.append({
-                    "ticker": tk, "side": resolved.get(tk), "fill_time": None, "fill_price": None,
-                    "ttc_at_fill": None, "exit_kind": None, "exit_price": None,
-                    "exit_time": None, "pnl_cents": None, "qty": 1, "outcome": "bad_data",
-                    "reason": q.get("reason"), "event_time": ticker_meta.get(tk),
-                })
+                outcome, reason = "bad_data", q.get("reason")
+            elif tk in signaled:
+                outcome, reason = "no_fill", None
             else:
-                feed.append({
-                    "ticker": tk, "side": resolved.get(tk), "fill_time": None, "fill_price": None,
-                    "ttc_at_fill": None, "exit_kind": None, "exit_price": None,
-                    "exit_time": None, "pnl_cents": None, "qty": 1, "outcome": "skipped",
-                    "event_time": ticker_meta.get(tk),
-                })
+                outcome, reason = "skipped", None
+            feed.append({
+                "ticker": tk, "side": resolved.get(tk), "fill_time": None, "fill_price": None,
+                "ttc_at_fill": None, "exit_kind": None, "exit_price": None,
+                "exit_time": None, "pnl_cents": None, "qty": 1, "outcome": outcome,
+                "reason": reason, "event_time": ticker_meta.get(tk),
+            })
     feed.sort(key=lambda t: t.get("fill_time") or t.get("event_time") or "", reverse=True)
 
+    # Fill-rate over markets a rule actually attempted (signaled). A no-fill is a
+    # market that signaled but never filled — the phantom-win bucket the old
+    # instant-fill model hid. Reported on the summary regardless of market_limit.
+    attempted        = len(signaled)
+    filled_attempted = len(signaled & filled)
+    no_fill_count    = attempted - filled_attempted
+    fill_rate        = round(filled_attempted / attempted * 100, 1) if attempted else None
+
     excluded = sum(1 for q in quality.values() if q["bad"])
+    summary = _bt_aggregate(all_trades)
+    summary.update({
+        "signaled_markets": attempted,
+        "no_fill_count":    no_fill_count,
+        "fill_rate":        fill_rate,
+    })
     return jsonify({
-        "summary": _bt_aggregate(all_trades),
+        "summary": summary,
         "rules":   rule_results,
         "trades":  feed,
         "excluded_markets": excluded,

@@ -16,6 +16,9 @@ interface Metrics {
   avg_fill_price: number | null
   sold_count: number
   expired_count: number
+  signaled_markets?: number
+  no_fill_count?: number
+  fill_rate?: number | null
 }
 
 interface RuleResult extends Metrics {
@@ -142,6 +145,14 @@ export default function StrategyBacktest({ rules, series = 'KXBTC15M', globalSna
               sub={`${s!.win_count}W / ${s!.loss_count}L`}
             />
             <Stat label="Trades" value={s!.trade_count.toLocaleString()} sub={s!.sold_count ? `${s!.sold_count.toLocaleString()} sold` : undefined} />
+            {s!.fill_rate != null && (
+              <Stat
+                label="Fill Rate"
+                value={`${s!.fill_rate}%`}
+                color={s!.fill_rate >= 90 ? '#00d4a0' : s!.fill_rate >= 70 ? '#fbbf24' : '#ff4444'}
+                sub={s!.no_fill_count ? `${s!.no_fill_count.toLocaleString()} no fill` : undefined}
+              />
+            )}
             <Stat
               label="Avg P&L"
               value={s!.avg_pnl_cents != null ? `${s!.avg_pnl_cents > 0 ? '+' : ''}${centsToUSD(s!.avg_pnl_cents)}` : '—'}

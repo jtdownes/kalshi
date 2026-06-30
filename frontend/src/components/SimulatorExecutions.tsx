@@ -17,7 +17,7 @@ export interface SimTrade {
   exit_time: string | null
   pnl_cents: number | null
   qty: number
-  outcome: 'sold' | 'expired' | 'won' | 'lost' | 'stopped' | 'skipped' | 'bad_data'
+  outcome: 'sold' | 'expired' | 'won' | 'lost' | 'stopped' | 'skipped' | 'bad_data' | 'no_fill'
   reason?: string | null
   event_time?: string | null
 }
@@ -30,6 +30,7 @@ const OUTCOME_COLOR: Record<string, string> = {
   stopped: '#fbbf24',
   skipped: '#64748b',
   bad_data: '#b45309',
+  no_fill: '#8b5cf6',
 }
 const OUTCOME_LABEL: Record<string, string> = {
   sold: 'Sold',
@@ -39,7 +40,9 @@ const OUTCOME_LABEL: Record<string, string> = {
   stopped: 'Stopped',
   skipped: 'Skipped',
   bad_data: 'Bad data',
+  no_fill: 'No fill',
 }
+const NON_FILL_OUTCOMES = new Set(['skipped', 'bad_data', 'no_fill'])
 
 function pnlColor(c: number | null | undefined): string | undefined {
   if (c == null) return undefined
@@ -86,15 +89,16 @@ interface Props {
 export default function SimulatorExecutions({ trades, globalSnapshots = [], ttcWindows = [] }: Props) {
   const [expanded, setExpanded] = useState<string | null>(null)
 
-  const filledCount = trades.filter(t => t.outcome !== 'skipped' && t.outcome !== 'bad_data').length
+  const filledCount = trades.filter(t => !NON_FILL_OUTCOMES.has(t.outcome)).length
   const badCount = trades.filter(t => t.outcome === 'bad_data').length
+  const noFillCount = trades.filter(t => t.outcome === 'no_fill').length
 
   return (
     <section className="table-panel">
       <div className="snapshot-panel-head">
         <span className="section-toggle-label">Simulated Markets</span>
         <span style={{ fontSize: 11, color: '#64748b' }}>
-          {trades.length.toLocaleString()} market{trades.length === 1 ? '' : 's'} · {filledCount.toLocaleString()} filled{badCount ? ` · ${badCount.toLocaleString()} excluded (bad data)` : ''} · newest first
+          {trades.length.toLocaleString()} market{trades.length === 1 ? '' : 's'} · {filledCount.toLocaleString()} filled{noFillCount ? ` · ${noFillCount.toLocaleString()} no fill` : ''}{badCount ? ` · ${badCount.toLocaleString()} excluded (bad data)` : ''} · newest first
         </span>
       </div>
       <div className="table-wrap">
@@ -118,7 +122,7 @@ export default function SimulatorExecutions({ trades, globalSnapshots = [], ttcW
             ) : trades.map((t, i) => {
               const key = `${t.ticker}-${t.fill_time ?? t.event_time}-${t.side}-${i}`
               const isOpen = expanded === key
-              const nonFill = t.outcome === 'skipped' || t.outcome === 'bad_data'
+              const nonFill = NON_FILL_OUTCOMES.has(t.outcome)
               return (
                 <Fragment key={key}>
                   <tr
@@ -139,7 +143,8 @@ export default function SimulatorExecutions({ trades, globalSnapshots = [], ttcW
                     <td style={{ color: pnlColor(t.pnl_cents) }}>{t.pnl_cents != null ? `${t.pnl_cents > 0 ? '+' : ''}${t.pnl_cents}¢` : '—'}</td>
                     <td>
                       <span
-                        title={t.outcome === 'bad_data' && t.reason ? t.reason : undefined}
+                        title={t.outcome === 'bad_data' && t.reason ? t.reason
+                          : t.outcome === 'no_fill' ? 'Order rested but the ask never returned to the limit — never filled' : undefined}
                         style={{ fontSize: 11, fontWeight: 600, padding: '2px 7px', borderRadius: 10, background: OUTCOME_COLOR[t.outcome] + '22', color: OUTCOME_COLOR[t.outcome] }}>
                         {OUTCOME_LABEL[t.outcome]}
                       </span>
