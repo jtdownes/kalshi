@@ -46,6 +46,7 @@ CRYPTO_ASSETS: dict[str, dict] = {
         "label": "XRP",
         "snapshot_table": "xrp_snapshots",
         "price_field": "xrp_price",
+        "price_decimals": 4,               # ~$1 asset, strikes quoted to 4 dp
         "coinbase_product": "XRP-USD",
         "kraken_pair": "XRPUSD",
         "bitstamp_pair": "xrpusd",

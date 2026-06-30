@@ -137,12 +137,15 @@ def _assemble_crypto_row(asset: str, venues: dict) -> dict:
     close keyless approximation. Volumes are captured so the blend can later be
     made volume-weighted to better track the real index.
     """
+    # Most assets (BTC/ETH/SOL) carry enough magnitude that 2 dp is plenty;
+    # sub-$10 assets like XRP need finer precision to track 4-dp strikes.
+    dp = crypto_assets.CRYPTO_ASSETS[asset].get("price_decimals", 2)
     prices = [v[0] for v in venues.values() if v is not None]
-    consolidated = round(sum(prices) / len(prices), 2) if prices else None
+    consolidated = round(sum(prices) / len(prices), dp) if prices else None
     if consolidated is None:
         log.warning("fetch_crypto_prices(%s): no venues responded", asset)
 
-    def price_of(v):  return round(v[0], 2) if v is not None else None
+    def price_of(v):  return round(v[0], dp) if v is not None else None
     def volume_of(v): return round(v[1], 4) if (v is not None and v[1] is not None) else None
 
     return {
