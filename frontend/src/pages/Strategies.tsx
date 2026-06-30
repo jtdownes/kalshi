@@ -16,7 +16,9 @@ interface StrategyDraft {
 
 interface Trade {
   market_ticker: string
+  side: string | null
   order_count: number
+  total_count: number
   placed_at: string
   filled_at: string | null
   filled_side: string | null
@@ -529,7 +531,9 @@ export default function Strategies({ settings, profiles, refresh }: Props) {
                       <thead>
                         <tr>
                           <th>Market</th>
+                          <th>Side</th>
                           <th>Orders</th>
+                          <th>Quantity</th>
                           <th>Status</th>
                           <th>Outcome</th>
                           <th>Avg Entry</th>
@@ -541,7 +545,9 @@ export default function Strategies({ settings, profiles, refresh }: Props) {
                         {viewModal.trades.map(t => (
                           <tr key={t.market_ticker}>
                             <td className="trade-ticker">{t.market_ticker}</td>
+                            <td>{t.side ? <span className={`badge side-${t.side}`}>{t.side}</span> : '—'}</td>
                             <td>{t.order_count}</td>
+                            <td>{t.total_count}</td>
                             <td><span className={`trade-status trade-status-${t.status}`}>{t.status}</span></td>
                             <td>
                               {t.outcome
