@@ -555,7 +555,7 @@ export default function Strategies({ settings, profiles, refresh }: Props) {
                                 : <span className="outcome-chip outcome-none">—</span>}
                             </td>
                             <td>{t.entry_price_cents != null ? `${t.entry_price_cents}¢` : '—'}</td>
-                            <td className={t.net_profit_cents != null ? (t.net_profit_cents >= 0 ? 'pnl-pos' : 'pnl-neg') : ''}>
+                            <td className={t.outcome === 'win' ? 'pnl-pos' : t.outcome === 'loss' ? 'pnl-neg' : ''}>
                               {t.net_profit_cents != null ? centsToUSD(t.net_profit_cents) : '—'}
                             </td>
                             <td>{fmtTime(t.placed_at)}</td>
