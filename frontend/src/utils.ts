@@ -155,13 +155,14 @@ interface CryptoAssetConfig {
   label: string          // human-readable name
   priceField: string     // field name on the Snapshot / SeriesData objects
   color: string          // accent color used in charts / UI
+  decimals: number       // decimal places to display (matches strike precision)
 }
 
 const CRYPTO_ASSET_MAP: Record<CryptoAsset, CryptoAssetConfig> = {
-  BTC: { label: 'Bitcoin', priceField: 'btc_price', color: '#f7931a' },
-  ETH: { label: 'Ethereum', priceField: 'eth_price', color: '#627eea' },
-  SOL: { label: 'Solana', priceField: 'sol_price', color: '#9945ff' },
-  XRP: { label: 'XRP', priceField: 'xrp_price', color: '#23292f' },
+  BTC: { label: 'Bitcoin', priceField: 'btc_price', color: '#f7931a', decimals: 2 },
+  ETH: { label: 'Ethereum', priceField: 'eth_price', color: '#627eea', decimals: 2 },
+  SOL: { label: 'Solana', priceField: 'sol_price', color: '#9945ff', decimals: 2 },
+  XRP: { label: 'XRP', priceField: 'xrp_price', color: '#23292f', decimals: 4 },
 }
 
 // Ticker-prefix → asset mapping. Extend this as new series are added.
@@ -193,6 +194,16 @@ export function cryptoPriceForTicker(ticker: string, data: Record<string, unknow
   if (!cfg) return null
   const val = data[cfg.priceField]
   return typeof val === 'number' ? val : null
+}
+
+/** Formats a crypto price ($) for a ticker at its asset's display precision
+ *  (e.g. XRP to 4 dp), so it lines up with the market's strike. */
+export function fmtCryptoPriceForTicker(ticker: string, data: Record<string, unknown>): string {
+  const cfg = cryptoAssetConfig(ticker)
+  const price = cryptoPriceForTicker(ticker, data)
+  if (price == null) return '—'
+  const decimals = cfg?.decimals ?? 2
+  return `$${price.toLocaleString(undefined, { minimumFractionDigits: decimals, maximumFractionDigits: decimals })}`
 }
 
 /** True when a market belongs on the Crypto page. Ticker prefix is the primary

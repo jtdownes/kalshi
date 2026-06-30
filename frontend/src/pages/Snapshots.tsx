@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { NavLink } from 'react-router-dom'
 import type { Snapshot, Order } from '../types'
-import { fmtCents, fmtDur, fmtTime, fmtUnixTime, fmtPnL, kalshiMarketUrl, cryptoPriceForTicker } from '../utils'
+import { fmtCents, fmtDur, fmtTime, fmtUnixTime, fmtPnL, kalshiMarketUrl, fmtCryptoPriceForTicker } from '../utils'
 import PriceActionChart from '../components/PriceActionChart'
 import ScannedMarkets from '../components/ScannedMarkets'
 
@@ -232,7 +232,7 @@ export default function Snapshots({ snapshots, orders = [], openOrders = [], fil
                     </a>
                   </td>
                   <td className="cell-dim">{snapshot.strike_str ?? '—'}</td>
-                  <td className="cell-dim">{(() => { const p = cryptoPriceForTicker(snapshot.ticker, snapshot as unknown as Record<string, unknown>); return p != null ? `$${p.toLocaleString()}` : '—' })()}</td>
+                  <td className="cell-dim">{fmtCryptoPriceForTicker(snapshot.ticker, snapshot as unknown as Record<string, unknown>)}</td>
                   <td><MarketResult result={resultByTicker[snapshot.ticker]} /></td>
                   <td className="cell-dim hide-sm">{snapshot.volume != null ? snapshot.volume.toLocaleString() : '—'}</td>
                   <td className="cell-dim hide-sm">{snapshot.open_interest != null ? snapshot.open_interest.toLocaleString() : '—'}</td>
@@ -331,7 +331,7 @@ export default function Snapshots({ snapshots, orders = [], openOrders = [], fil
                                 {expandedHistory.map(snap => (
                                   <tr key={snap.id}>
                                     <td className="cell-dim">{fmtTime(snap.scanned_at)}</td>
-                                    <td className="cell-dim">{(() => { const p = cryptoPriceForTicker(t.ticker, snap as unknown as Record<string, unknown>); return p != null ? `$${p.toLocaleString()}` : '—' })()}</td>
+                                    <td className="cell-dim">{fmtCryptoPriceForTicker(t.ticker, snap as unknown as Record<string, unknown>)}</td>
                                     <td>{fmtCents(snap.yes_ask)}</td>
                                     <td className="cell-dim">{fmtCents(snap.yes_bid)}</td>
                                     <td className="cell-dim">{fmtCents(snap.no_ask)}</td>

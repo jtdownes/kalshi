@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom'
 import type { Order, Trade, Position, Snapshot, Settings, Profile, Quotes } from '../types'
 import PriceActionChart from '../components/PriceActionChart'
 import PnLCalendar from '../components/PnLCalendar'
-import { centsToUSD, fmtCents, fmtPnL, fmtTime, fmtUnixTime, fmtDur, kalshiMarketUrl, cryptoPriceForTicker, midCents, ttcWindowsFromRules } from '../utils'
+import { centsToUSD, fmtCents, fmtPnL, fmtTime, fmtUnixTime, fmtDur, kalshiMarketUrl, cryptoPriceForTicker, fmtCryptoPriceForTicker, cryptoAssetConfig, midCents, ttcWindowsFromRules } from '../utils'
 import type { TtcWindow } from '../utils'
 
 type CollapsibleSection = 'trades' | 'calendar'
@@ -405,9 +405,10 @@ export default function Dashboard({ orders, trades, openOrders, positions, snaps
                       if (strike == null) return '—'
                       const px = cryptoPriceForTicker(s.ticker, s as unknown as Record<string, unknown>)
                       const above = px != null ? px >= strike : null
+                      const dp = cryptoAssetConfig(s.ticker)?.decimals ?? 2
                       return (
                         <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}>
-                          ${strike.toLocaleString()}
+                          ${strike.toLocaleString(undefined, { minimumFractionDigits: dp, maximumFractionDigits: dp })}
                           {above != null && (
                             <span style={{ fontSize: 10, fontWeight: 700, color: above ? '#00d4a0' : '#ff4444' }}>
                               {above ? '▲' : '▼'}
@@ -417,10 +418,7 @@ export default function Dashboard({ orders, trades, openOrders, positions, snaps
                       )
                     })()}
                   </td>
-                  <td className="cell-dim">{(() => {
-                    const px = cryptoPriceForTicker(s.ticker, s as unknown as Record<string, unknown>)
-                    return px != null ? `$${px.toLocaleString()}` : '—'
-                  })()}</td>
+                  <td className="cell-dim">{fmtCryptoPriceForTicker(s.ticker, s as unknown as Record<string, unknown>)}</td>
                   <td>{fmtCents(midCents(s.yes_bid, s.yes_ask))}</td>
                   <td className="cell-dim">{fmtCents(midCents(s.no_bid, s.no_ask))}</td>
                   <td className="cell-dim hide-sm">{s.volume != null ? s.volume.toLocaleString() : '—'}</td>
