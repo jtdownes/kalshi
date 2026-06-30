@@ -83,11 +83,13 @@ def get_recent_market_snapshots(limit: int | None = None) -> list[dict]:
                b.coinbase_volume, b.kraken_volume, b.bitstamp_volume, b.gemini_volume,
                COALESCE(e.consolidated_price, e.coinbase_price) AS eth_price,
                COALESCE(s.consolidated_price, s.coinbase_price) AS sol_price,
+               COALESCE(x.consolidated_price, x.coinbase_price) AS xrp_price,
                m.time_to_close_secs, m.strike_str, m.volume, m.open_interest
         FROM market_snapshots m
         LEFT JOIN bitcoin_snapshots b ON b.scanned_at = m.scanned_at
         LEFT JOIN ethereum_snapshots e ON e.scanned_at = m.scanned_at
         LEFT JOIN solana_snapshots s ON s.scanned_at = m.scanned_at
+        LEFT JOIN xrp_snapshots x ON x.scanned_at = m.scanned_at
         ORDER BY m.id DESC
         {limit_sql}
     """
@@ -109,11 +111,13 @@ def get_market_snapshots_for_ticker(ticker: str, limit: int | None = None) -> li
                b.coinbase_volume, b.kraken_volume, b.bitstamp_volume, b.gemini_volume,
                COALESCE(e.consolidated_price, e.coinbase_price) AS eth_price,
                COALESCE(s.consolidated_price, s.coinbase_price) AS sol_price,
+               COALESCE(x.consolidated_price, x.coinbase_price) AS xrp_price,
                m.time_to_close_secs, m.strike_str, m.volume, m.open_interest
         FROM market_snapshots m
         LEFT JOIN bitcoin_snapshots b ON b.scanned_at = m.scanned_at
         LEFT JOIN ethereum_snapshots e ON e.scanned_at = m.scanned_at
         LEFT JOIN solana_snapshots s ON s.scanned_at = m.scanned_at
+        LEFT JOIN xrp_snapshots x ON x.scanned_at = m.scanned_at
         WHERE m.ticker = %s
         ORDER BY m.id DESC
         {limit_sql}
@@ -242,11 +246,13 @@ def get_latest_snapshots_for_series(series_tickers: list[str], max_age_seconds: 
                b.coinbase_volume, b.kraken_volume, b.bitstamp_volume, b.gemini_volume,
                COALESCE(e.consolidated_price, e.coinbase_price) AS eth_price,
                COALESCE(s.consolidated_price, s.coinbase_price) AS sol_price,
+               COALESCE(x.consolidated_price, x.coinbase_price) AS xrp_price,
                m.time_to_close_secs, m.strike_str, m.volume, m.open_interest
         FROM market_snapshots m
         LEFT JOIN bitcoin_snapshots b ON b.scanned_at = m.scanned_at
         LEFT JOIN ethereum_snapshots e ON e.scanned_at = m.scanned_at
         LEFT JOIN solana_snapshots s ON s.scanned_at = m.scanned_at
+        LEFT JOIN xrp_snapshots x ON x.scanned_at = m.scanned_at
         WHERE m.scanned_at >= %s
           AND ({where})
         ORDER BY m.ticker, m.scanned_at DESC

@@ -38,6 +38,11 @@ interface SeriesData {
   sol_kraken_price: number | null;
   sol_bitstamp_price: number | null;
   sol_gemini_price: number | null;
+  xrp_price: number | null;       // consolidated XRP multi-venue price
+  xrp_coinbase_price: number | null;
+  xrp_kraken_price: number | null;
+  xrp_bitstamp_price: number | null;
+  xrp_gemini_price: number | null;
   strike_str: string | null;
 }
 
@@ -123,6 +128,11 @@ export default function PriceActionChart({ ticker, globalSnapshots, openOrders =
           sol_kraken_price: null,
           sol_bitstamp_price: null,
           sol_gemini_price: null,
+          xrp_price: latest.xrp_price,
+          xrp_coinbase_price: null,
+          xrp_kraken_price: null,
+          xrp_bitstamp_price: null,
+          xrp_gemini_price: null,
           strike_str: latest.strike_str,
         }].slice(-1000);
       });
@@ -143,6 +153,7 @@ export default function PriceActionChart({ ticker, globalSnapshots, openOrders =
   const livePrice = latestSnap
     ? Number((assetKey === 'ETH' ? latestSnap.eth_price
             : assetKey === 'SOL' ? latestSnap.sol_price
+            : assetKey === 'XRP' ? latestSnap.xrp_price
             : latestSnap.btc_price) ?? NaN)
     : NaN;
   const liveTs = latestSnap?.scanned_at ?? null;
@@ -218,6 +229,15 @@ export default function PriceActionChart({ ticker, globalSnapshots, openOrders =
         { key: 'sol_kraken_price',   label: 'Kraken',   color: '#a855f7' },
         { key: 'sol_bitstamp_price', label: 'Bitstamp', color: '#86efac' },
         { key: 'sol_gemini_price',   label: 'Gemini',   color: '#38bdf8' },
+      ],
+    },
+    XRP: {
+      agg: 'xrp_price',
+      fields: [
+        { key: 'xrp_coinbase_price', label: 'Coinbase', color: '#23292f' },
+        { key: 'xrp_kraken_price',   label: 'Kraken',   color: '#a855f7' },
+        { key: 'xrp_bitstamp_price', label: 'Bitstamp', color: '#86efac' },
+        { key: 'xrp_gemini_price',   label: 'Gemini',   color: '#38bdf8' },
       ],
     },
     BTC: {

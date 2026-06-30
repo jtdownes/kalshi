@@ -223,11 +223,17 @@ def snapshot_series():
                    s.coinbase_price AS sol_coinbase_price,
                    s.kraken_price   AS sol_kraken_price,
                    s.bitstamp_price AS sol_bitstamp_price,
-                   s.gemini_price   AS sol_gemini_price
+                   s.gemini_price   AS sol_gemini_price,
+                   COALESCE(x.consolidated_price, x.coinbase_price) AS xrp_price,
+                   x.coinbase_price AS xrp_coinbase_price,
+                   x.kraken_price   AS xrp_kraken_price,
+                   x.bitstamp_price AS xrp_bitstamp_price,
+                   x.gemini_price   AS xrp_gemini_price
             FROM market_snapshots m
             LEFT JOIN bitcoin_snapshots b ON b.scanned_at = m.scanned_at
             LEFT JOIN ethereum_snapshots e ON e.scanned_at = m.scanned_at
             LEFT JOIN solana_snapshots s ON s.scanned_at = m.scanned_at
+            LEFT JOIN xrp_snapshots x ON x.scanned_at = m.scanned_at
             WHERE m.ticker = %s
             ORDER BY m.id DESC
             LIMIT %s
