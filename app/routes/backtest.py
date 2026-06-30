@@ -461,12 +461,15 @@ def _bt_simulate_rule(cur, series_like, rule, side, snap_table, tickers=None):
     cond_clause, cond_params = _bt_conditions_sql(rule.get("conditions"))
 
     entry_type = entry.get("type", "limit")
-    relative   = entry_type in ("ask_minus", "ask_minus_pct")
 
-    entry_clause, entry_params = "", []
-    limit_expr,   limit_params = None, []
+    # The resting limit, in YES/NO ask cents, as an SQL expression fixed at the
+    # snapshot where the rule's conditions first pass. Every entry type resolves
+    # to one so they all share the two-stage resting-limit fill model below.
+    limit_expr, limit_params = None, []
     if entry_type == "ask":
-        entry_clause = f"m.{ask_col} IS NOT NULL AND m.{ask_col} > 0"
+        # Place a limit at the ask we saw; it rests there and only fills if the
+        # ask is still <= that level on a later tick.
+        limit_expr = f"m.{ask_col}"
     elif entry_type == "ask_minus":
         offset = entry.get("offset_cents")
         if offset is None:
@@ -483,8 +486,8 @@ def _bt_simulate_rule(cur, series_like, rule, side, snap_table, tickers=None):
         price = entry.get("price_cents")
         if price is None:
             return None
-        entry_clause = f"m.{ask_col} <= %s AND m.{ask_col} > 0"
-        entry_params = [price]
+        limit_expr   = "%s"
+        limit_params = [price]
 
     is_limit_sell = exit_.get("type") == "limit_sell"
     is_scale_out  = exit_.get("type") == "scale_out"
@@ -569,11 +572,18 @@ def _bt_simulate_rule(cur, series_like, rule, side, snap_table, tickers=None):
         ticker_filter = " AND m.ticker = ANY(%s)"
         ticker_params = [list(tickers)]
 
-    if relative:
-        # Two-stage: the first snapshot where the conditions hold fixes the
-        # resting limit at (ask − offset); the order then fills at the first
-        # later snapshot whose ask drops to that price (or never fills).
-        fills_def = f"""
+    # Resting-limit fill model (all entry types). The first snapshot where the
+    # conditions hold fixes the resting limit (= ask for an "ask" entry, the
+    # configured price for a "limit" entry, ask−offset for a relative entry).
+    # The order then fills at the first *later* snapshot whose ask has reached
+    # that limit — modelling a real resting bid that only fills when the market
+    # trades to it. A market whose ask never returns to the limit simply never
+    # fills (no phantom instant win), exactly like a live order that rests and is
+    # auto-cancelled at settlement. Fill is gated on scanned_at > signal_time so
+    # an "ask" entry (whose limit equals the signal ask) can't trivially self-fill
+    # on the signal tick — it must survive at least one tick, the realistic
+    # minimum for an order that has to be placed after the signal is seen.
+    fills_def = f"""
         signals AS (
             SELECT DISTINCT ON (m.ticker)
                 m.ticker,
@@ -596,30 +606,13 @@ def _bt_simulate_rule(cur, series_like, rule, side, snap_table, tickers=None):
             FROM signals sg
             JOIN market_snapshots s
               ON s.ticker = sg.ticker
-             AND s.scanned_at >= sg.signal_time
+             AND s.scanned_at > sg.signal_time
              AND s.{ask_col} > 0
              AND s.{ask_col} <= sg.limit_price
             WHERE sg.limit_price >= 1
             ORDER BY s.ticker, s.scanned_at
         )"""
-        params = cte_params + limit_params + [series_like] + ticker_params + cond_params
-    else:
-        fills_def = f"""
-        fills AS (
-            SELECT DISTINCT ON (m.ticker)
-                m.ticker,
-                m.scanned_at         AS fill_time,
-                m.{ask_col}          AS fill_price,
-                m.time_to_close_secs AS ttc_at_fill
-            FROM market_snapshots m
-            LEFT JOIN {snap_table} b ON b.scanned_at = m.scanned_at
-            {' '.join(join_parts)}
-            WHERE m.ticker LIKE %s{ticker_filter}
-              AND {entry_clause}
-              {cond_clause}
-            ORDER BY m.ticker, m.scanned_at
-        )"""
-        params = cte_params + [series_like] + ticker_params + entry_params + cond_params
+    params = cte_params + limit_params + [series_like] + ticker_params + cond_params
     fills_cte = "WITH " + ",".join(cte_defs + [fills_def])
 
     if rich_exit:
