@@ -633,18 +633,36 @@ def _bt_simulate_rule(cur, series_like, rule, side, snap_table, tickers=None,
     params = cte_params + limit_params + [series_like] + ticker_params + cond_params
     fills_cte = "WITH " + ",".join(cte_defs + [fills_def])
 
-    # Record every market this rule placed a resting order on (signal fired with a
-    # valid >=1 limit), regardless of whether it filled. Run before the exit-branch
-    # SQL appends to `params`, so it sees exactly the fills-stage params.
+    # Materialise signals + fills ONCE into a session temp table. The CTE stack
+    # above (craziness windows, prior resolutions) dominates the cost of a run,
+    # and previously executed twice per rule-side: once for the signaled-ticker
+    # set, once inside the exit query. One row per signaled market; fill_time is
+    # NULL for a resting order that never filled.
+    cur.execute("DROP TABLE IF EXISTS bt_signal_fills")
+    cur.execute(
+        "CREATE TEMP TABLE bt_signal_fills AS " + fills_cte + """
+        SELECT sg.ticker, f.fill_time, f.fill_price, f.ttc_at_fill
+        FROM signals sg
+        LEFT JOIN fills f ON f.ticker = sg.ticker
+        WHERE sg.limit_price >= 1""",
+        params)
+
+    # Every market this rule placed a resting order on, filled or not; the route
+    # diffs this against the filled set to mark no_fill feed rows.
     if signaled_out is not None:
-        cur.execute(fills_cte + "\n        SELECT DISTINCT ticker FROM signals WHERE limit_price >= 1", params)
+        cur.execute("SELECT DISTINCT ticker FROM bt_signal_fills")
         signaled_out.update(r["ticker"] for r in cur.fetchall())
+
+    # Downstream exit SQL reads fills from the temp table — cheap, param-free.
+    fills_cte = ("WITH fills AS (SELECT ticker, fill_time, fill_price, ttc_at_fill "
+                 "FROM bt_signal_fills WHERE fill_time IS NOT NULL)")
+    params = []
 
     if rich_exit:
         if is_limit_sell:
             legs = [{"qty": qty, "price_cents": int(sell_price)}]
         return _bt_walk_rich_exits(
-            cur, fills_cte, params, series_like, side, bid_col, qty,
+            cur, fills_cte, params, side, bid_col, qty,
             legs or [], stop_cents, stop_pct, time_exit_secs)
 
     if is_limit_sell:
