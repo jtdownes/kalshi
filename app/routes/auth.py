@@ -27,7 +27,11 @@ _DUMMY_HASH = bcrypt.hashpw(b'dummy', bcrypt.gensalt())
 
 
 def _get_client_ip() -> str:
-    return request.headers.get('X-Forwarded-For', request.remote_addr or '').split(',')[0].strip()
+    # ProxyFix (app.py) already resolves the real client IP from the trusted
+    # proxy's X-Forwarded-For into remote_addr. Reading the header directly
+    # would trust its first entry, which the client controls — letting an
+    # attacker rotate fake IPs past the lockout or poison it for others.
+    return request.remote_addr or ''
 
 
 def _check_rate_limit(ip: str) -> bool:
