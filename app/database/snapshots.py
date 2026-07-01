@@ -13,7 +13,10 @@ from .core import _conn, _lock
 log = logging.getLogger(__name__)
 
 # Resolution of a *closed* 15-min window never changes, so memoise it.
+# Capped so a long-running bot can't grow it without bound (~1 entry per
+# window per series); eviction is insertion-order, i.e. oldest windows first.
 _window_res_cache: dict = {}
+_WINDOW_RES_CACHE_MAX = 4096
 
 
 def save_crypto_snapshot(asset: str, scanned_at: str, coinbase_price: float = None,
@@ -316,6 +319,8 @@ def _window_resolution(cur, series_prefix: str, window_close: str):
 
     try:
         if int(window_close) < int(time.time()):
+            if len(_window_res_cache) >= _WINDOW_RES_CACHE_MAX:
+                _window_res_cache.pop(next(iter(_window_res_cache)))
             _window_res_cache[key] = res
     except (TypeError, ValueError):
         pass

@@ -683,9 +683,6 @@ def _scan(client: KalshiClient, settings: dict):
         if not _live_data_ok(market):
             continue
 
-        yes_ask = market.get("yes_ask")
-        no_ask = market.get("no_ask")
-
         for spec in evaluate_market(market, settings, profile_id=profile_id,
                                     time_to_close=time_to_close):
             side       = spec["side"]
