@@ -554,7 +554,10 @@ def _cancel_sibling_legs(client: KalshiClient, order: dict):
 
 def _handle_filled_order(client: KalshiClient, order: dict, filled_at: str = None):
     filled_at = filled_at or datetime.utcnow().isoformat()
-    db.update_order(order["kalshi_order_id"], status="filled", filled_at=filled_at)
+    # Atomic gate: the WS listener and the polling monitor can both see the
+    # same fill; only the first transition to 'filled' places exits/books P&L.
+    if not db.mark_order_filled(order["kalshi_order_id"], filled_at):
+        return
 
     if order.get("order_role") == "exit":
         reason = order.get("exit_strategy") or "limit_sell"
@@ -927,39 +930,55 @@ def order_monitor_loop(client: KalshiClient):
         time.sleep(config.ORDER_CHECK_INTERVAL_SECONDS)
 
 
-def _sync_order_statuses(client: KalshiClient):
-    resting = db.get_resting_orders()
-    if not resting:
+def _sync_order_fill_state(client: KalshiClient, order: dict):
+    """Fetch one resting order's remote state and apply fills/cancels.
+
+    Only a COMPLETE fill (or a terminal order — canceled/expired — that filled
+    partially before dying) triggers exit placement, so exits are never sized
+    larger than the position actually held. A live order that has only partly
+    filled just waits: the exchange still owes us the rest, and we re-check
+    every cycle. When a terminal order filled fewer contracts than requested,
+    the order's count is shrunk to the filled quantity first so downstream
+    cost/P&L/exit math runs on the real position.
+    Kalshi uses status="executed" for filled orders (not "filled")."""
+    oid = order.get("kalshi_order_id")
+    if not oid:
         return
+    remote = client.get_order(oid).get("order", {})
+    status = (remote.get("status") or "").lower()
+    count  = order.get("count") or 1
+    filled = fp_to_float(remote.get("fill_count_fp") or remote.get("fill_count"))
+    remaining_raw = remote.get("remaining_count_fp", remote.get("remaining_count"))
+    remaining = fp_to_float(remaining_raw) if remaining_raw not in (None, "") else None
+    terminal = status in ("canceled", "cancelled", "expired")
+    complete = (status in ("executed", "filled")
+                or (remaining is not None and remaining <= 0 and filled > 0)
+                or filled >= count)
 
-    try:
-        filled_ids = {
-            f.get("order_id") for f in client.get_fills(limit=200).get("fills", [])
-            if f.get("order_id")
-        }
-    except KalshiError as e:
-        log.warning("get_fills failed; falling back to order status only: %s", e)
-        filled_ids = set()
+    if complete or (terminal and filled > 0):
+        actual = int(filled) if 0 < filled < count else count
+        if actual != count:
+            db.update_order(oid, count=actual)
+            order = dict(order, count=actual)
+            log.info("PARTIAL  %-6s %-50s  filled %d of %d before close-out",
+                     order["side"], order["market_ticker"], actual, count)
+        _handle_filled_order(client, order)
+    elif terminal:
+        db.update_order(oid, status="canceled")
+        log.info("CANCELED %-6s %-50s", order["side"], order["market_ticker"])
+    elif filled > 0:
+        log.info("PARTIAL  %-6s %-50s  %d/%d filled; waiting for completion",
+                 order["side"], order["market_ticker"], int(filled), count)
 
+
+def _sync_order_statuses(client: KalshiClient):
     # Look up each resting order individually — bulk-fetching all filled/canceled
     # orders is unreliable due to pagination and sort order.
-    # Kalshi uses status="executed" for filled orders (not "filled").
-    for order in resting:
-        oid = order.get("kalshi_order_id")
-        if not oid:
-            continue
+    for order in db.get_resting_orders():
         try:
-            remote = client.get_order(oid).get("order", {})
-            remote_status = remote.get("status", "").lower()
-            fill_count = fp_to_float(remote.get("fill_count_fp"))
-            if oid in filled_ids or fill_count > 0 or remote_status in ("executed", "filled"):
-                _handle_filled_order(client, order)
-            elif remote_status in ("canceled", "cancelled", "expired"):
-                db.update_order(oid, status="canceled")
-                log.info("CANCELED %-6s %-50s",
-                         order["side"], order["market_ticker"])
+            _sync_order_fill_state(client, order)
         except KalshiError as e:
-            log.debug("sync check failed for %s: %s", oid, e)
+            log.debug("sync check failed for %s: %s", order.get("kalshi_order_id"), e)
 
 
 def _resolve_outcomes(client: KalshiClient):
@@ -1036,7 +1055,14 @@ async def _ws_fills_async(client: KalshiClient):
                         if order_id:
                             order = db.get_order_by_kalshi_order_id(order_id)
                             if order:
-                                _handle_filled_order(client, order)
+                                # A WS fill event can be one partial fill;
+                                # confirm completeness against REST before
+                                # placing exits, same as the monitor.
+                                try:
+                                    _sync_order_fill_state(client, order)
+                                except KalshiError as e:
+                                    log.warning("WS fill sync failed for %s: %s",
+                                                order_id, e)
                             else:
                                 db.update_order(order_id, status="filled",
                                                 filled_at=datetime.utcnow().isoformat())

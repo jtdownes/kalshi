@@ -8,7 +8,7 @@ from .core import (
     init_db, _lock,
 )
 from .orders import (
-    save_order, update_order,
+    save_order, update_order, mark_order_filled,
     has_open_order, has_open_order_for_rule, has_filled_entry_for_rule,
     get_today_spend_cents, count_resting_orders, get_open_entry_exposure_cents,
     get_resting_orders, get_sibling_resting_entries,
@@ -44,7 +44,7 @@ __all__ = [
     # core
     '_conn', 'cursor_conn', '_execute', 'execute_sql_file', 'init_db', '_lock',
     # orders
-    'save_order', 'update_order',
+    'save_order', 'update_order', 'mark_order_filled',
     'has_open_order', 'has_open_order_for_rule', 'has_filled_entry_for_rule',
     'get_today_spend_cents', 'count_resting_orders', 'get_open_entry_exposure_cents',
     'get_resting_orders', 'get_sibling_resting_entries',

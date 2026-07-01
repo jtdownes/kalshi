@@ -48,6 +48,23 @@ def save_order(client_order_id: str, market_ticker: str, side: str,
         conn.commit()
 
 
+def mark_order_filled(kalshi_order_id: str, filled_at: str) -> bool:
+    """Atomically transition an order to filled. Returns False when it was
+    already filled — the WS fill listener and the polling monitor can race on
+    the same fill, and this gate makes sure exits are only placed once."""
+    query = """
+        UPDATE orders SET status = 'filled', filled_at = %s
+        WHERE kalshi_order_id = %s AND status IS DISTINCT FROM 'filled'
+        RETURNING 1
+    """
+    with _lock, _conn() as conn:
+        cur = conn.cursor()
+        cur.execute(query, (filled_at, kalshi_order_id))
+        row = cur.fetchone()
+        conn.commit()
+    return row is not None
+
+
 def update_order(kalshi_order_id: str, **fields):
     if not fields:
         return
