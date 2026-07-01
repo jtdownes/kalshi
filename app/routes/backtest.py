@@ -841,15 +841,20 @@ def backtest_strategy():
     quality      = {}
     resolved     = {}        # ticker -> 'yes'/'no' winning side, for non-fill feed rows
     with cursor_conn() as cur:
-        # The replay queries are big window-function CTEs over market_snapshots.
-        # Postgres plans them with parallel workers, which allocate dynamic
-        # shared memory in /dev/shm — capped at 64MB inside the DB container — and
-        # intermittently fail mid-query with "could not resize shared memory
-        # segment / No space left on device" (surfacing here as a 500 whenever a
-        # param tweak pushes the plan over the limit). Run the backtest session
-        # serially: it sidesteps the DSM allocation entirely and these queries
-        # gain little from parallelism anyway.
-        cur.execute("SET max_parallel_workers_per_gather = 0")
+        # The replay queries are big window-function sorts over market_snapshots.
+        # Raise work_mem for THIS session only (a per-connection change, not a
+        # server-wide one — nothing else on this shared Postgres is affected) so
+        # those sorts stay in memory instead of spilling to disk. It's transient,
+        # released when each query ends, and reserves nothing.
+        cur.execute("SET work_mem = '64MB'")
+        # Parallel workers allocate dynamic shared memory in the container's 64MB
+        # /dev/shm. A whole-series (unscoped) run's window functions can overflow
+        # it and fail mid-query with "could not resize shared memory segment" —
+        # the crash the serial fallback originally guarded against. A market_limit
+        # run is scoped to N recent markets, so its DSM footprint stays well under
+        # the cap (measured): enable parallelism there for the tweak-tune loop,
+        # keep full runs serial and crash-safe. No shm/infra change needed.
+        cur.execute(f"SET max_parallel_workers_per_gather = {2 if market_limit else 0}")
         if market_limit:
             cur.execute("""
                 SELECT ticker, MAX(scanned_at) AS last_seen
