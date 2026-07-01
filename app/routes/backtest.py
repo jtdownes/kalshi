@@ -139,7 +139,8 @@ def _bt_market_quality(cur, series_like, max_gap_secs, min_snaps, tickers=None):
     return out
 
 
-def _bt_craze_cte(series_like, window_secs, need_cross, snap_table, pc_windows=None, bands=None):
+def _bt_craze_cte(series_like, window_secs, need_cross, snap_table, pc_windows=None,
+                  bands=None, tickers=None):
     """Build the `craze` CTE for windowed underlying-price stats (volatility, range, drift, crossings, buffer).
 
     `pc_windows` adds one signed-drift column per distinct price_change lookback
@@ -148,9 +149,17 @@ def _bt_craze_cte(series_like, window_secs, need_cross, snap_table, pc_windows=N
 
     `bands` adds one strike_crossings_band column per distinct band ($): zone
     changes around a ±band zone, running from the market's first snapshot — the
-    exact mirror of db.get_strike_crossings(band) so live and sim agree."""
+    exact mirror of db.get_strike_crossings(band) so live and sim agree.
+
+    `tickers` scopes the stats to those markets. All window functions here
+    partition by ticker, so restricting the input rows can't change any scoped
+    market's values — it just stops a market_limit run from window-scanning the
+    series' entire multi-month history for markets it will never report."""
     px     = "COALESCE(b.consolidated_price, b.coinbase_price)"
     strike = "NULLIF(m.strike_str, '')::numeric"
+    tick_sql, tick_params = "", []
+    if tickers is not None:
+        tick_sql, tick_params = " AND m.ticker = ANY(%s)", [list(tickers)]
     win    = (f"PARTITION BY ticker ORDER BY scanned_at::timestamp "
               f"RANGE BETWEEN INTERVAL '{int(window_secs)} seconds' PRECEDING AND CURRENT ROW")
     win_full = ("PARTITION BY ticker ORDER BY scanned_at::timestamp "
@@ -191,7 +200,7 @@ def _bt_craze_cte(series_like, window_secs, need_cross, snap_table, pc_windows=N
                 SELECT m.ticker, m.scanned_at, {px} AS px, {strike} AS strike{inner_cols}
                 FROM market_snapshots m
                 LEFT JOIN {snap_table} b ON b.scanned_at = m.scanned_at
-                WHERE m.ticker LIKE %s
+                WHERE m.ticker LIKE %s{tick_sql}
                   AND COALESCE(b.consolidated_price, b.coinbase_price) IS NOT NULL
             ) z
         """
@@ -200,7 +209,7 @@ def _bt_craze_cte(series_like, window_secs, need_cross, snap_table, pc_windows=N
             SELECT m.ticker, m.scanned_at, {px} AS px, {strike} AS strike
             FROM market_snapshots m
             LEFT JOIN {snap_table} b ON b.scanned_at = m.scanned_at
-            WHERE m.ticker LIKE %s
+            WHERE m.ticker LIKE %s{tick_sql}
         """
 
     cte = f"""
@@ -215,7 +224,7 @@ def _bt_craze_cte(series_like, window_secs, need_cross, snap_table, pc_windows=N
             FROM ( {inner} ) zz
             WINDOW w AS ({win}){(", wfull AS (" + win_full + ")") if need_wfull else ""}{pc_win_defs}
         )"""
-    return cte, [series_like]
+    return cte, [series_like] + tick_params
 
 
 def _pc_col(window_secs):
@@ -320,7 +329,7 @@ def _bt_clean_legs(legs, quantity):
     return clean or None
 
 
-def _bt_walk_rich_exits(cur, fills_cte, params, series_like, side, bid_col,
+def _bt_walk_rich_exits(cur, fills_cte, params, side, bid_col,
                         qty, legs, stop_cents, stop_pct, time_exit_secs):
     """Replay rich exits (scale-out ladder / %-stop / time exit / stop alongside
     a limit sell) by walking each filled market's snapshot series after the fill.
@@ -334,7 +343,7 @@ def _bt_walk_rich_exits(cur, fills_cte, params, series_like, side, bid_col,
             SELECT DISTINCT ON (ticker)
                 ticker, yes_bid AS final_bid, yes_ask AS final_ask
             FROM market_snapshots
-            WHERE ticker LIKE %s
+            WHERE ticker IN (SELECT ticker FROM fills)
               -- skip the close-time "no book" placeholder (0/100/0/100), which
               -- otherwise reads as final_bid=0 and inverts the settled outcome
               AND NOT (yes_bid = 0 AND yes_ask = 100 AND no_bid = 0 AND no_ask = 100)
@@ -346,7 +355,7 @@ def _bt_walk_rich_exits(cur, fills_cte, params, series_like, side, bid_col,
         LEFT JOIN finals fin ON fin.ticker = f.ticker
         LEFT JOIN market_settlements ms ON ms.ticker = f.ticker
     """
-    cur.execute(sql, params + [series_like])
+    cur.execute(sql, params)
     fills = cur.fetchall()
     if not fills:
         return []
@@ -564,10 +573,13 @@ def _bt_simulate_rule(cur, series_like, rule, side, snap_table, tickers=None,
     pc_windows = _bt_pc_windows(rule.get("conditions"))
     xc_bands   = _bt_xc_bands(rule.get("conditions"))
     if (fields_used & _BT_CRAZE_FIELDS) or pc_windows or xc_bands:
+        # NOTE: prior_res/prev2_res above stay unscoped on purpose — a scoped
+        # market's prior window may belong to a market outside the scope.
         craze_sql, craze_params = _bt_craze_cte(
             series_like, config.CRAZINESS_LOOKBACK_SECONDS,
             need_cross="strike_crossings" in fields_used,
-            snap_table=snap_table, pc_windows=pc_windows, bands=xc_bands)
+            snap_table=snap_table, pc_windows=pc_windows, bands=xc_bands,
+            tickers=tickers)
         cte_defs.append(craze_sql)
         cte_params.extend(craze_params)
         join_parts.append(
@@ -674,7 +686,7 @@ def _bt_simulate_rule(cur, series_like, rule, side, snap_table, tickers=None,
             SELECT DISTINCT ON (ticker)
                 ticker, yes_bid AS final_bid, yes_ask AS final_ask
             FROM market_snapshots
-            WHERE ticker LIKE %s
+            WHERE ticker IN (SELECT ticker FROM fills)
               -- skip the close-time "no book" placeholder (0/100/0/100), which
               -- otherwise reads as final_bid=0 and inverts the settled outcome
               AND NOT (yes_bid = 0 AND yes_ask = 100 AND no_bid = 0 AND no_ask = 100)
@@ -689,7 +701,6 @@ def _bt_simulate_rule(cur, series_like, rule, side, snap_table, tickers=None,
         LEFT JOIN market_settlements ms ON ms.ticker = f.ticker
         {stop_join}
         """
-        params.append(series_like)
         if stop_cents is not None:
             params.append(stop_cents)
 
@@ -855,14 +866,14 @@ def backtest_strategy():
                     SELECT DISTINCT ON (ticker)
                         ticker, yes_bid AS final_bid, yes_ask AS final_ask
                     FROM market_snapshots
-                    WHERE ticker LIKE %s
+                    WHERE ticker = ANY(%s)
                       AND NOT (yes_bid = 0 AND yes_ask = 100 AND no_bid = 0 AND no_ask = 100)
                     ORDER BY ticker, scanned_at DESC
                 )
                 SELECT f.ticker, f.final_bid, f.final_ask, ms.result AS official
                 FROM finals f
                 LEFT JOIN market_settlements ms ON ms.ticker = f.ticker
-            """, [series_like])
+            """, [scoped])
             for r in cur.fetchall():
                 official = r["official"]
                 if official in ("yes", "no"):
