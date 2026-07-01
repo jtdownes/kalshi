@@ -432,6 +432,10 @@ END $$;
 CREATE INDEX IF NOT EXISTS idx_orders_ticker  ON orders(market_ticker);
 CREATE INDEX IF NOT EXISTS idx_orders_status  ON orders(status);
 CREATE INDEX IF NOT EXISTS idx_snaps_ticker   ON market_snapshots(ticker);
+-- The DB collation is en_US.utf8, under which a plain btree can't serve prefix
+-- LIKE ('KXBTC15M-%') — pattern_ops gives every series-wide LIKE query
+-- (backtester, scanner fallbacks) an index path instead of a seq scan.
+CREATE INDEX IF NOT EXISTS idx_snaps_ticker_pattern ON market_snapshots(ticker varchar_pattern_ops);
 -- Supports per-window resolution lookups (close_time = X ORDER BY scanned_at DESC)
 -- used by the live momentum signal and the backtest's prior-window CTEs.
 CREATE INDEX IF NOT EXISTS idx_snaps_close_scanned ON market_snapshots(close_time, scanned_at);
