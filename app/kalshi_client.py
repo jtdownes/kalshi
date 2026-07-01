@@ -164,9 +164,18 @@ class KalshiClient:
             if write:
                 self._breaker_guard()
             bucket.acquire(cost)
-            r = self._session.request(
-                method, url, headers=self._auth_headers(method, path),
-                params=params, json=body, timeout=10)
+            try:
+                r = self._session.request(
+                    method, url, headers=self._auth_headers(method, path),
+                    params=params, json=body, timeout=10)
+            except requests.RequestException as e:
+                # Timeouts/resets must surface as KalshiError so callers'
+                # error handling (and the write breaker) see a dead exchange
+                # the same as a 5xx. Never retried in-call: a timed-out write
+                # may have executed, and re-sending could double-place it.
+                if write:
+                    self._breaker_record(ok=False)
+                raise KalshiError(f"network error: {e}") from e
 
             if r.ok:
                 if write:
