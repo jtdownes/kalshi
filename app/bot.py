@@ -491,38 +491,56 @@ def _place_market_out(client: KalshiClient, entry_order: dict, sell_price: int,
              remaining, sell_price, exit_order_id)
 
 
+# A stop/time-exit decision may only be made on a bid the collector wrote
+# recently; a stalled feed must not evaluate exits against frozen quotes.
+_EXIT_SNAPSHOT_MAX_AGE_SECS = 15
+
+
+def _fresh_position_bid(pos: dict) -> float | None:
+    """The side's bid from the latest snapshot for this position's market, or
+    None when there is no usable bid — missing, non-positive, or older than
+    _EXIT_SNAPSHOT_MAX_AGE_SECS (collector stalled: skip this tick rather than
+    act on stale data; entries are separately blocked by _live_data_ok)."""
+    snap = db.get_latest_snapshot_for_ticker(pos["market_ticker"])
+    if not snap:
+        return None
+    try:
+        age = (datetime.utcnow()
+               - datetime.fromisoformat(str(snap["scanned_at"]))).total_seconds()
+    except (TypeError, ValueError):
+        return None
+    if age > _EXIT_SNAPSHOT_MAX_AGE_SECS:
+        log.warning("exit check skipped for %s: snapshot %.0fs old",
+                    pos["market_ticker"], age)
+        return None
+    bid = snap.get("yes_bid") if pos["side"] == "yes" else snap.get("no_bid")
+    if bid is None or bid <= 0:
+        return None
+    return float(bid)
+
+
 def _check_stop_losses(client: KalshiClient):
     """Every scan tick: for each filled position carrying a stop, exit the moment
     the side's freshest bid is at/through the stop. Uses the latest snapshot bid
     (1s cadence) so this needs no extra API polling to decide."""
-    positions = db.get_open_stop_orders()
-    for pos in positions:
-        snap = db.get_latest_snapshot_for_ticker(pos["market_ticker"])
-        if not snap:
+    for pos in db.get_open_stop_orders():
+        bid = _fresh_position_bid(pos)
+        if bid is None or bid > pos["stop_loss_cents"]:
             continue
-        bid = snap.get("yes_bid") if pos["side"] == "yes" else snap.get("no_bid")
-        if bid is None or bid <= 0:
-            continue
-        if bid > pos["stop_loss_cents"]:
-            continue
-        _place_market_out(client, pos, round(float(bid)), "stop_loss")
+        _place_market_out(client, pos, round(bid), "stop_loss")
 
 
 def _check_time_exits(client: KalshiClient):
     """Every scan tick: market-out positions whose contract is within their
     time_exit_secs window of closing."""
-    positions = db.get_open_time_exit_orders()
-    for pos in positions:
+    for pos in db.get_open_time_exit_orders():
         close_ts = close_ts_to_int(pos.get("market_close_time"))
         if not close_ts or seconds_until(close_ts) > pos["time_exit_secs"]:
             continue
-        snap = db.get_latest_snapshot_for_ticker(pos["market_ticker"])
-        if not snap:
-            continue
-        bid = snap.get("yes_bid") if pos["side"] == "yes" else snap.get("no_bid")
-        if bid is None or bid <= 0:
-            continue   # no bid to hit; retry next tick until close
-        _place_market_out(client, pos, round(float(bid)), "time_exit")
+        bid = _fresh_position_bid(pos)
+        if bid is None:
+            continue   # no fresh bid to hit; retry next tick until close
+        _place_market_out(client, pos, round(bid), "time_exit")
 
 
 def _cancel_sibling_legs(client: KalshiClient, order: dict):
