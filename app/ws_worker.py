@@ -16,7 +16,7 @@ import websockets
 
 import config
 import database
-from kalshi_client import KalshiClient
+from kalshi_client import get_client
 
 log = logging.getLogger(__name__)
 
@@ -102,13 +102,10 @@ def _positions_reconcile_loop() -> None:
     to reconnect and re-bootstrap from REST. Poll REST and prune any cached
     ticker that REST no longer reports as a live (non-zero) position.
     """
-    client: KalshiClient | None = None
     while True:
         time.sleep(30)
         try:
-            if client is None:
-                client = KalshiClient()
-            raw = client.get_positions().get("market_positions", [])
+            raw = get_client().get_positions().get("market_positions", [])
             live = {p["ticker"] for p in raw if float(p.get("position_fp", 0)) != 0}
             with _lock:
                 stale = [tkr for tkr in _positions_cache if tkr not in live]
@@ -120,7 +117,6 @@ def _positions_reconcile_loop() -> None:
                 _broadcast("positions", get_positions())
         except Exception as e:
             log.debug("Positions reconcile failed: %s", e)
-            client = None  # force a fresh client next cycle
 
 
 def _snapshot_poll_loop() -> None:
@@ -151,7 +147,7 @@ async def _run() -> None:
 
     while True:
         try:
-            client = KalshiClient()
+            client = get_client()
 
             # Bootstrap positions via REST so the cache is never cold-empty
             try:

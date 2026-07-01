@@ -12,7 +12,7 @@ from flask import Blueprint, Response, jsonify, request, stream_with_context
 import database
 import ws_worker
 from database.core import cursor_conn
-from kalshi_client import KalshiClient
+from kalshi_client import get_client
 
 trading_bp = Blueprint('trading', __name__)
 
@@ -29,7 +29,7 @@ def _dollars_to_cents(v) -> float | None:
 @trading_bp.get("/api/balance")
 def balance():
     try:
-        data = KalshiClient().get_balance()
+        data = get_client().get_balance()
         return jsonify(data)
     except Exception as e:
         return jsonify({"error": str(e)}), 502
@@ -48,7 +48,7 @@ def quotes():
 
     if missing:
         try:
-            client = KalshiClient()
+            client = get_client()
             def fetch_one(ticker):
                 try:
                     data = client.get_market(ticker)
@@ -78,7 +78,7 @@ def positions():
     if ws_worker.is_bootstrapped():
         return jsonify(ws_worker.get_positions())
     try:
-        data = KalshiClient().get_positions()
+        data = get_client().get_positions()
         return jsonify(data.get("market_positions", []))
     except Exception as e:
         return jsonify({"error": str(e)}), 200

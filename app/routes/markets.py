@@ -10,7 +10,7 @@ from flask import Blueprint, jsonify, request
 import database
 from database.core import cursor_conn
 from crypto_assets import CRYPTO_ASSETS, DEFAULT_ASSET
-from kalshi_client import KalshiClient
+from kalshi_client import get_client
 from strategy import evaluate_play_status
 
 markets_bp = Blueprint('markets', __name__)
@@ -44,7 +44,7 @@ def scanned_series_add():
         return jsonify({"error": "invalid series ticker"}), 400
 
     try:
-        data = KalshiClient().get_markets(series_ticker=series, status="open", limit=200)
+        data = get_client().get_markets(series_ticker=series, status="open", limit=200)
     except Exception as e:
         return jsonify({"error": f"could not reach Kalshi: {e}"}), 502
     markets = data.get("markets", []) or []

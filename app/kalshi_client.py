@@ -316,3 +316,20 @@ class KalshiClient:
             "KALSHI-ACCESS-TIMESTAMP": ts,
             "KALSHI-ACCESS-SIGNATURE": base64.b64encode(sig).decode(),
         }
+
+
+_client_lock = threading.Lock()
+_client: KalshiClient | None = None
+
+
+def get_client() -> KalshiClient:
+    """Process-wide shared client. Constructing KalshiClient per call re-reads
+    the private key and — worse — spins up fresh token buckets, so per-request
+    instances each think they own the full rate-limit budget. Route handlers
+    and workers in a process should share this one instance; the client is
+    thread-safe (locked buckets/breaker, requests.Session)."""
+    global _client
+    with _client_lock:
+        if _client is None:
+            _client = KalshiClient()
+        return _client
