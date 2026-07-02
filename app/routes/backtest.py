@@ -601,6 +601,14 @@ def _bt_simulate_rule(cur, series_like, rule, side, snap_table, tickers=None,
     # an "ask" entry (whose limit equals the signal ask) can't trivially self-fill
     # on the signal tick — it must survive at least one tick, the realistic
     # minimum for an order that has to be placed after the signal is seen.
+    # The fill snapshot must also still satisfy the rule's time-to-close
+    # conditions: the live monitor cancels a resting entry once the ttc window
+    # closes, so a fill outside the window can't happen and isn't simulated.
+    ttc_conds = [c for c in (rule.get("conditions") or [])
+                 if c.get("field") == "time_to_close"]
+    fill_ttc_clause, fill_ttc_params = _bt_conditions_sql(ttc_conds)
+    fill_ttc_clause = fill_ttc_clause.replace("m.time_to_close_secs",
+                                              "s.time_to_close_secs")
     fills_def = f"""
         signals AS (
             SELECT DISTINCT ON (m.ticker)
@@ -627,10 +635,12 @@ def _bt_simulate_rule(cur, series_like, rule, side, snap_table, tickers=None,
              AND s.scanned_at > sg.signal_time
              AND s.{ask_col} > 0
              AND s.{ask_col} <= sg.limit_price
+             {fill_ttc_clause}
             WHERE sg.limit_price >= 1
             ORDER BY s.ticker, s.scanned_at
         )"""
-    params = cte_params + limit_params + [series_like] + ticker_params + cond_params
+    params = (cte_params + limit_params + [series_like] + ticker_params
+              + cond_params + fill_ttc_params)
     fills_cte = "WITH " + ",".join(cte_defs + [fills_def])
 
     # Materialise signals + fills ONCE into a session temp table. The CTE stack

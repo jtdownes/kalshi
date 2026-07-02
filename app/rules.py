@@ -261,6 +261,35 @@ def conditions_pass(conditions: list, fields: dict) -> bool:
     return all(_check_condition(c, fields) for c in (conditions or []))
 
 
+def min_ttc_bound(conditions: list | None) -> int | None:
+    """Lowest time_to_close (secs) at which a rule's ttc conditions can still
+    pass. ttc only ever falls, so once it drops below this the entry window is
+    closed for good — a still-resting entry can only fill OUTSIDE the window
+    and should be cancelled. None = the rule has no lower ttc bound."""
+    bound = None
+    for c in conditions or []:
+        if c.get("field") != "time_to_close":
+            continue
+        op = c.get("op")
+        try:
+            v = float(c.get("value"))
+        except (TypeError, ValueError):
+            continue
+        if op in ("gte", "eq"):
+            lo = v
+        elif op == "gt":
+            lo = v + 1   # integer seconds: ttc must strictly exceed v
+        elif op == "between":
+            try:
+                lo = min(v, float(c.get("value2")))
+            except (TypeError, ValueError):
+                continue
+        else:
+            continue
+        bound = lo if bound is None else max(bound, lo)
+    return int(bound) if bound is not None else None
+
+
 def _resolve_entry_price(entry: dict, side: str, fields: dict) -> int | None:
     """Resolve a rule's entry price to integer cents (1..99), or None to skip."""
     entry = entry or {}
@@ -340,6 +369,9 @@ def evaluate_rules(rules: list, market: dict, time_to_close: int | None = None,
                 "exit":        exit_spec,
                 "rule_id":     rule_id,
                 "oco":         oco,
+                # Entry-window TTL: the monitor cancels the resting entry once
+                # ttc falls below this, so fills can't land outside the window.
+                "min_ttc":     min_ttc_bound(rule.get("conditions")),
             })
 
     return specs

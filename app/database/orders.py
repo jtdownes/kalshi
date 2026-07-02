@@ -22,7 +22,7 @@ def save_order(client_order_id: str, market_ticker: str, side: str,
                exit_target_cents: int = None, count: int = 1,
                entry_rule_id: str = None, cancel_sibling_on_fill: bool = False,
                stop_loss_cents: int = None, exit_legs: list = None,
-               time_exit_secs: int = None):
+               time_exit_secs: int = None, entry_min_ttc_secs: int = None):
     now = datetime.utcnow().isoformat()
     query = """
         INSERT OR IGNORE INTO orders
@@ -32,8 +32,8 @@ def save_order(client_order_id: str, market_ticker: str, side: str,
            time_to_close_at_placement, profile_id, order_role,
            parent_kalshi_order_id, exit_strategy, exit_target_cents,
            entry_rule_id, cancel_sibling_on_fill, stop_loss_cents,
-           exit_legs, time_exit_secs)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+           exit_legs, time_exit_secs, entry_min_ttc_secs)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     """
     params = (client_order_id, kalshi_order_id, market_ticker, side,
               entry_price_cents, count, now, btc_price, distance_to_strike,
@@ -42,7 +42,7 @@ def save_order(client_order_id: str, market_ticker: str, side: str,
               exit_target_cents, entry_rule_id, cancel_sibling_on_fill,
               stop_loss_cents,
               psycopg2.extras.Json(exit_legs) if exit_legs is not None else None,
-              time_exit_secs)
+              time_exit_secs, entry_min_ttc_secs)
     with _lock, _conn() as conn:
         _execute(conn, query, params)
         conn.commit()
@@ -190,7 +190,7 @@ def get_resting_orders() -> list[dict]:
                count, market_close_time, profile_id, order_role,
                parent_kalshi_order_id, exit_order_kalshi_id,
                exit_strategy, exit_target_cents,
-               entry_rule_id, cancel_sibling_on_fill
+               entry_rule_id, cancel_sibling_on_fill, entry_min_ttc_secs
         FROM orders
         WHERE status = 'resting'
     """

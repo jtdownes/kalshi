@@ -777,6 +777,7 @@ def _scan(client: KalshiClient, settings: dict):
                     stop_loss_cents=stop_loss_cents,
                     exit_legs=exit_legs,
                     time_exit_secs=time_exit_secs,
+                    entry_min_ttc_secs=spec.get("min_ttc"),
                 )
             except KalshiError as e:
                 log.error("place_order failed on %s %s: %s", side, ticker, e)
@@ -981,9 +982,29 @@ def _sync_order_fill_state(client: KalshiClient, order: dict):
     elif terminal:
         db.update_order(oid, status="canceled")
         log.info("CANCELED %-6s %-50s", order["side"], order["market_ticker"])
-    elif filled > 0:
-        log.info("PARTIAL  %-6s %-50s  %d/%d filled; waiting for completion",
-                 order["side"], order["market_ticker"], int(filled), count)
+    else:
+        if filled > 0:
+            log.info("PARTIAL  %-6s %-50s  %d/%d filled; waiting for completion",
+                     order["side"], order["market_ticker"], int(filled), count)
+        # Entry-window TTL: the rule's time-to-close window has closed, so this
+        # resting entry can now only fill OUTSIDE the conditions it was placed
+        # under — cancel it. A cancel that races a fill errors out harmlessly;
+        # the fill is picked up on the next sync. A partial fill keeps what
+        # filled (the cancel lands terminal-with-fills and is closed out above
+        # next cycle) but stops the remainder from filling late.
+        min_ttc = order.get("entry_min_ttc_secs")
+        close_ts = close_ts_to_int(order.get("market_close_time"))
+        if (order.get("order_role") == "entry" and min_ttc and close_ts
+                and seconds_until(close_ts) < int(min_ttc)):
+            try:
+                client.cancel_order(oid)
+                db.update_order(oid, status="canceled")
+                log.info("WINDOW CANCEL %-6s %-50s  (ttc %ds < rule min %ds)",
+                         order["side"], order["market_ticker"],
+                         seconds_until(close_ts), int(min_ttc))
+            except KalshiError as e:
+                log.warning("entry-window cancel failed for %s %s: %s",
+                            order["side"], order["market_ticker"], e)
 
 
 def _sync_order_statuses(client: KalshiClient):

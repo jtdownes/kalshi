@@ -513,6 +513,11 @@ BEGIN
     IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='orders' AND column_name='market_out_kalshi_id') THEN
         ALTER TABLE orders ADD COLUMN market_out_kalshi_id TEXT;
     END IF;
+    -- Entry-window TTL: lowest time-to-close (secs) at which the entry rule's
+    -- ttc window is still open; the monitor cancels a still-resting entry below it.
+    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='orders' AND column_name='entry_min_ttc_secs') THEN
+        ALTER TABLE orders ADD COLUMN entry_min_ttc_secs INTEGER;
+    END IF;
 END $$;
 
 -- Every strategy names the series it trades (the column predates multi-asset
