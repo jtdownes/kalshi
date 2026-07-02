@@ -80,10 +80,18 @@ const fmtDayTime = (epochSecs: number) => {
   return `${d.toLocaleDateString([], { month: 'short', day: 'numeric' })} ${d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`;
 };
 
-// Below $10k, show whole dollars with separators ($1,668) so closely-spaced
-// ticks stay distinct; above that, the compact $Nk form is enough.
-const fmtPrice = (val: number) =>
-  val >= 10000 ? `$${(val / 1000).toFixed(1)}k` : `$${Math.round(val).toLocaleString()}`;
+// Decimal places for a price axis given its visible span — sub-cent movers like
+// XRP (~$2, whole-window range a few cents) need 3–4 places or every tick rounds
+// to the same whole dollar; wide-range BTC needs none.
+const decimalsForRange = (range: number): number =>
+  range >= 100 ? 0 : range >= 10 ? 1 : range >= 1 ? 2 : range >= 0.1 ? 3 : 4;
+
+// Above $10k the compact $Nk form is enough; below that, show `decimals` places
+// (span-aware) with separators so closely-spaced ticks stay distinct.
+const fmtPrice = (val: number, decimals = 0) =>
+  val >= 10000
+    ? `$${(val / 1000).toFixed(1)}k`
+    : `$${val.toLocaleString(undefined, { minimumFractionDigits: decimals, maximumFractionDigits: decimals })}`;
 
 // Custom shape for a single candle. Recharts gives us the floating bar's pixel
 // box for the low→high range (y = pixel of `high`, height = span down to `low`),
@@ -381,6 +389,12 @@ function CandlePane({
     return [ticks, (v: number) => v === strikeNum];
   }, [priceDomain, strikeNum]);
 
+  // Axis label precision adapts to the visible price span so low-priced assets
+  // (XRP) don't collapse to one repeated whole-dollar tick.
+  const priceDecimals = priceDomain[0] === 'auto'
+    ? 0
+    : decimalsForRange((priceDomain[1] as number) - (priceDomain[0] as number));
+
   // For windows spanning a day or more, time-only ticks are ambiguous — switch
   // the axis to a date label so the user can tell which day a candle is on.
   const axisFmt = lookback >= 86400 ? fmtDay : fmtClock;
@@ -395,7 +409,7 @@ function CandlePane({
     const row = (k: string, v: number) => (
       <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12 }}>
         <span style={{ color: '#888' }}>{k}</span>
-        <span>${v.toLocaleString(undefined, { maximumFractionDigits: 2 })}</span>
+        <span>{fmtPrice(v, priceDecimals)}</span>
       </div>
     );
     return (
@@ -408,7 +422,7 @@ function CandlePane({
         {row('L', c.low)}
         <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, color: up ? UP : DOWN }}>
           <span>C</span>
-          <span>${c.close.toLocaleString(undefined, { maximumFractionDigits: 2 })}</span>
+          <span>{fmtPrice(c.close, priceDecimals)}</span>
         </div>
       </div>
     );
@@ -474,7 +488,7 @@ function CandlePane({
                 stroke="#666"
                 domain={priceDomain}
                 ticks={yTicks.length ? yTicks : undefined}
-                tickFormatter={fmtPrice}
+                tickFormatter={(v: number) => fmtPrice(v, priceDecimals)}
                 fontSize={10}
                 width={52}
                 tick={(props: { x: number; y: number; payload: { value: number } }) => {
@@ -489,7 +503,7 @@ function CandlePane({
                       fontWeight={strike ? 700 : 400}
                       fill={strike ? '#ffffff' : '#888'}
                     >
-                      {fmtPrice(props.payload.value)}
+                      {fmtPrice(props.payload.value, priceDecimals)}
                     </text>
                   );
                 }}
