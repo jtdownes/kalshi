@@ -266,13 +266,22 @@ export default function PriceActionChart({ ticker, globalSnapshots, openOrders =
     return Number.isFinite(n) ? n : null;
   };
 
+  // Round to a magnitude-aware precision: high-priced assets (BTC) only need
+  // cents, but sub-cent movers (XRP ~$2, whose whole 15-min range is fractions
+  // of a cent) must keep 4+ decimals or the line collapses onto one flat value.
+  const roundPrice = (v: number): number => {
+    const decimals = decimalsForRange(Math.abs(v)) + 2;
+    const f = Math.pow(10, decimals);
+    return Math.round(v * f) / f;
+  };
+
   // Consolidated = mean of whichever venues responded this tick
   const chartData = data.map(d => {
     const venuePrices = venueFields
       .map(f => toNum(d[f.key]))
       .filter((p): p is number => p != null);
     const consolidated = venuePrices.length
-      ? Math.round((venuePrices.reduce((a, b) => a + b, 0) / venuePrices.length) * 100) / 100
+      ? roundPrice(venuePrices.reduce((a, b) => a + b, 0) / venuePrices.length)
       : toNum(d[aggKey]);
     return { ...d, consolidated };
   });
